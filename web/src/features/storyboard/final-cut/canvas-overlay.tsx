@@ -60,9 +60,6 @@ const SAME_SPOT = 4
 /** 指针移动时向预览页查询悬停命中图层的最小间隔（毫秒）。 */
 const HOVER_INTERVAL = 80
 
-/** 旋转控制柄距选中框底边的预留空间（屏幕像素）；下方空间不足时翻至选中框上方。 */
-const ROTATE_ROOM = 32
-
 /** 元素平移变换定义在外部样式表且无法内联解析时的提示文案。 */
 export const ROTATE_UNRESOLVED_TEXT = '该片段的变换定义在外部样式中，无法在画面上旋转'
 
@@ -856,7 +853,6 @@ export function CanvasOverlay({
           drafted === undefined
             ? drawnFrame(measure)
             : followFrame(drawnFrame(measure), measure.frame, drafted)
-        const below = (frame.cy + frame.height / 2) * zoom + ROTATE_ROOM
         return (
           <div
             aria-label={`选中：${clipOf.get(layer.clip)?.label ?? layer.clip}`}
@@ -882,7 +878,6 @@ export function CanvasOverlay({
                   <button
                     aria-label="旋转"
                     className="wf-canvas-rotate"
-                    data-above={below > canvas.height * zoom ? '' : undefined}
                     data-handle="rotate"
                     tabIndex={-1}
                     type="button"

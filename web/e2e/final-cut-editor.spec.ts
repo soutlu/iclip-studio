@@ -2212,12 +2212,17 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
     .toBe(true)
 })
 
+/** 画面右上角的胶囊平时只露出参考线开关：鼠标移上去，画面尺寸才展开、点得到。 */
+const unfoldStageHud = (editor: Locator) =>
+  editor.getByRole('button', { name: '参考线', exact: true }).hover()
+
 test('新建工程后在画面右上角把画面尺寸改成横屏：存下的主文件根上是 1920×1080，刷新页面后仍是横屏', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
+  await unfoldStageHud(editor)
   await editor.getByRole('button', { name: '画面尺寸 9:16 · 1080P', exact: true }).click()
   const sizes = editor
     .getByRole('dialog', { name: '画面设置' })
@@ -2238,6 +2243,7 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
   await (await saved).response()
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
+  await unfoldStageHud(reloaded)
   await reloaded.getByRole('button', { name: '画面尺寸 16:9 · 1080P', exact: true }).click()
   const reloadedSizes = reloaded
     .getByRole('dialog', { name: '画面设置' })
@@ -2270,6 +2276,7 @@ test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变�
 
   const pill = editor.getByRole('button', { name: /^画面尺寸/ })
   const settings = editor.getByRole('dialog', { name: '画面设置' })
+  await unfoldStageHud(editor)
   await pill.click()
   // 第一段视频进来时画面跟着视频改过尺寸，先定成 1080×1920
   await settings
@@ -2301,6 +2308,7 @@ test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变�
   const reopenedPill = reopened.getByRole('button', { name: /^画面尺寸/ })
   await expect(reopenedPill).toHaveAccessibleName('画面尺寸 9:16 · 720P')
 
+  await unfoldStageHud(reopened)
   await reopenedPill.click()
   const reopenedSettings = reopened.getByRole('dialog', { name: '画面设置' })
   const resized = mainSavedWith(page, (html) =>
@@ -2328,6 +2336,50 @@ test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变�
   )
   await reopenedPanel.getByRole('button', { name: '导出', exact: true }).click()
   expect((await restarted).postDataJSON()).toEqual({ locale: null })
+})
+
+test('画面右上角的胶囊平时只露出参考线开关：鼠标移上去画面尺寸才展开，画面设置开着时鼠标移进浮层也不收；点外面关掉浮层、鼠标点过参考线开关再移开都收起', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const editor = await createFinalCut(panel)
+  const pill = editor.getByRole('button', { name: /^画面尺寸/ })
+  const guides = editor.getByRole('button', { name: '参考线', exact: true })
+  const settings = editor.getByRole('dialog', { name: '画面设置' })
+  // 收起时按钮还在、名字不变，只是看不见
+  await expect(pill).toHaveAccessibleName('画面尺寸 9:16 · 1080P')
+  await expect(pill).toBeHidden()
+  await expect(guides).toBeVisible()
+
+  await guides.hover()
+  await expect(pill).toBeVisible()
+  await pill.click()
+  await expect(settings).toBeVisible()
+  await settings.getByRole('group', { name: '画面比例' }).hover()
+  // 等胶囊的过渡走完再看：要收起的话这时已经收了
+  await pill.evaluate((button) =>
+    Promise.all(
+      (button.parentElement?.getAnimations({ subtree: true }) ?? []).map(
+        (animation) => animation.finished,
+      ),
+    ),
+  )
+  await expect(pill).toBeVisible()
+
+  // 点舞台左边的空处关掉浮层，鼠标留在那里
+  const stage = await boxOf(editor.getByRole('region', { name: '预览', exact: true }))
+  const away = { x: stage.x + 40, y: stage.y + stage.height / 2 }
+  await page.mouse.click(away.x, away.y)
+  await expect(settings).toBeHidden()
+  await expect(pill).toBeHidden()
+
+  // 鼠标点一下参考线开关：焦点留在开关上，鼠标移开就收起
+  await guides.click()
+  await expect(guides).toHaveAttribute('aria-pressed', 'true')
+  await page.mouse.move(away.x, away.y)
+  await expect(guides).toBeFocused()
+  await expect(pill).toBeHidden()
 })
 
 const CAPTIONS_FILE = 'compositions/captions.html'
@@ -4145,8 +4197,20 @@ test('铺满画面的贴片盖在视频上：点贴片里空着的地方（没�
   await page.mouse.click(canvas.x + canvas.width * 0.2, canvas.y + canvas.height * 0.8)
   await expect(video).toHaveAttribute('aria-pressed', 'true')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
-  await expect(layer.getByRole('img', { name: '选中：A · 镜头 1' })).toBeVisible()
+  const frame = layer.getByRole('img', { name: '选中：A · 镜头 1' })
+  await expect(frame).toBeVisible()
   await expect(layer.getByRole('img', { name: '选中：测试点穿' })).toHaveCount(0)
+
+  // 视频铺满画面：旋转把手在框下面，整个落在舞台里，不压到进度条
+  const drawn = await boxOf(frame)
+  alignsWith(drawn, canvas)
+  const rotate = await boxOf(layer.getByRole('button', { name: '旋转' }))
+  const stage = await boxOf(editor.getByRole('region', { name: '预览', exact: true }))
+  const seek = await boxOf(editor.getByTestId('preview-seek'))
+  expect(rotate.y).toBeGreaterThan(drawn.y + drawn.height)
+  expect(rotate.x).toBeGreaterThanOrEqual(stage.x)
+  expect(rotate.x + rotate.width).toBeLessThanOrEqual(stage.x + stage.width)
+  expect(rotate.y + rotate.height).toBeLessThanOrEqual(seek.y)
 })
 
 test('画面上拖贴片靠近画面中线（播放头处没有视频，只有画布可吸）：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
