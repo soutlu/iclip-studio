@@ -369,12 +369,15 @@
 }
 
 /* ---- 外框：凹底上三块浮起面板，左上预览舞台、右上右栏、下面整宽的时间线，块与块之间是可拖的分隔条 ----
-   任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行、不横向滚动。
+   任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行。唯一能横向滑的是右栏的页签内容
+   （见「右栏」一节）：右栏窄时它整块被裁，要滑过去才够得着被裁掉的按钮；别处只裁不滚。
    编辑区和各卡片用 clip 不用 hidden：hidden 仍能滚动，滚轮或聚焦被裁掉的控件会把内容带偏。
-   夹值和 use-editor-layout.ts 里的一致：右栏 376–520，舞台至少留 360 宽（播放条刚好排开一行）、200 高，
-   时间线至少 186 高；工作台窄到放不下时先保右栏的最窄 */
+   夹值和 use-editor-layout.ts 里的一致：右栏拖定的宽度 150–580，舞台至少留 360 宽（播放条刚好排开一行）、200 高，
+   时间线至少 186 高 */
 .wf-workspace {
   --wf-splitter: 10px;
+  /* 右栏页签内容至少按这么宽排；右栏比它窄时内容不挤，整块被面板裁掉 */
+  --wf-side-content: 376px;
 
   display: grid;
   min-height: 0;
@@ -383,12 +386,15 @@
     'preview side-splitter side'
     'timeline-splitter timeline-splitter timeline-splitter'
     'timeline timeline timeline';
-  /* 右栏按拖定的宽度，给舞台留 360；再窄时右栏最窄 376。工作台很窄时舞台优先：至少留 300 给舞台和播放条，
-     右栏再让宽，放不下的内容由卡片裁掉 */
+  /* 右栏按拖定的宽度，给舞台留 360；舞台不够 360 时右栏让到内容宽，拖定的比内容宽还窄就照拖定的。
+     工作台很窄时舞台优先：至少留 300 给舞台和播放条，右栏再让 */
   grid-template-columns:
     minmax(0, 1fr) var(--wf-splitter)
     min(
-      max(376px, min(var(--wf-side-width), 100% - 360px - var(--wf-splitter))),
+      max(
+        min(var(--wf-side-content), var(--wf-side-width)),
+        min(var(--wf-side-width), 100% - 360px - var(--wf-splitter))
+      ),
       100% - 300px - var(--wf-splitter)
     );
   /* 没拖过时时间线按内容高、最多占一小半，放不下时只压缩轨道区 */
@@ -493,18 +499,26 @@
   gap: 2px;
   padding: 0 8px 0 9px;
   border-bottom: 1px solid var(--color-panel-line);
+  container: wf-side-nav / inline-size;
 }
 
-/* 窄工作台里右栏让给舞台，排不下的页签在收起按钮前面裁掉。只裁横向；两边各让出 4px 给选中块的细圈和投影，
-   负外边距抵掉，排法不变 */
+/* 右栏窄时排不下的页签在收起按钮前面裁掉。只裁横向；四边让出位置给选中块的细圈和投影（上下让到导航的
+   上下沿，渐隐的遮罩也不裁到它们），负外边距抵掉，排法不变 */
 .wf-side-tabs {
   min-width: 0;
   flex: 1;
   align-items: center;
   gap: 2px;
-  margin: 0 -4px;
-  padding: 0 4px;
+  margin: -6px -4px;
+  padding: 6px 4px;
   overflow-x: clip;
+}
+
+/* 裁口右端渐隐。324 是六个页签、竖线和收起按钮排满一行要的宽（右栏 341 宽时），在浏览器里量的 */
+@container wf-side-nav (width < 324px) {
+  .wf-side-tabs {
+    mask-image: linear-gradient(to left, transparent, black 16px);
+  }
 }
 
 /* 一个导航项：图标在上、短词在下。线条一律中性色，填充层按页签的色调淡淡一层；「属性」是墨色、不填色。
@@ -638,6 +652,7 @@
 
 .wf-side.is-collapsed .wf-side-tabs {
   flex-direction: column;
+  mask-image: none;
 }
 
 .wf-side.is-collapsed .wf-side-tab {
@@ -659,8 +674,19 @@
   right: 4px;
 }
 
-.wf-side-body {
+/* 六个页签内容外面一层：比 --wf-side-content 窄时横向滑（触控板、Shift+滚轮、聚焦被裁的控件），
+   不出横向滚动条，滑到头不带动浏览器前进后退。导航在它外面，不跟着滑 */
+.wf-side-scroll {
+  display: flex;
   min-height: 0;
+  flex: 1;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.wf-side-body {
+  min-width: var(--wf-side-content);
   flex: 1;
   overflow-y: auto;
   padding: 10px 12px;
