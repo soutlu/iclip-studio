@@ -2809,17 +2809,22 @@
   background: color-mix(in srgb, var(--color-storyboard-stage) 55%, transparent);
 }
 
-/* 画面：上留 20、左右留 24，下面让出播放条再留 10；投影压在深底上，描边换成浅色细线 */
+/* 画面：上留 20、左右留 24，下面让出 50 高的播放条，画面底边离进度条 32（放得下框下面的旋转把手） */
 .wf-preview > .editor-hero-wrap,
 .wf-material-preview > .editor-hero-wrap {
   inset: 20px 24px 82px;
 }
 
+/* 投影压在深底上，描边换成浅色细线 */
 .wf-stage .stage-picture {
-  border-radius: var(--radius-md);
   box-shadow:
     0 24px 60px color-mix(in srgb, var(--color-scrim) 65%, transparent),
     0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
+}
+
+/* final-cut 的编辑画面是直角：四角就是导出画面的四角（素材预览的圆角见 wf-material-video） */
+.wf-stage .wf-player-host {
+  border-radius: var(--radius-none);
 }
 
 .wf-player-host[hidden] {
@@ -2862,11 +2867,10 @@
   touch-action: none;
 }
 
-/* 选中框压过舞台右上角的画面设置胶囊（见 wf-stage-hud）：铺满画面的片段右上角的把手落在胶囊下面时照样拖得到。
-   框本身不接指针，只有把手接 */
+/* 框本身不接指针，只有把手接。编辑层里的框、参考线、改字框都不设层级，按先后叠放，整层在舞台右上角的胶囊下面
+   （见 wf-stage-hud） */
 .wf-canvas-frame {
   position: absolute;
-  z-index: var(--z-local-2);
   border-radius: var(--radius-xs);
   outline: 1.5px solid color-mix(in srgb, var(--color-on-scrim) 90%, transparent);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-scrim) 25%, transparent);
@@ -2943,17 +2947,11 @@
   cursor: grabbing;
 }
 
-/* 画布底部空间不足时将旋转控制柄翻至选中框上方 */
-.wf-canvas-rotate[data-above] {
-  top: auto;
-  bottom: calc(100% + 10px);
-}
-
-/* 旋转过程中在选中框下方展示实时度数 */
+/* 旋转中的实时度数：在旋转把手右边、和把手上下居中，不压到下面的进度条 */
 .wf-canvas-angle {
   position: absolute;
-  top: calc(100% + 34px);
-  left: 50%;
+  top: calc(100% + 19px);
+  left: calc(50% + 15px);
   padding: 1px 8px;
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-scrim) 75%, transparent);
@@ -2962,15 +2960,13 @@
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
-  translate: -50% 0;
+  translate: 0 -50%;
   white-space: nowrap;
 }
 
-/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分）。
-   和选中框同一层（见 wf-canvas-frame），写在它后面，照旧盖在框上 */
+/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分） */
 .wf-canvas-guides {
   position: absolute;
-  z-index: var(--z-local-2);
   inset: 0;
   pointer-events: none;
 }
@@ -3014,7 +3010,6 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--radius-md);
   pointer-events: none;
 }
 
@@ -3089,7 +3084,8 @@
 
 /* ---- 舞台右上角的画面设置：一枚压在深底上的胶囊（画面尺寸 ⌄ │ 参考线），点开的浮层跟着外观走 ---- */
 
-/* 和播放条一样叠在舞台的同一格里，靠右上；压过画面编辑层（画面上的点选），让给选中框（见 wf-canvas-frame）。
+/* 和播放条一样叠在舞台的同一格里，靠右上；压过整个画面编辑层（选中框、把手、参考线、改字框）。
+   三格：画面尺寸、分隔线、参考线开关；收起时前两格缩成 0，右边缘不动（见下面的 hover 媒体查询）。
    悬停、按下的叠色和焦点环从 on-scrim 派生，同播放条 */
 .wf-stage-hud {
   --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 13%, transparent);
@@ -3098,9 +3094,11 @@
 
   position: relative;
   z-index: var(--z-local-1);
-  display: inline-flex;
+  display: inline-grid;
   height: 28px;
   align-items: center;
+  justify-content: end;
+  grid-template-columns: 1fr 5px auto;
   align-self: start;
   justify-self: end;
   margin: 11px;
@@ -3113,18 +3111,22 @@
     0 3px 12px color-mix(in srgb, var(--color-scrim) 30%, transparent),
     inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 12%, transparent);
   color: color-mix(in srgb, var(--color-on-scrim) 90%, transparent);
+  transition: grid-template-columns var(--dur-s) var(--ease);
 }
 
+/* 收起时这一格缩成 0 宽：裁掉里面的字，内边距、透明度和胶囊宽度一起变（时长、曲线同 ui-state） */
 .wf-stage-hud-size {
   display: inline-flex;
   height: 24px;
   align-items: center;
   gap: 5px;
+  overflow: hidden;
   padding: 0 7px 0 8px;
   border-radius: var(--radius-xs);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   font-weight: 500;
+  transition-property: background-color, background-image, color, padding, opacity;
   white-space: nowrap;
 }
 
@@ -3175,12 +3177,27 @@
   rotate: 180deg;
 }
 
+/* 竖线居中在 5px 宽的那一格里，左右各留 2 */
 .wf-stage-hud-sep {
   width: 1px;
   height: 12px;
-  flex: none;
-  margin: 0 2px;
+  justify-self: center;
   background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+/* 平时只留参考线开关；鼠标移到胶囊上、键盘焦点在里面（:focus-visible，鼠标点过留下的焦点不算）或画面设置浮层
+   开着时，画面尺寸和分隔线向左展开。没有悬停的设备一直展开。收起时按钮仍在、Tab 得到 */
+@media (hover: hover) {
+  .wf-stage-hud:not(:hover, :has(:focus-visible, .wf-stage-hud-size[data-state='open'])) {
+    grid-template-columns: 0fr 0 auto;
+  }
+
+  .wf-stage-hud:not(:hover, :has(:focus-visible, .wf-stage-hud-size[data-state='open']))
+    > :is(.wf-stage-hud-size, .wf-stage-hud-sep) {
+    padding-inline: 0;
+    opacity: 0;
+  }
 }
 
 /* 参考线开关（样子见 wf-tool）：关着时淡白，开着时琥珀色浅底 */
@@ -3366,11 +3383,9 @@
   color: var(--color-disabled-text);
 }
 
-/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底。和选中框同一层（见 wf-canvas-frame），写在它后面，
-   照旧盖在框上 */
+/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底 */
 .wf-canvas-text {
   position: absolute;
-  z-index: var(--z-local-2);
   padding: 0 4px;
   border: 0;
   border-radius: var(--radius-xs);
@@ -3391,7 +3406,7 @@
   resize: none;
 }
 
-/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用。上面一条白色进度条，
+/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用，总高 50。上面一条白色进度条，
    下面左边是播放圆钮和时间，右边是静音、倍速、循环、全屏、快捷键 ---- */
 
 .wf-transport {
@@ -3406,16 +3421,16 @@
   min-width: 0;
   flex-direction: column;
   align-self: end;
-  gap: 7px;
+  gap: 4px;
   grid-area: preview;
-  padding: 4px 18px 13px;
+  padding: 0 18px 6px;
   color: var(--color-on-scrim);
 }
 
 .wf-seek {
   position: relative;
   display: flex;
-  height: 14px;
+  height: 12px;
   align-items: center;
   cursor: pointer;
   touch-action: none;
@@ -3492,7 +3507,7 @@
 
 .wf-transport .wf-tool {
   width: auto;
-  height: 30px;
+  height: 28px;
   min-width: 30px;
   padding: 0 7px;
   border-radius: var(--radius-control);
@@ -3516,8 +3531,9 @@
 
 /* 半透明的白色播放圆钮，顶上一道高光 */
 .wf-transport .wf-tool.wf-play {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
+  min-width: 0;
   padding: 0;
   border-radius: var(--radius-full);
   background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
@@ -3582,16 +3598,16 @@
   border-radius: var(--radius-none);
 }
 
-/* 舞台窄（并排时工作台约 780 宽，舞台只剩 360 上下）：播放条收紧一档，仍排一行，画面跟着少让一点 */
+/* 舞台窄（并排时工作台约 780 宽，舞台只剩 360 上下）：画面四周少留一点，播放条横向收紧一档、仍排一行，
+   高度和画面到进度条的距离同宽舞台 */
 @container wf-stage (width < 440px) {
   .wf-preview > .editor-hero-wrap,
   .wf-material-preview > .editor-hero-wrap {
-    inset: 16px 16px 72px;
+    inset: 16px 16px 82px;
   }
 
   .wf-transport {
-    gap: 5px;
-    padding: 2px 12px 10px;
+    padding-inline: 12px;
   }
 
   .wf-transport-play,
@@ -3600,14 +3616,8 @@
   }
 
   .wf-transport .wf-tool {
-    height: 28px;
     min-width: 26px;
     padding: 0 5px;
-  }
-
-  .wf-transport .wf-tool.wf-play {
-    width: 30px;
-    height: 30px;
   }
 
   .wf-transport .wf-tool.wf-rate {
@@ -5562,7 +5572,8 @@
   background: var(--color-storyboard-stage);
 }
 
-.wf-material-video {
+.wf-stage .wf-material-video {
   height: auto;
+  border-radius: var(--radius-md);
   object-fit: contain;
 }

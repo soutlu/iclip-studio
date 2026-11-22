@@ -95,6 +95,7 @@ type CanvasSettingsProps = {
 /**
  * 预览舞台右上角的一枚胶囊：左边是画面尺寸（比例小框、简称、· 导出档位、⌄），点开是画面设置浮层；右边是参考线的
  * 快捷开关，有参考线开着时全关，全关着时打开九宫格和安全区。没有档位亮着时简称后面写宽×高（简称已经是宽×高时不重复）。
+ * 平时只露出参考线开关，悬停、键盘聚焦或浮层开着时画面尺寸才展开（只靠样式，见 final-cut.css 的 wf-stage-hud）。
  */
 export function CanvasSettings({ framing, onFraming, layer, ...settings }: CanvasSettingsProps) {
   const { canvas, tier } = settings
