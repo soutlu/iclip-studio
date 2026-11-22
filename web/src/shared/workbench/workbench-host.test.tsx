@@ -676,6 +676,18 @@ describe('WorkbenchHost · 新建', () => {
     expect(screen.queryByRole('button', { name: '新建' })).not.toBeInTheDocument()
   })
 
+  it('「+」菜单开着时点别的页签：一下就切过去，菜单关掉', async () => {
+    serveFiles(['video_shot.json'])
+    await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
+    await openCreateMenu()
+
+    await userEvent.click(screen.getByRole('tab', { name: '文件' }))
+
+    expect(await screen.findByText('画着文件')).toBeVisible()
+    expect(screen.getByRole('tab', { name: '文件', selected: true })).toBeVisible()
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+  })
+
   it('正在建时「+」换成转圈、不能再点', async () => {
     serveFiles(['video_shot.json'])
     let finish = () => {}

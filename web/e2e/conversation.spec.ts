@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { openConversation } from './helpers'
 import { login } from './login'
 
@@ -38,6 +38,30 @@ test('点派活卡的「查看」：右侧打开子代理的过程，地址记�
   await expect(panel.getByText('写第 3 组的三个镜头')).toBeVisible()
   await expect(panel.getByText(/S3-1 特写/)).toBeVisible()
   await expect(page).toHaveURL(/artifact=frame(%3A|:)call_t2_delegate/)
+})
+
+test('工作台变窄、整排页签放不下时：常驻页签不缩窄，只有委派任务页签缩、名字省略', async ({
+  page,
+}) => {
+  const panel = await openConversation(page, '夜景延时素材生成')
+  await page.getByRole('button', { name: '查看子代理过程' }).first().click()
+  const list = panel.getByRole('tablist', { name: '面板内容' })
+  const delegate = list.getByRole('tab', { name: '委派任务 · shot-writer' })
+  await expect(delegate).toBeVisible()
+  const widthOf = (tab: Locator) =>
+    tab.evaluate((element) => Math.round(element.getBoundingClientRect().width))
+  const standing = [
+    list.getByRole('tab', { name: '分镜', exact: true }),
+    list.getByRole('tab', { name: '文件', exact: true }),
+  ]
+  const roomy = await Promise.all(standing.map(widthOf))
+  const roomyDelegate = await widthOf(delegate)
+
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect(list).toBeVisible()
+  // 前提：整排确实放不下，委派任务页签被压窄了
+  await expect.poll(() => widthOf(delegate)).toBeLessThan(roomyDelegate)
+  expect(await Promise.all(standing.map(widthOf))).toEqual(roomy)
 })
 
 test('长对话可以滚动，鼠标离开后正文位置与宽度保持稳定', async ({ page }) => {

@@ -9,9 +9,9 @@ import { IconButton } from '@/shared/ui/button'
 import { Markdown } from '@/shared/ui/markdown'
 import { SourceViewer, type SourceViewerHandle } from '@/shared/ui/source-editor'
 import { toast } from '@/shared/ui/toast'
-import { useOpenArtifact, useWorkbenchRegistry, useWorkspaceFile } from '@/shared/workbench'
+import { RAISED_CARD_HOVER_CLASS, useOpenArtifact, useWorkspaceFile } from '@/shared/workbench'
 import { dirName, fileLookOf, formatBytes, formatWhen, splitFileName } from '../file-kind'
-import { fileOwnerOf } from '../file-owner'
+import { documentToneOf, type FileOwner } from '../file-owner'
 import { formatJson } from '../json-format'
 import { PanelNotice } from './panel-notice'
 import { ToneIcon } from './tone-icon'
@@ -21,7 +21,8 @@ type FilePreviewProps = {
   path: string
   /** 文件列表里的这一项，给头部的大小和时间；文件已不在列表里时没有。 */
   entry: ConversationFileOut | undefined
-  readOnly: boolean
+  /** 这份文件归哪个页签（见 `fileOwnerOf`）：有就给一个直达它的按钮。 */
+  owner: FileOwner | undefined
   /** 窄屏时回到文件列表；宽屏左边一直有目录树，不给。 */
   onBack?: (() => void) | undefined
 }
@@ -31,9 +32,8 @@ const openLabelOf = (title: string): string =>
   /^[\x21-\x7e]/.test(title) ? `打开 ${title}` : `打开${title}`
 
 /** 一份工作区文件的预览：头部是路径、直达页签的按钮和复制，内容按类型排进一张卡片。 */
-export function FilePreview({ conversationId, entry, onBack, path, readOnly }: FilePreviewProps) {
+export function FilePreview({ conversationId, entry, onBack, owner, path }: FilePreviewProps) {
   const file = useWorkspaceFile(conversationId, path)
-  const registry = useWorkbenchRegistry()
   const openArtifact = useOpenArtifact()
   const viewerRef = useRef<SourceViewerHandle>(null)
   const [folded, setFolded] = useState(false)
@@ -46,7 +46,6 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
     [content, kind],
   )
   const look = fileLookOf(path)
-  const owner = fileOwnerOf(registry, path, readOnly)
   // 纯文本（口播文案之类）照正文排，不带行号；代码和 JSON 用原文查看器
   const prose = kind === 'text' && !look.foldable
   const foldable = content !== undefined && !empty && kind !== 'markdown' && !prose
@@ -64,7 +63,8 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    // 面板窄于 320 时头部和内容卡片不再跟着挤，多出来的部分由面板裁掉
+    <div className="flex min-h-0 min-w-80 flex-1 flex-col">
       <div
         className={cn(
           'flex h-12 shrink-0 items-center gap-2.5 border-b border-panel-line pr-3',
@@ -75,7 +75,7 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
           <IconButton label="返回文件列表" name="back" onClick={onBack} size="sm" />
         )}
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-          <ToneIcon name={look.icon} tone={owner?.tone ?? look.tone} />
+          <ToneIcon name={look.icon} tone={documentToneOf(owner) ?? look.tone} />
           <h3 className="flex min-w-[1ch] overflow-hidden text-ui whitespace-nowrap" title={path}>
             <span className="min-w-[1ch] truncate">
               {dir === '' ? null : <span className="text-on-surface-faint">{dir}/</span>}
@@ -95,7 +95,10 @@ export function FilePreview({ conversationId, entry, onBack, path, readOnly }: F
         <div className="flex shrink-0 items-center gap-1.25">
           {owner === undefined ? null : (
             <button
-              className="inline-flex h-7 ui-state cursor-pointer items-center gap-1.25 rounded-sm bg-card pr-2.5 pl-2.25 text-label font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)] ui-focus active:scale-[0.97]"
+              className={cn(
+                'inline-flex h-7 ui-state cursor-pointer items-center gap-1.25 rounded-sm bg-card pr-2.5 pl-2.25 text-label font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)] ui-focus active:scale-[0.97]',
+                RAISED_CARD_HOVER_CLASS,
+              )}
               onClick={() => void openArtifact(owner.artifactId)}
               type="button"
             >

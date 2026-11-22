@@ -3,6 +3,7 @@ import { useTree } from '@headless-tree/react'
 import { Fragment, useEffect, useState, type CSSProperties } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { NO_HOVER_WASH_CLASS } from '@/shared/workbench'
 import { formatBytes } from '../file-kind'
 import { ROOT_ID, type FileTree, type TreeNode } from '../file-tree'
 import { PanelNotice } from './panel-notice'
@@ -118,8 +119,10 @@ export function FileTreeView({
                       node.kind === 'dir'
                         ? 'h-7.5 gap-1.5 px-1.75 font-semibold text-on-surface-variant hover:text-on-surface'
                         : 'h-7.75 gap-1.75 px-2 text-on-surface-variant hover:text-on-surface',
-                      current &&
+                      current && [
                         'bg-card font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)]',
+                        NO_HOVER_WASH_CLASS,
+                      ],
                     )}
                     type="button"
                   >

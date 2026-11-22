@@ -300,7 +300,9 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
                   <TabsTrigger
                     aria-keyshortcuts={closable ? 'Delete' : undefined}
                     className={cn(
-                      'max-w-64 gap-1.25',
+                      'gap-1.25',
+                      // 常驻页签按名字占宽、不缩；委派任务的名字长，最宽 256，整排放不下时只有它缩、名字省略
+                      closable && 'max-w-64 shrink',
                       creation.arrived(artifact.id) &&
                         'motion-safe:animate-in motion-safe:duration-(--dur-m) motion-safe:ease-(--ease-decel) motion-safe:fade-in motion-safe:zoom-in-92',
                     )}

@@ -270,17 +270,41 @@ describe('ArtifactRegistry', () => {
     )
 
     expect(registry.ownerOf('video_shot.json')).toEqual({
+      document: true,
       id: 'file:video_shot.json',
       title: '分镜',
       type: 'storyboard',
     })
     expect(registry.ownerOf('frames/a.json')).toEqual({
+      document: true,
       id: 'file:frames/a.json',
       title: 'frames/a.json',
       type: 'json-view',
     })
-    expect(registry.ownerOf('film.icml')).toEqual({ id: 'editing', title: '剪辑', type: 'editing' })
+    expect(registry.ownerOf('film.icml')).toEqual({
+      document: true,
+      id: 'editing',
+      title: '剪辑',
+      type: 'editing',
+    })
     expect(registry.ownerOf('notes.md')).toBeUndefined()
+  })
+
+  it('任一路径登记了目录时，目录下的其他文件也归它，但不算它的文档，也不让它出现', () => {
+    const registry = registryWith({
+      ...editingEntry,
+      match: { anyPath: ['edit/index.html'], dir: 'edit' },
+    })
+
+    expect(registry.ownerOf('edit/index.html')).toMatchObject({ document: true, id: 'editing' })
+    expect(registry.ownerOf('edit/beats/a.json')).toEqual({
+      document: false,
+      id: 'editing',
+      title: '剪辑',
+      type: 'editing',
+    })
+    expect(registry.ownerOf('editing.md')).toBeUndefined()
+    expect(registry.matchAnyPath([{ path: 'edit/beats/a.json', version: 1 }])).toEqual([])
   })
 
   it('能新建的类型是登记了 create 的那些，按登记顺序给', () => {

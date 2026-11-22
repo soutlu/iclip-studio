@@ -134,17 +134,35 @@
   padding: 0 24px;
   text-align: center;
 }
-/* 脚本面板头部的工具行：保存状态、镜头组切换、复制提示词。 */
+/* 脚本面板头部的工具行：保存状态、镜头组切换、复制提示词。并排时始终一行，放不下的部分被面板裁掉；
+   上下排时见下方容器查询。 */
 .storyboard-toolbar {
   display: flex;
   min-width: 0;
   min-height: var(--storyboard-toolbar-height);
   flex: none;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 6px 12px 6px 14px;
+  overflow: clip;
   border-bottom: 1px solid var(--color-panel-line);
+  white-space: nowrap;
+}
+/* 状态放不下时先截断里面的文字（省略号）；它的按钮和右边的切换器、复制不让位，一直点得到。 */
+.storyboard-toolbar-status {
+  display: flex;
+  min-width: 0;
+  flex: auto;
+  align-items: center;
+  gap: 8px;
+}
+.storyboard-toolbar-status > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.storyboard-toolbar-status > button {
+  flex: none;
 }
 .storyboard-body {
   container: storyboard-body / size;
@@ -276,12 +294,19 @@
     min-width: 0;
     flex: none;
   }
-  /* 工具行吸在舞台下面：往下读文案时换组、复制一直够得着；压在面板里左轨、图片叠放等一层叠层之上。 */
+  /* 工具行吸在舞台下面：往下读文案时换组、复制一直够得着；压在面板里左轨、图片叠放等一层叠层之上。
+     放不下（保存失败、有冲突）时状态独占一行，切换器和复制换到下一行靠右。 */
   .storyboard-toolbar {
     position: sticky;
     z-index: var(--z-local-2);
     top: calc(var(--storyboard-stacked-stage) + var(--storyboard-gap));
+    flex-wrap: wrap;
     background: var(--color-surface);
+    white-space: normal;
+  }
+  .storyboard-toolbar-status {
+    min-width: 0;
+    flex-wrap: wrap;
   }
   .storyboard-prose,
   .storyboard-script-list {
@@ -722,6 +747,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 8px 10px 8px 12px;
+  /* 并排时栏里的文字不折行，放不下的部分被栏裁掉；上下排时状态行照常折行（见下方容器查询）。 */
+  overflow: clip;
+  white-space: nowrap;
 }
 .storyboard-bar-row {
   display: flex;
@@ -900,6 +928,9 @@
   flex: 0 1 auto;
 }
 @container storyboard-workbench (width < 640px) {
+  .storyboard-bar {
+    white-space: normal;
+  }
   .storyboard-bar-model {
     max-width: 120px;
   }
