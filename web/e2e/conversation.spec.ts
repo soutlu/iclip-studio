@@ -40,6 +40,29 @@ test('点派活卡的「查看」：右侧打开子代理的过程，地址记�
   await expect(page).toHaveURL(/artifact=frame(%3A|:)call_t2_delegate/)
 })
 
+test('工作台变窄时页签不缩窄：整排放不下的部分在胶囊里裁掉', async ({ page }) => {
+  const panel = await openConversation(page, '夜景延时素材生成')
+  await page.getByRole('button', { name: '查看子代理过程' }).first().click()
+  const list = panel.getByRole('tablist', { name: '面板内容' })
+  await expect(list.getByRole('tab', { name: '委派任务 · shot-writer' })).toBeVisible()
+  const widths = () =>
+    list
+      .getByRole('tab')
+      .evaluateAll((tabs) => tabs.map((tab) => Math.round(tab.getBoundingClientRect().width)))
+  const roomy = await widths()
+
+  await page.setViewportSize({ height: 844, width: 390 })
+  await expect(list).toBeVisible()
+  const [box, last] = await Promise.all([
+    list.boundingBox(),
+    list.getByRole('tab').last().boundingBox(),
+  ])
+  if (box === null || last === null) throw new Error('页签必须有可见布局')
+  // 前提：整排确实放不下
+  expect(last.x + last.width).toBeGreaterThan(box.x + box.width)
+  expect(await widths()).toEqual(roomy)
+})
+
 test('长对话可以滚动，鼠标离开后正文位置与宽度保持稳定', async ({ page }) => {
   await page.setViewportSize({ height: 900, width: 1594 })
   await openConversation(page, '夜景延时素材生成')

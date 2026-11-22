@@ -3,7 +3,7 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import type { CreatableEntry } from './artifact'
 import { WORKBENCH_BUTTON_CLASS } from './workbench-button'
-import { CreatingMark } from './workbench-create'
+import { CreateButton, CreatingMark } from './workbench-create'
 
 type RailItem = { id: string; title: string; icon: IconName }
 
@@ -47,14 +47,12 @@ export function WorkbenchRail({
             label={entry.label}
           />
         ) : (
-          <IconButton
-            className={cn(WORKBENCH_BUTTON_CLASS, index === 0 && 'mt-auto')}
+          <CreateButton
+            className={cn(index === 0 && 'mt-auto')}
             disabled={creating !== undefined}
             key={entry.type}
             label={`新建 ${entry.label}`}
-            name="add"
             onClick={() => onCreate(entry)}
-            size="sm"
           />
         ),
       )}

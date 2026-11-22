@@ -110,6 +110,7 @@ import {
 } from 'lucide-react'
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { ARTIFACT_GLYPHS } from './artifact-glyphs'
 import { FILE_GLYPHS } from './file-glyphs'
 import { FINAL_CUT_GLYPHS } from './final-cut-glyphs'
 import {
@@ -310,6 +311,7 @@ const ICONS = {
   'zoom-selection': Scan,
   ...FINAL_CUT_GLYPHS,
   ...FILE_GLYPHS,
+  ...ARTIFACT_GLYPHS,
 } as const
 
 export type IconName = keyof typeof ICONS

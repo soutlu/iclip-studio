@@ -55,7 +55,7 @@ const renderPanel = (initialPath = `/c/${CONVERSATION_ID}`, { readOnly = false }
     hiddenWhenReadOnly: true,
     icon: 'film',
     label: 'final-cut',
-    match: { anyPath: ['final-cut/index.html'] },
+    match: { anyPath: ['final-cut/index.html'], dir: 'final-cut' },
     title: () => 'final-cut',
     type: 'final-cut',
   })
@@ -227,6 +227,24 @@ describe('WorkspaceFilesPanel 宽屏：左树右预览', () => {
     await renderPanel(`/c/${CONVERSATION_ID}?file=final-cut/index.html`, { readOnly: true })
     expect(await screen.findByRole('heading', { name: 'final-cut/index.html' })).toBeVisible()
     expect(screen.queryByRole('button', { name: '打开 final-cut' })).not.toBeInTheDocument()
+  })
+
+  it('final-cut/ 下的其他文件也给「打开 final-cut」；还没有主文件时没有 final-cut 页签，也就没有这个按钮', async () => {
+    const user = userEvent.setup()
+    widePanel()
+    seedMockWorkspace(CONVERSATION_ID)
+    putMockWorkspaceFile(CONVERSATION_ID, 'final-cut/locales/en.json', '{}')
+    const sub = `/c/${CONVERSATION_ID}?file=final-cut/locales/en.json`
+    const first = await renderPanel(sub)
+    expect(await screen.findByRole('heading', { name: 'final-cut/locales/en.json' })).toBeVisible()
+    expect(await row('en.json')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.queryByRole('button', { name: '打开 final-cut' })).not.toBeInTheDocument()
+    first.unmount()
+
+    putMockWorkspaceFile(CONVERSATION_ID, 'final-cut/index.html', '<!doctype html>')
+    const { router } = await renderPanel(sub)
+    await user.click(await screen.findByRole('button', { name: '打开 final-cut' }))
+    expect(router.state.location.search).toMatchObject({ artifact: 'final-cut' })
   })
 
   it('agent 增删文件后目录树跟着变；正看着的文件被删就说明白', async () => {

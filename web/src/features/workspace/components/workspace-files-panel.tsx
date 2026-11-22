@@ -4,12 +4,13 @@ import { errorMessageOf } from '@/shared/api/client'
 import type { ConversationFileOut } from '@/shared/api/generated'
 import { useElementSize } from '@/shared/lib/use-element-size'
 import {
+  composeArtifacts,
   useWorkbenchRegistry,
   useWorkspaceFiles,
   WORKSPACE_FILE_SEARCH_KEY,
   type ArtifactRendererProps,
 } from '@/shared/workbench'
-import { fileOwnerOf } from '../file-owner'
+import { documentToneOf, fileOwnerOf } from '../file-owner'
 import { ancestorDirIds, buildFileTree } from '../file-tree'
 import { FilePreview } from './file-preview'
 import { FileTreeView } from './file-tree-view'
@@ -35,7 +36,7 @@ function FloatPanel({ children, label }: { children: ReactNode; label?: string }
   return (
     <section
       aria-label={label}
-      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-panel bg-surface shadow-[var(--shadow-panel),var(--shadow-specular)]"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-clip rounded-panel bg-surface shadow-[var(--shadow-panel),var(--shadow-specular)]"
     >
       {children}
     </section>
@@ -80,12 +81,18 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
   }
 
   const list = files.data?.files
+  // 工作台里现在有的页签（工具帧来的不归任何文件，不用算）
+  const tabs = useMemo(
+    () =>
+      new Set(composeArtifacts(registry, list ?? [], [], readOnly).map((artifact) => artifact.id)),
+    [list, readOnly, registry],
+  )
   const tree = useMemo(
     () =>
       list === undefined
         ? undefined
-        : buildFileTree(list, query, (path) => fileOwnerOf(registry, path, readOnly)?.tone),
-    [list, query, readOnly, registry],
+        : buildFileTree(list, query, (path) => documentToneOf(fileOwnerOf(registry, path, tabs))),
+    [list, query, registry, tabs],
   )
   const hidden = filtering ? filterCollapsed : collapsed
   const expanded = useMemo(
@@ -120,8 +127,8 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
       entry={list?.find((file) => file.path === path)}
       key={path}
       onBack={onBack}
+      owner={fileOwnerOf(registry, path, tabs)}
       path={path}
-      readOnly={readOnly}
     />
   )
 

@@ -1,10 +1,14 @@
 export { frameArtifactId, type ArtifactRendererProps } from './artifact'
 export { ARTIFACT_SEARCH_KEY, useOpenArtifact, WORKSPACE_FILE_SEARCH_KEY } from './artifact-search'
-export { ArtifactRegistry } from './registry'
+export { ArtifactRegistry, composeArtifacts } from './registry'
 export { useWorkbenchCollapsed } from './use-workbench-collapsed'
 export { useWorkbenchOpenRequest } from './use-workbench-open-request'
 export { useWorkbenchRegistry } from './use-workbench-registry'
-export { WORKBENCH_BUTTON_CLASS } from './workbench-button'
+export {
+  NO_HOVER_WASH_CLASS,
+  RAISED_CARD_HOVER_CLASS,
+  WORKBENCH_BUTTON_CLASS,
+} from './workbench-button'
 export { WorkbenchHeaderActions } from './workbench-header-actions'
 export { WorkbenchHeaderSlotContext } from './workbench-header-slot-context'
 export { WorkbenchHost } from './workbench-host'

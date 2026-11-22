@@ -3,6 +3,7 @@ import {
   createFinalCut,
   FILM_PATH,
   FilmPanel,
+  FINAL_CUT_DIR,
   FINAL_CUT_PATH,
   FinalCutPanel,
   SHOTS_PATH,
@@ -18,7 +19,7 @@ workbenchRegistry.register({
   component: StoryboardPanel,
   empty: '暂无',
   frameless: true,
-  icon: 'grid',
+  icon: 'artifact-storyboard',
   label: '分镜',
   match: { path: SHOTS_PATH },
   title: () => '分镜',
@@ -29,23 +30,24 @@ workbenchRegistry.register({
   autoOpen: true,
   component: FilmPanel,
   frameless: true,
-  icon: 'video',
+  icon: 'artifact-film',
   label: '制作',
   match: { path: FILM_PATH },
   title: () => '制作',
   type: 'film',
 })
 
-// 只在工作区里有主文件时才有页签（agent 写的或用户在「+」里新建的）；id 是 final-cut，地址 ?artifact=final-cut
+// 只在工作区里有主文件时才有页签（agent 写的或用户在「+」里新建的）；id 是 final-cut，地址 ?artifact=final-cut。
+// final-cut/ 下的其他文件也归它：文件页预览它们时给「打开 final-cut」
 workbenchRegistry.register({
   autoOpen: false,
   component: FinalCutPanel,
   create: { agentCreatedNotice: 'agent 已创建 final-cut 目录', run: createFinalCut },
   frameless: true,
   hiddenWhenReadOnly: true,
-  icon: 'film',
+  icon: 'final-cut-shots',
   label: 'final-cut',
-  match: { anyPath: [FINAL_CUT_PATH] },
+  match: { anyPath: [FINAL_CUT_PATH], dir: FINAL_CUT_DIR },
   title: () => 'final-cut',
   type: 'final-cut',
 })
@@ -56,7 +58,7 @@ workbenchRegistry.register({
   detail: (source) => (source.kind === 'workspace' ? `${source.fileCount} 个文件` : undefined),
   empty: '暂无',
   frameless: true,
-  icon: 'folder',
+  icon: 'file-folder',
   label: '文件',
   match: { workspace: true },
   title: () => '文件',

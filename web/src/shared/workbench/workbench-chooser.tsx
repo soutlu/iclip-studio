@@ -1,6 +1,7 @@
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import type { CreatableEntry } from './artifact'
+import { RAISED_CARD_HOVER_CLASS } from './workbench-button'
 
 export type ChooserRow = {
   key: string
@@ -83,7 +84,9 @@ export function Chooser({ rows, creatable, creating, onPick, onCreate }: Chooser
                       className={cn(
                         ROW_CLASS,
                         'bg-card font-semibold text-on-surface shadow-[var(--shadow-panel-card),var(--shadow-specular)]',
-                        busy ? 'cursor-default' : 'ui-state cursor-pointer',
+                        busy
+                          ? 'cursor-default'
+                          : ['ui-state cursor-pointer', RAISED_CARD_HOVER_CLASS],
                       )}
                       onClick={() => {
                         if (!busy) onCreate(entry)

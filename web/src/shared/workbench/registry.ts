@@ -71,12 +71,16 @@ export class ArtifactRegistry {
 
   /**
    * 工作区里路径是 `path` 的文件归哪件产物（不看它在不在、只读时显不显示）：确切路径、模式、`anyPath` 依次认，
-   * 都不认时是 undefined。
+   * 再认 `anyPath` 登记的 `dir` 目录，都不认时是 undefined。`document` 是这份文件就是产物本身的文档，
+   * 只因在 `dir` 目录里才归它时为 false。
    */
-  ownerOf(path: string): Pick<Artifact, 'id' | 'title' | 'type'> | undefined {
+  ownerOf(
+    path: string,
+  ): (Pick<Artifact, 'id' | 'title' | 'type'> & { document: boolean }) | undefined {
     const file = this.fileEntryOf(path)
     if (file !== undefined) {
       return {
+        document: true,
         id: fileArtifactId(path),
         title: file.title({ kind: 'file', path, version: 0 }),
         type: file.type,
@@ -85,12 +89,21 @@ export class ArtifactRegistry {
     const listed = this.entries.find(
       (entry) => 'anyPath' in entry.match && entry.match.anyPath.includes(path),
     )
-    return listed === undefined
+    const owner =
+      listed ??
+      this.entries.find(
+        (entry) =>
+          'anyPath' in entry.match &&
+          entry.match.dir !== undefined &&
+          path.startsWith(`${entry.match.dir}/`),
+      )
+    return owner === undefined
       ? undefined
       : {
-          id: listed.type,
-          title: listed.title({ kind: 'paths', paths: [path] }),
-          type: listed.type,
+          document: listed !== undefined,
+          id: owner.type,
+          title: owner.title({ kind: 'paths', paths: [path] }),
+          type: owner.type,
         }
   }
 

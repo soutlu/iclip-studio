@@ -62,7 +62,8 @@ export interface ArtifactCreate {
 /**
  * 一类产物的登记项。`match` 决定它认领什么：
  * - `{ path }` / `{ pattern }`：每份路径命中的文件一件，id 是 `file:<path>`；
- * - `{ anyPath }`：工作区里有其中任一份文件时一件，id 是 `type`；
+ * - `{ anyPath }`：工作区里有其中任一份文件时一件，id 是 `type`；给了 `dir` 时，这个目录下的其他文件也归它
+ *   （文件页给它们「打开 X」直达按钮），但只有 `anyPath` 里的文件让它出现；
  * - `{ workspace: true }`：工作区里有文件时一件，id 是 `workspace`；
  * - `{ displayKind }`：每个展示类型命中的工具调用一件，id 是 `frame:<toolCallId>`。
  * 除 `displayKind` 外都是常驻类型，有产物时总占着页签。`hiddenWhenReadOnly` 为真时，只读查看的
@@ -75,7 +76,7 @@ export interface ArtifactEntry {
   match:
     | { path: string }
     | { pattern: string }
-    | { anyPath: readonly string[] }
+    | { anyPath: readonly string[]; dir?: string }
     | { displayKind: string }
     | { workspace: true }
   label: string

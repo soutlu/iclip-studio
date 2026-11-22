@@ -284,6 +284,37 @@ test('出片工具栏 390px：参数行放不下时，鼠标竖向滚轮横向�
   await expect.poll(() => parentScrollLeft(resolution)).toBe(30)
 })
 
+test('并排时脚本面板的工具行只占一行：保存失败的原因和「重试保存」放不下也不折行', async ({
+  page,
+}) => {
+  // 分镜的保存请求一律失败，工具行上出现失败原因和「重试保存」
+  await page.addInitScript(() => {
+    const send = window.fetch.bind(window)
+    window.fetch = (input, init) =>
+      init?.method === 'PUT' && typeof input === 'string' && input.includes('/workspace/file')
+        ? Promise.reject(new TypeError('Failed to fetch'))
+        : send(input, init)
+  })
+  const panel = await openConversation(page, '夜景延时素材生成')
+  const group = panel.getByRole('region', { name: '镜头组 1', exact: true })
+  const toolbar = panel.getByRole('group', { name: '分镜工具栏' })
+  await group.getByRole('textbox', { name: '镜头 1 的描述', exact: true }).click()
+  await page.keyboard.press('End')
+  await page.keyboard.type('。')
+  await expect(toolbar.getByRole('button', { name: '重试保存' })).toBeVisible()
+
+  const [body, script, bar] = await Promise.all([
+    group.boundingBox(),
+    group.getByRole('region', { name: '分镜文案' }).boundingBox(),
+    toolbar.boundingBox(),
+  ])
+  if (body === null || script === null || bar === null) throw new Error('分镜版面必须有可见布局')
+  // 前提：舞台在左、脚本面板在右并排（上下排时文案和版面左边对齐）
+  expect(script.x).toBeGreaterThan(body.x + body.width / 3)
+  // 48 高加 1px 底线：一行
+  expect(bar.height).toBeLessThanOrEqual(49)
+})
+
 test.describe('移动触屏分镜', () => {
   test.use({ hasTouch: true, isMobile: true })
 
