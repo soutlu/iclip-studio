@@ -8,4 +8,4 @@ export const WORKBENCH_BUTTON_CLASS =
 export const NO_HOVER_WASH_CLASS = '[--color-state-hover:transparent]'
 
 /** 浮起的白色小卡（空态卡片的新建行、文件页的「打开 X」）悬停时更浮起：投影加深、外圈细线变实。和 ui-state 一起用。 */
-export const RAISED_CARD_HOVER_CLASS = `${NO_HOVER_WASH_CLASS} hover:shadow-[var(--shadow-1),0_0_0_1px_var(--color-panel-line-strong),var(--shadow-specular)]`
+export const RAISED_CARD_HOVER_CLASS = `${NO_HOVER_WASH_CLASS} hover:shadow-[var(--shadow-panel),0_0_0_1px_var(--color-panel-line-strong),var(--shadow-specular)]`

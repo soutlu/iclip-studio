@@ -37,7 +37,7 @@ export function SaveStatus({
   if (state.kind === 'error')
     return (
       <>
-        <span className="text-body-sm text-error" role="alert">
+        <span className="text-body-sm text-error" role="alert" title={state.message}>
           {appliedUpload && hasUnsavedChanges ? '已上传图片，' : ''}
           {state.message}
         </span>

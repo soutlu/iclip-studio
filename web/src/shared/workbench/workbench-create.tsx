@@ -24,7 +24,7 @@ export function CreateButton({ className, ...props }: CreateButtonProps) {
         NO_HOVER_WASH_CLASS,
         // 深色的静止底色写在 dark: 上，悬停、展开换回白卡也要各写一遍 dark:，否则静止底色盖过它们
         'hover:bg-card hover:text-on-surface hover:shadow-[var(--shadow-pill),var(--shadow-specular)] dark:hover:bg-card',
-        'data-[state=open]:bg-card data-[state=open]:text-on-surface data-[state=open]:shadow-[var(--shadow-1),0_0_0_1px_var(--color-panel-line-strong),var(--shadow-specular)] dark:data-[state=open]:bg-card',
+        'data-[state=open]:bg-card data-[state=open]:text-on-surface data-[state=open]:shadow-[var(--shadow-panel),0_0_0_1px_var(--color-panel-line-strong),var(--shadow-specular)] dark:data-[state=open]:bg-card',
         className,
       )}
       name="add"

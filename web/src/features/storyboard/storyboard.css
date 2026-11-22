@@ -148,12 +148,21 @@
   border-bottom: 1px solid var(--color-panel-line);
   white-space: nowrap;
 }
-/* 状态按内容占宽，不比内容窄：放不下时把切换器和复制挤出去裁掉，而不是压在它们上面。 */
+/* 状态放不下时先截断里面的文字（省略号）；它的按钮和右边的切换器、复制不让位，一直点得到。 */
 .storyboard-toolbar-status {
   display: flex;
+  min-width: 0;
   flex: auto;
   align-items: center;
   gap: 8px;
+}
+.storyboard-toolbar-status > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.storyboard-toolbar-status > button {
+  flex: none;
 }
 .storyboard-body {
   container: storyboard-body / size;

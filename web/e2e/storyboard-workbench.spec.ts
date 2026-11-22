@@ -303,16 +303,22 @@ test('并排时脚本面板的工具行只占一行：保存失败的原因和�
   await page.keyboard.type('。')
   await expect(toolbar.getByRole('button', { name: '重试保存' })).toBeVisible()
 
-  const [body, script, bar] = await Promise.all([
+  const [body, script, bar, retry, copy] = await Promise.all([
     group.boundingBox(),
     group.getByRole('region', { name: '分镜文案' }).boundingBox(),
     toolbar.boundingBox(),
+    toolbar.getByRole('button', { name: '重试保存' }).boundingBox(),
+    toolbar.getByRole('button', { name: '复制完整提示词', exact: true }).boundingBox(),
   ])
-  if (body === null || script === null || bar === null) throw new Error('分镜版面必须有可见布局')
+  if (body === null || script === null || bar === null || retry === null || copy === null)
+    throw new Error('分镜版面必须有可见布局')
   // 前提：舞台在左、脚本面板在右并排（上下排时文案和版面左边对齐）
   expect(script.x).toBeGreaterThan(body.x + body.width / 3)
   // 48 高加 1px 底线：一行
   expect(bar.height).toBeLessThanOrEqual(49)
+  // 截断的是失败原因的文字：「重试保存」和最右的复制都还在工具行里面，没被裁掉
+  expect(retry.x + retry.width).toBeLessThanOrEqual(copy.x)
+  expect(copy.x + copy.width).toBeLessThanOrEqual(bar.x + bar.width)
 })
 
 test.describe('移动触屏分镜', () => {
