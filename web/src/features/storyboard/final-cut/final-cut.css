@@ -232,16 +232,14 @@
   rotate: 180deg;
 }
 
-/* 两段 / 多段切换：一条带细线的凹槽（同工作台顶栏的分段页签），当前那段是浮起的白块；
+/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块（「镜头」页签里的多一圈细线，见 wf-materials）；
    is-compact 是矮的一档，和旁边 20 高的小块并排时用 */
 .wf-editor .wf-seg {
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-control);
   background: var(--color-surface-container-high);
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
+  box-shadow: var(--shadow-control-well);
 }
 
 /* 悬停只把字变深：交互态叠层（ui-state）的颜色置成透明，只留它的过渡 */
@@ -3351,11 +3349,9 @@
     0 0 0 2.75px var(--color-on-surface);
 }
 
-/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档；浮层是白底，凹槽不描通用分段的那圈细线
-   （两个条件、写在通用分段后面，才压得过它的阴影） */
-.wf-editor .wf-canvas-seg {
+/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档 */
+.wf-canvas-seg {
   display: grid;
-  box-shadow: var(--shadow-control-well);
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
@@ -5011,6 +5007,14 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 14px 4px;
+}
+
+/* 「镜头」页签里的分段（筛选、版本）比通用的多一圈细线，同工作台顶栏的分段页签
+   （和通用分段同样两个条件，写在它后面才压得过它的阴影） */
+.wf-materials .wf-seg {
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
 }
 
 /* 「全部 / 未入轨 / 已入轨」（样子见 wf-seg） */
