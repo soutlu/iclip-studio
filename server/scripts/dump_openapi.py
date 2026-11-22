@@ -9,25 +9,15 @@ from pathlib import Path
 PLACEHOLDER_ENV = {
     "AUTH_SECRET": "openapi-dump-placeholder-secret-0123456789",
     "DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
-    "IMAGE_API_BASE": "https://placeholder.invalid/image",
     "OSS_ACCESS_KEY_ID": "placeholder",
     "OSS_ACCESS_KEY_SECRET": "placeholder",
-    "OSS_BUCKET": "placeholder",
-    "OSS_ENDPOINT": "https://placeholder.invalid",
-    "OSS_PUBLIC_URL_BASE": "https://placeholder.invalid/public",
     "PRODUCT_CATALOG_DATABASE_URL": "postgresql+asyncpg://placeholder:placeholder@127.0.0.1:5432/placeholder",
     "QWEN_MUSIC_API_KEY": "openapi-dump-placeholder",
     "QWEN_SPEECH_API_KEY": "openapi-dump-placeholder",
     "QWEN_SUBTITLE_API_KEY": "openapi-dump-placeholder",
     "RUNTIME_APP_KEY": "openapi-dump-placeholder-runtime-key-0123456789",
     "RUNTIME_INTERNAL_TOKEN": "openapi-dump-placeholder-internal-0123456789",
-    "RUNTIME_URL": "https://placeholder.invalid/runtime",
-    "SSO_BASE_URL": "https://placeholder.invalid/sso",
-    "SSO_REDIRECT_URL": "https://placeholder.invalid/auth/sso/callback",
     "VIDEO_API_KEY": "openapi-dump-placeholder",
-    "VIDEO_ENHANCE_SUBMIT_URL": "https://placeholder.invalid/video/enhance",
-    "VIDEO_STATUS_BASE_URL": "https://placeholder.invalid/video/status",
-    "VIDEO_SUBMIT_URL": "https://placeholder.invalid/video/submit",
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

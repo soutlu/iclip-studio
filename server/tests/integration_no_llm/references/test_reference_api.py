@@ -10,16 +10,16 @@ from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.config.models import IclipStudioSection
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from tests.helpers.app import make_client, make_runtime_config
+from tests.helpers.app import OBJECT_STORE_KEYS, make_client, make_runtime_config
 from tests.helpers.auth import register_and_login, set_roles_in_db
 from tests.helpers.generation import MemoryObjectStore, make_job, trial_request, video_request
 from tests.helpers.pg import reset_database
 from tests.helpers.references import (
-    STUDIO_ENVS,
     FakeArk,
     ark_pipeline,
     config_with_studio,
@@ -43,9 +43,8 @@ def bucket() -> MemoryObjectStore:
 async def studio_app(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch, bucket: MemoryObjectStore
 ) -> AsyncGenerator[FastAPI]:
-    for name, value in STUDIO_ENVS.items():
+    for name, value in OBJECT_STORE_KEYS.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
     engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
@@ -295,19 +294,15 @@ async def test_without_media_generation_there_is_no_test_video(
 
 
 async def test_without_an_object_store_uploads_are_off_but_reruns_still_work(
-    base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
+    base_env: None, migrated_pg: str
 ) -> None:
-    for name, value in STUDIO_ENVS.items():
-        if not name.startswith("OSS_"):
-            monkeypatch.setenv(name, value)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
     engine = build_engine(migrated_pg)
     async with engine.begin() as conn:
         await reset_database(conn)
     breakdowns, tagger = ark_pipeline(FakeArk())
     try:
         app = build_backed_app(
-            config_with_studio(),
+            make_runtime_config().model_copy(update={"iclip_studio": IclipStudioSection()}),
             engine=engine,
             queue_connector=InMemoryConnector(),
             reference_breakdowns=breakdowns,

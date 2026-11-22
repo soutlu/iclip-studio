@@ -18,11 +18,12 @@ from iclip.config import (
     MediaGenerationSection,
     ModelGroupSection,
     MusicSection,
+    ObjectStoreSection,
     OpsSection,
     RuntimeConfig,
+    RuntimeServiceSection,
     SecuritySection,
     SpeechSection,
-    SsoSection,
     SubtitleSection,
     VideoGenerationSection,
 )
@@ -39,7 +40,7 @@ def minimal_config() -> RuntimeConfig:
         app=AppSection(name="t"),
         db=DbSection(schema="iclip"),
         security=SecuritySection(),
-        sso=SsoSection(app_name="iclip"),
+        runtime=RuntimeServiceSection(url="http://runtime.test"),
         ops=OpsSection(log_level="WARNING"),
     )
 
@@ -48,16 +49,16 @@ def minimal_config() -> RuntimeConfig:
 def base_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
     monkeypatch.setenv("AUTH_SECRET", "s" * 32)
-    monkeypatch.setenv("RUNTIME_URL", "http://runtime.test")
     monkeypatch.setenv("RUNTIME_APP_KEY", "r" * 32)
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", "i" * 32)
-    monkeypatch.delenv("SSO_BASE_URL", raising=False)
-    monkeypatch.setenv("OSS_BUCKET", "iclip")
-    monkeypatch.setenv("OSS_ENDPOINT", "https://oss.test")
     monkeypatch.setenv("OSS_ACCESS_KEY_ID", "ak")
     monkeypatch.setenv("OSS_ACCESS_KEY_SECRET", "sk")
-    monkeypatch.setenv("OSS_PUBLIC_URL_BASE", "https://cdn.test")
-    for name in (*MEDIA_ENVS, "QWEN_SUBTITLE_API_KEY", "QWEN_MUSIC_API_KEY", "QWEN_SPEECH_API_KEY"):
+    for name in (
+        "VIDEO_API_KEY",
+        "QWEN_SUBTITLE_API_KEY",
+        "QWEN_MUSIC_API_KEY",
+        "QWEN_SPEECH_API_KEY",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -65,17 +66,12 @@ def engine():
     return build_engine("postgresql+asyncpg://iclip:iclip@localhost:5432/nowhere")
 
 
-MEDIA_ENVS = {
-    "VIDEO_SUBMIT_URL": "https://video.test/generate",
-    "VIDEO_STATUS_BASE_URL": "https://video.test/tasks",
-    "VIDEO_API_KEY": "vk",
-    "IMAGE_API_BASE": "https://image.test/gateway",
-}
-
-
 def config_with_media() -> RuntimeConfig:
     return minimal_config().model_copy(
         update={
+            "object_store": ObjectStoreSection(
+                bucket="iclip", endpoint="https://oss.test", public_url_base="https://cdn.test"
+            ),
             "model_groups": {
                 "default": ModelGroupSection(
                     video_api_key_env="VIDEO_API_KEY",
@@ -86,8 +82,14 @@ def config_with_media() -> RuntimeConfig:
                 )
             },
             "media_generation": MediaGenerationSection(
-                video=VideoGenerationSection(model="seedance", allowed_models=("seedance",)),
+                video=VideoGenerationSection(
+                    submit_url="https://video.test/generate",
+                    status_base_url="https://video.test/tasks",
+                    model="seedance",
+                    allowed_models=("seedance",),
+                ),
                 image=ImageGenerationSection(
+                    api_base="https://image.test/gateway",
                     env="test",
                     text_to_image_task="text-to-image",
                     image_edit_task="image-edit",
@@ -109,8 +111,8 @@ async def test_without_media_generation_the_routes_are_absent(base_env: None) ->
         assert (await client.post("/generations", json={})).status_code == 404
 
 
-@pytest.mark.parametrize("missing", ["RUNTIME_URL", "RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
-def test_startup_fails_without_the_runtime_service(
+@pytest.mark.parametrize("missing", ["RUNTIME_APP_KEY", "RUNTIME_INTERNAL_TOKEN"])
+def test_startup_fails_without_the_runtime_service_keys(
     base_env: None, monkeypatch: pytest.MonkeyPatch, missing: str
 ) -> None:
     monkeypatch.delenv(missing)
@@ -122,8 +124,7 @@ def test_startup_fails_without_the_runtime_service(
 def test_media_generation_without_ffmpeg_fails_at_startup(
     base_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name, value in MEDIA_ENVS.items():
-        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("VIDEO_API_KEY", "vk")
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: False)
 
     with pytest.raises(RuntimeError, match="ffmpeg"):
@@ -135,8 +136,7 @@ def _keep_logging(_level: str, _fmt: str, *, token_path_prefixes: tuple[str, ...
 
 @pytest.fixture
 def local_media_env(base_env: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    for name, value in MEDIA_ENVS.items():
-        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("VIDEO_API_KEY", "vk")
     monkeypatch.setattr("iclip.app.bootstrap.ffmpeg_available", lambda: True)
     monkeypatch.setattr("iclip.app.bootstrap.configure_logging", _keep_logging)
 

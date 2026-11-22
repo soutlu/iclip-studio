@@ -33,7 +33,6 @@ async def media_app(
 ) -> FastAPI:
     for name, value in MEDIA_ENVS.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("FINAL_CUT_RENDER_URL", raising=False)
     return build_backed_app(
         config_with_media(),
         engine=engine,

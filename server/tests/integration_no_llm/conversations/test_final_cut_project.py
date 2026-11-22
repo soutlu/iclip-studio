@@ -39,16 +39,6 @@ def preview_origin() -> str | None:
     return PREVIEW_ORIGIN
 
 
-@pytest.fixture(autouse=True)
-def _preview_env(
-    monkeypatch: pytest.MonkeyPatch, base_env: None, preview_origin: str | None
-) -> None:
-    if preview_origin is None:
-        monkeypatch.delenv("FINAL_CUT_PREVIEW_ORIGIN", raising=False)
-    else:
-        monkeypatch.setenv("FINAL_CUT_PREVIEW_ORIGIN", preview_origin)
-
-
 @pytest.fixture
 async def preview(app: FastAPI) -> AsyncGenerator[httpx.AsyncClient]:
     async with httpx.AsyncClient(

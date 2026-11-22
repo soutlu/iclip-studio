@@ -27,8 +27,8 @@ plugins:
       token_env: RUNTIME_INTERNAL_TOKEN
     # 查图片信息前把本桶的公网地址换成内网地址；服务器不在 OSS 同地域内网时删掉这一段。
     # oss:
-    #   public_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen.aliyuncs.com
-    #   internal_url_base: https://<OSS_BUCKET>.oss-cn-shenzhen-internal.aliyuncs.com
+    #   public_url_base: https://<桶名>.oss-cn-shenzhen.aliyuncs.com
+    #   internal_url_base: https://<桶名>.oss-cn-shenzhen-internal.aliyuncs.com
     # 写了就登记 video_breakdown：拆解交给后端的参考视频。启动时向后端核对，后端要先起来，且 config.yaml 要写
     # iclip_studio 段，否则运行时起不来。
     # video_breakdown: {}

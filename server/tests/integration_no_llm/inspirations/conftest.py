@@ -6,6 +6,7 @@ import pytest
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.config import ProductCatalogSection
 from iclip.platform.db.engine import build_engine
 from tests.helpers.app import make_runtime_config
 from tests.helpers.pdm import recreate_pdm_styles
@@ -44,7 +45,7 @@ async def app(
 ) -> AsyncGenerator[FastAPI]:
     monkeypatch.setenv("PRODUCT_CATALOG_DATABASE_URL", migrated_pg)
     yield build_backed_app(
-        make_runtime_config(),
+        make_runtime_config().model_copy(update={"product_catalog": ProductCatalogSection()}),
         engine=business_engine,
         product_catalog_engine=catalog_engine,
     )

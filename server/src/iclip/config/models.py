@@ -30,17 +30,7 @@ _MIN_SECRET_LENGTH = 32
 
 RequiredEnv = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
-OptionalEnv = Annotated[str, StringConstraints(strip_whitespace=True)]
-
-SSO_BASE_URL_ENV: Final = "SSO_BASE_URL"
-
-DEFAULT_SSO_OAUTH_NAME: Final = "sso"
-
-OSS_BUCKET_ENV: Final = "OSS_BUCKET"
-
-VIDEO_SUBMIT_URL_ENV: Final = "VIDEO_SUBMIT_URL"
-
-VIDEO_ENHANCE_SUBMIT_URL_ENV: Final = "VIDEO_ENHANCE_SUBMIT_URL"
+NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 _MODEL_GROUP_NAME: Final = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -48,15 +38,24 @@ _DEFAULT_MODEL_GROUP: Final = "default"
 
 PRODUCT_CATALOG_DATABASE_URL_ENV: Final = "PRODUCT_CATALOG_DATABASE_URL"
 
-FINAL_CUT_RENDER_URL_ENV: Final = "FINAL_CUT_RENDER_URL"
-
-FINAL_CUT_PREVIEW_ORIGIN_ENV: Final = "FINAL_CUT_PREVIEW_ORIGIN"
-
-RUNTIME_INTERNAL_TOKEN_ENV: Final = "RUNTIME_INTERNAL_TOKEN"
-
-RUNTIME_URL_ENV: Final = "RUNTIME_URL"
-
-RUNTIME_APP_KEY_ENV: Final = "RUNTIME_APP_KEY"
+_MOVED_TO_CONFIG: Final[Mapping[str, str]] = {
+    "SSO_BASE_URL": "sso.base_url",
+    "SSO_REDIRECT_URL": "sso.redirect_url",
+    "PMS_BASE_URL": "sso.pms_base_url",
+    "ROOT_EMAIL": "sso.root_email",
+    "SSO_OAUTH_NAME": "sso.oauth_name",
+    "OSS_BUCKET": "object_store.bucket",
+    "OSS_ENDPOINT": "object_store.endpoint",
+    "OSS_PUBLIC_URL_BASE": "object_store.public_url_base",
+    "OSS_INTERNAL_ENDPOINT": "object_store.internal_endpoint",
+    "VIDEO_SUBMIT_URL": "media_generation.video.submit_url",
+    "VIDEO_STATUS_BASE_URL": "media_generation.video.status_base_url",
+    "VIDEO_ENHANCE_SUBMIT_URL": "media_generation.video.enhance.submit_url",
+    "IMAGE_API_BASE": "media_generation.image.api_base",
+    "FINAL_CUT_RENDER_URL": "final_cut.render_url",
+    "FINAL_CUT_PREVIEW_ORIGIN": "final_cut.preview_origin",
+    "RUNTIME_URL": "runtime.url",
+}
 
 _MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
     "agent_runs": "agent_runs",
@@ -95,62 +94,17 @@ class CoreEnv(EnvSettings):
         return value
 
 
-class SsoEnv(EnvSettings):
-    base_url: RequiredEnv = Field(validation_alias=SSO_BASE_URL_ENV)
-    redirect_url: RequiredEnv = Field(validation_alias="SSO_REDIRECT_URL")
-    pms_base_url: OptionalEnv = Field("", validation_alias="PMS_BASE_URL")
-    root_email: OptionalEnv = Field("", validation_alias="ROOT_EMAIL")
-    oauth_name: OptionalEnv = Field("", validation_alias="SSO_OAUTH_NAME")
-
-
-class ObjectStoreEnv(EnvSettings):
-    bucket: RequiredEnv = Field(validation_alias=OSS_BUCKET_ENV)
-    endpoint: RequiredEnv = Field(validation_alias="OSS_ENDPOINT")
+class ObjectStoreKeysEnv(EnvSettings):
     access_key_id: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_ID")
     access_key_secret: RequiredEnv = Field(validation_alias="OSS_ACCESS_KEY_SECRET")
-    public_url_base: RequiredEnv = Field(validation_alias="OSS_PUBLIC_URL_BASE")
-    internal_endpoint: OptionalEnv = Field("", validation_alias="OSS_INTERNAL_ENDPOINT")
-
-
-class MediaGenerationEnv(EnvSettings):
-    video_submit_url: RequiredEnv = Field(validation_alias=VIDEO_SUBMIT_URL_ENV)
-    video_status_base_url: RequiredEnv = Field(validation_alias="VIDEO_STATUS_BASE_URL")
-    image_api_base: RequiredEnv = Field(validation_alias="IMAGE_API_BASE")
-    video_enhance_submit_url: OptionalEnv = Field("", validation_alias=VIDEO_ENHANCE_SUBMIT_URL_ENV)
 
 
 class ProductCatalogEnv(EnvSettings):
     database_url: RequiredEnv = Field(validation_alias=PRODUCT_CATALOG_DATABASE_URL_ENV)
 
 
-class FinalCutRenderEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=FINAL_CUT_RENDER_URL_ENV)
-
-    @field_validator("url")
-    @classmethod
-    def _http_url(cls, value: str) -> str:
-        parts = urlsplit(value)
-        if parts.scheme not in {"http", "https"} or not parts.netloc:
-            raise ValueError(f"{FINAL_CUT_RENDER_URL_ENV} 必须是 http:// 或 https:// 地址")
-        return value.rstrip("/")
-
-
-class FinalCutPreviewEnv(EnvSettings):
-    origin: RequiredEnv = Field(validation_alias=FINAL_CUT_PREVIEW_ORIGIN_ENV)
-
-    @field_validator("origin")
-    @classmethod
-    def _http_origin(cls, value: str) -> str:
-        origin = value.removesuffix("/")
-        if not is_http_origin(origin):
-            raise ValueError(
-                f"{FINAL_CUT_PREVIEW_ORIGIN_ENV} 必须是 http(s)://主机[:端口]，不带路径"
-            )
-        return origin
-
-
 class RuntimeInternalEnv(EnvSettings):
-    token: RequiredEnv = Field(validation_alias=RUNTIME_INTERNAL_TOKEN_ENV)
+    token: RequiredEnv = Field(validation_alias="RUNTIME_INTERNAL_TOKEN")
 
     @field_validator("token")
     @classmethod
@@ -160,17 +114,8 @@ class RuntimeInternalEnv(EnvSettings):
         return value
 
 
-class RuntimeServiceEnv(EnvSettings):
-    url: RequiredEnv = Field(validation_alias=RUNTIME_URL_ENV)
-    app_key: RequiredEnv = Field(validation_alias=RUNTIME_APP_KEY_ENV)
-
-    @field_validator("url")
-    @classmethod
-    def _http_url(cls, value: str) -> str:
-        parts = urlsplit(value)
-        if parts.scheme not in {"http", "https"} or not parts.netloc:
-            raise ValueError(f"{RUNTIME_URL_ENV} 必须是 http:// 或 https:// 地址")
-        return value.rstrip("/")
+class RuntimeAppKeyEnv(EnvSettings):
+    app_key: RequiredEnv = Field(validation_alias="RUNTIME_APP_KEY")
 
     @field_validator("app_key")
     @classmethod
@@ -178,6 +123,13 @@ class RuntimeServiceEnv(EnvSettings):
         if len(value) < _MIN_SECRET_LENGTH:
             raise ValueError(f"长度必须 ≥ {_MIN_SECRET_LENGTH} 字符")
         return value
+
+
+def _http_address(value: str, where: str) -> str:
+    parts = urlsplit(value)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise ValueError(f"{where} 必须是 http:// 或 https:// 地址")
+    return value.rstrip("/")
 
 
 class AppSection(ConfigSection):
@@ -212,9 +164,22 @@ class SecuritySection(ConfigSection):
 
 class SsoSection(ConfigSection):
     app_name: str
+    base_url: NonEmptyText
+    redirect_url: NonEmptyText
+    pms_base_url: NonEmptyText | None = None
+    root_email: NonEmptyText | None = None
+    oauth_name: NonEmptyText = "sso"
+
+
+class ObjectStoreSection(ConfigSection):
+    bucket: NonEmptyText
+    endpoint: NonEmptyText
+    public_url_base: NonEmptyText
+    internal_endpoint: NonEmptyText | None = None
 
 
 class VideoEnhanceSection(ConfigSection):
+    submit_url: NonEmptyText
     model: str = Field(min_length=1)
     resolutions: tuple[VideoEnhanceResolution, ...] = Field(min_length=1)
     fps: int | None = Field(default=None, ge=15, le=60)
@@ -230,6 +195,8 @@ class VideoEnhanceSection(ConfigSection):
 
 
 class VideoGenerationSection(ConfigSection):
+    submit_url: NonEmptyText
+    status_base_url: NonEmptyText
     model: str
     allowed_models: tuple[
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ...
@@ -251,6 +218,7 @@ class ImageModelSection(ConfigSection):
 
 
 class ImageGenerationSection(ConfigSection):
+    api_base: NonEmptyText
     env: Literal["prod", "uat", "test"]
     text_to_image_task: str = Field(min_length=1)
     image_edit_task: str = Field(min_length=1)
@@ -296,9 +264,6 @@ class MediaGenerationSection(ConfigSection):
     speech: SpeechSection | None = None
 
 
-NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-
-
 class ModelGroupSection(ConfigSection):
     """一个配置组的媒体 key 与网关 model_id；谁在哪个组由 root 在网页上选，存在数据库里。
 
@@ -321,6 +286,39 @@ class ShotVideoSection(ConfigSection):
     pass
 
 
+class ProductCatalogSection(ConfigSection):
+    pass
+
+
+class FinalCutSection(ConfigSection):
+    render_url: NonEmptyText | None = None
+    preview_origin: NonEmptyText | None = None
+
+    @field_validator("render_url")
+    @classmethod
+    def _render_url_is_http(cls, value: str | None) -> str | None:
+        return None if value is None else _http_address(value, "final_cut.render_url")
+
+    @field_validator("preview_origin")
+    @classmethod
+    def _preview_origin_is_bare(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        origin = value.removesuffix("/")
+        if not is_http_origin(origin):
+            raise ValueError("final_cut.preview_origin 必须是 http(s)://主机[:端口]，不带路径")
+        return origin
+
+
+class RuntimeServiceSection(ConfigSection):
+    url: NonEmptyText
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_http(cls, value: str) -> str:
+        return _http_address(value, "runtime.url")
+
+
 class OpsSection(ConfigSection):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     log_format: Literal["console", "json"] = "console"
@@ -332,11 +330,15 @@ class RuntimeConfig(BaseSettings):
     app: AppSection
     db: DbSection
     security: SecuritySection
-    sso: SsoSection
+    sso: SsoSection | None = None
+    object_store: ObjectStoreSection | None = None
     media_generation: MediaGenerationSection | None = None
     shot_video: ShotVideoSection | None = None
     iclip_studio: IclipStudioSection | None = None
+    product_catalog: ProductCatalogSection | None = None
+    final_cut: FinalCutSection = FinalCutSection()
     model_groups: dict[str, ModelGroupSection] | None = None
+    runtime: RuntimeServiceSection
     ops: OpsSection = OpsSection()
 
     @field_validator("model_groups")
@@ -414,6 +416,16 @@ class ResolvedSso:
     pms_base_url: str | None
     root_email: str | None
     oauth_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedObjectStore:
+    bucket: str
+    endpoint: str
+    access_key_id: str
+    access_key_secret: str
+    public_url_base: str
+    internal_endpoint: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,7 +516,7 @@ class ResolvedSettings:
     db_schema: str
     security: ResolvedSecurity
     sso: ResolvedSso | None
-    object_store: ObjectStoreEnv | None
+    object_store: ResolvedObjectStore | None
     media_generation: ResolvedMediaGeneration | None
     model_groups: tuple[str, ...]
     """部署配置里能选给人的配置组名（不含 ``default``），按配置里的先后。"""
@@ -525,8 +537,8 @@ class ResolvedSettings:
         return tuple(
             name
             for name, present in (
-                (VIDEO_SUBMIT_URL_ENV, self.media_generation is not None),
-                (OSS_BUCKET_ENV, self.object_store is not None),
+                ("media_generation", self.media_generation is not None),
+                ("object_store", self.object_store is not None),
             )
             if not present
         )
@@ -548,14 +560,45 @@ def _from_env[EnvT: EnvSettings](cls: type[EnvT]) -> EnvT:
     return cls()
 
 
-def _switched_on(env_name: str) -> bool:
+def _env_has_value(env_name: str) -> bool:
     return bool(os.environ.get(env_name, "").strip())
 
 
-def _resolve_object_store() -> ObjectStoreEnv | None:
-    if not _switched_on(OSS_BUCKET_ENV):
+def _reject_moved_env() -> None:
+    left = [
+        f"环境变量 {name} 已搬到 config.yaml 的 {path}，从 .env 里删掉它"
+        for name, path in _MOVED_TO_CONFIG.items()
+        if _env_has_value(name)
+    ]
+    if left:
+        raise RuntimeError("\n".join(left))
+
+
+def _resolve_sso(section: SsoSection | None) -> ResolvedSso | None:
+    if section is None:
         return None
-    return _from_env(ObjectStoreEnv)
+    return ResolvedSso(
+        base_url=section.base_url,
+        app_name=section.app_name,
+        redirect_url=section.redirect_url,
+        pms_base_url=section.pms_base_url,
+        root_email=section.root_email,
+        oauth_name=section.oauth_name,
+    )
+
+
+def _resolve_object_store(section: ObjectStoreSection | None) -> ResolvedObjectStore | None:
+    if section is None:
+        return None
+    keys = _from_env(ObjectStoreKeysEnv)
+    return ResolvedObjectStore(
+        bucket=section.bucket,
+        endpoint=section.endpoint,
+        access_key_id=keys.access_key_id,
+        access_key_secret=keys.access_key_secret,
+        public_url_base=section.public_url_base,
+        internal_endpoint=section.internal_endpoint,
+    )
 
 
 def _resolve_media_generation(
@@ -564,20 +607,19 @@ def _resolve_media_generation(
     object_store_on: bool,
     model_groups: Mapping[str, ModelGroupSection],
 ) -> ResolvedMediaGeneration | None:
-    if section is None or not _switched_on(VIDEO_SUBMIT_URL_ENV):
+    if section is None:
         return None
     if not object_store_on:
         raise RuntimeError(
-            f"配了 {VIDEO_SUBMIT_URL_ENV} 但对象存储没开：图片生成结果要转存成自己的公开"
-            f"对象，否则库里存的是几天后就失效的签名地址。补上 {OSS_BUCKET_ENV} 那一组"
+            "写了 media_generation 段但没写 object_store 段：图片生成结果要转存成自己的公开"
+            "对象，否则库里存的是几天后就失效的签名地址。补上 object_store 段"
         )
     if _DEFAULT_MODEL_GROUP not in model_groups:
         raise RuntimeError(
             f"model_groups 里没有 {_DEFAULT_MODEL_GROUP}：开了媒体生成，没选组的人要用这一组的 "
             "key 与 model_id，补上它"
         )
-    env = _from_env(MediaGenerationEnv)
-    enhance = _resolve_video_enhance(section.video.enhance, env.video_enhance_submit_url)
+    enhance = _resolve_video_enhance(section.video.enhance)
     subtitle = _resolve_qwen_service(section.subtitle)
     music = _resolve_qwen_service(section.music)
     speech = _resolve_qwen_service(section.speech)
@@ -595,15 +637,15 @@ def _resolve_media_generation(
     }
     default = groups.pop(_DEFAULT_MODEL_GROUP)
     return ResolvedMediaGeneration(
-        video_submit_url=env.video_submit_url,
-        video_status_base_url=env.video_status_base_url,
+        video_submit_url=section.video.submit_url,
+        video_status_base_url=section.video.status_base_url,
         video_model=section.video.model,
         video_allowed_models=section.video.allowed_models,
         video_enhance=enhance,
         image_models=tuple(
             ResolvedImageModel(
                 name=name,
-                api_base=f"{env.image_api_base.rstrip('/')}/{model.route.strip('/')}",
+                api_base=f"{section.image.api_base.rstrip('/')}/{model.route.strip('/')}",
                 concurrency=model.concurrency,
                 text_to_image_task=model.text_to_image_task,
                 image_edit_task=model.image_edit_task,
@@ -671,18 +713,11 @@ def _group_key(where: str, field: str, env_name: str | None) -> str:
     return value
 
 
-def _resolve_video_enhance(
-    section: VideoEnhanceSection | None, submit_url: str
-) -> ResolvedVideoEnhance | None:
-    if not submit_url:
-        return None
+def _resolve_video_enhance(section: VideoEnhanceSection | None) -> ResolvedVideoEnhance | None:
     if section is None:
-        raise RuntimeError(
-            f"配了 {VIDEO_ENHANCE_SUBMIT_URL_ENV} 却没写 media_generation.video.enhance 段："
-            "高清版用哪个模型、提到哪几档都写在那里。补上它，或者清空这个地址"
-        )
+        return None
     return ResolvedVideoEnhance(
-        submit_url=submit_url,
+        submit_url=section.submit_url,
         model=section.model,
         resolutions=section.resolutions,
         fps=section.fps,
@@ -705,58 +740,41 @@ def _resolve_iclip_studio(section: IclipStudioSection | None) -> ResolvedIclipSt
     return ResolvedIclipStudio(breakdown_concurrency=section.breakdown_concurrency)
 
 
-def _resolve_product_catalog() -> ResolvedProductCatalog | None:
-    if not _switched_on(PRODUCT_CATALOG_DATABASE_URL_ENV):
+def _resolve_product_catalog(
+    section: ProductCatalogSection | None,
+) -> ResolvedProductCatalog | None:
+    if section is None:
+        if _env_has_value(PRODUCT_CATALOG_DATABASE_URL_ENV):
+            raise RuntimeError(
+                f"环境变量 {PRODUCT_CATALOG_DATABASE_URL_ENV} 有值但 config.yaml 没写 product_catalog "
+                "段：要开产品资料查询就写 product_catalog: {}，不开就从 .env 里删掉这个变量"
+            )
         return None
-    env = _from_env(ProductCatalogEnv)
-    return ResolvedProductCatalog(database_url=env.database_url)
+    return ResolvedProductCatalog(database_url=_from_env(ProductCatalogEnv).database_url)
 
 
 def _resolve_final_cut_render(
-    *, object_store_on: bool, media_generation_on: bool
+    render_url: str | None, *, object_store_on: bool, media_generation_on: bool
 ) -> ResolvedFinalCutRender | None:
-    if not _switched_on(FINAL_CUT_RENDER_URL_ENV):
+    if render_url is None:
         return None
     missing: list[str] = []
     if not object_store_on:
-        missing.append(f"对象存储（{OSS_BUCKET_ENV} 那一组）")
+        missing.append("object_store 段")
     if not media_generation_on:
-        missing.append(f"媒体生成（media_generation 段与 {VIDEO_SUBMIT_URL_ENV} 那一组）")
+        missing.append("media_generation 段")
     if missing:
         raise RuntimeError(
-            f"配了 {FINAL_CUT_RENDER_URL_ENV} 但没开{'与'.join(missing)}：每次导出是一条生成记录，"
-            f"由生成队列交给渲染服务，成片上传进桶。补上它们"
+            f"写了 final_cut.render_url 但没写{'与'.join(missing)}：每次导出是一条生成记录，"
+            "由生成队列交给渲染服务，成片上传进桶。补上它们"
         )
-    return ResolvedFinalCutRender(url=_from_env(FinalCutRenderEnv).url)
-
-
-def _resolve_final_cut_preview_origin() -> str | None:
-    if not _switched_on(FINAL_CUT_PREVIEW_ORIGIN_ENV):
-        return None
-    return _from_env(FinalCutPreviewEnv).origin
-
-
-def _resolve_runtime_service() -> ResolvedRuntimeService:
-    env = _from_env(RuntimeServiceEnv)
-    return ResolvedRuntimeService(url=env.url, app_key=env.app_key)
+    return ResolvedFinalCutRender(url=render_url)
 
 
 def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
+    _reject_moved_env()
     core = _from_env(CoreEnv)
-
-    sso: ResolvedSso | None = None
-    if _switched_on(SSO_BASE_URL_ENV):
-        env = _from_env(SsoEnv)
-        sso = ResolvedSso(
-            base_url=env.base_url,
-            app_name=config.sso.app_name,
-            redirect_url=env.redirect_url,
-            pms_base_url=env.pms_base_url or None,
-            root_email=env.root_email or None,
-            oauth_name=env.oauth_name or DEFAULT_SSO_OAUTH_NAME,
-        )
-
-    object_store = _resolve_object_store()
+    object_store = _resolve_object_store(config.object_store)
     model_groups = config.model_groups or {}
     media_generation = _resolve_media_generation(
         config.media_generation,
@@ -773,20 +791,23 @@ def resolve_settings(config: RuntimeConfig) -> ResolvedSettings:
             cookie_secure=config.security.cookie_secure,
             cors_allow_origins=config.security.cors_allow_origins,
         ),
-        sso=sso,
+        sso=_resolve_sso(config.sso),
         object_store=object_store,
         media_generation=media_generation,
         model_groups=tuple(name for name in model_groups if name != _DEFAULT_MODEL_GROUP),
         shot_video=config.shot_video is not None,
         iclip_studio=_resolve_iclip_studio(config.iclip_studio),
-        product_catalog=_resolve_product_catalog(),
+        product_catalog=_resolve_product_catalog(config.product_catalog),
         final_cut_render=_resolve_final_cut_render(
+            config.final_cut.render_url,
             object_store_on=object_store is not None,
             media_generation_on=media_generation is not None,
         ),
-        final_cut_preview_origin=_resolve_final_cut_preview_origin(),
+        final_cut_preview_origin=config.final_cut.preview_origin,
         runtime_internal_token=_from_env(RuntimeInternalEnv).token,
-        runtime_service=_resolve_runtime_service(),
+        runtime_service=ResolvedRuntimeService(
+            url=config.runtime.url, app_key=_from_env(RuntimeAppKeyEnv).app_key
+        ),
         log_level=config.ops.log_level,
         log_format=config.ops.log_format,
     )

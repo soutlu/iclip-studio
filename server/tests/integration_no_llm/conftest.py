@@ -18,7 +18,7 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.pool import NullPool
 
-from iclip.config import RuntimeConfig
+from iclip.config import RuntimeConfig, SsoSection
 from iclip.domains.identity.pms import PmsUserClient
 from iclip.domains.identity.sso import SsoVerifier
 from iclip.platform.db.engine import build_engine
@@ -35,7 +35,6 @@ from tests.helpers.pg import connected, reset_database
 from tests.helpers.runtime_backed import (
     RUNTIME_APP_KEY,
     RUNTIME_INTERNAL_TOKEN,
-    RUNTIME_URL,
     build_backed_app,
     config_services_of,
     standard_plugins,
@@ -93,16 +92,9 @@ def base_env(monkeypatch: pytest.MonkeyPatch, migrated_pg: str) -> None:
     monkeypatch.setenv("DATABASE_URL", migrated_pg)
     monkeypatch.setenv("AUTH_SECRET", TEST_SECRET)
     monkeypatch.setenv("CREDENTIAL_ENCRYPTION_KEYS", TEST_CREDENTIAL_KEY)
-    monkeypatch.setenv("RUNTIME_URL", RUNTIME_URL)
     monkeypatch.setenv("RUNTIME_APP_KEY", RUNTIME_APP_KEY)
     monkeypatch.setenv("RUNTIME_INTERNAL_TOKEN", RUNTIME_INTERNAL_TOKEN)
-    monkeypatch.delenv("SSO_BASE_URL", raising=False)
-    monkeypatch.delenv("PMS_BASE_URL", raising=False)
-    monkeypatch.delenv("SSO_REDIRECT_URL", raising=False)
-    monkeypatch.delenv("ROOT_EMAIL", raising=False)
-    monkeypatch.delenv("SSO_OAUTH_NAME", raising=False)
     monkeypatch.delenv("PRODUCT_CATALOG_DATABASE_URL", raising=False)
-    monkeypatch.delenv("OSS_BUCKET", raising=False)
 
 
 async def _reset(url: str) -> None:
@@ -163,6 +155,11 @@ def cookie_secure() -> bool:
 
 
 @pytest.fixture
+def preview_origin() -> str | None:
+    return None
+
+
+@pytest.fixture
 async def app(
     base_env: None,
     engine: AsyncEngine,
@@ -171,10 +168,15 @@ async def app(
     runtime_plugins: PluginRegistry | PluginBinder,
     cors_allow_origins: tuple[str, ...],
     cookie_secure: bool,
+    preview_origin: str | None,
     tmp_path: Path,
 ) -> FastAPI:
     built = _build_app(
-        make_runtime_config(cors_allow_origins=cors_allow_origins, cookie_secure=cookie_secure),
+        make_runtime_config(
+            cors_allow_origins=cors_allow_origins,
+            cookie_secure=cookie_secure,
+            preview_origin=preview_origin,
+        ),
         engine,
         models,
         runtime_plugins,
@@ -192,13 +194,14 @@ def ws_agent_app(
     agent_seeds: tuple[AgentSeed, ...],
     models: Mapping[str, Model],
     cors_allow_origins: tuple[str, ...],
+    preview_origin: str | None,
     runtime_plugins: PluginRegistry | PluginBinder,
     tmp_path: Path,
 ) -> Generator[FastAPI]:
     asyncio.run(_reset(migrated_pg))
     engine = build_engine(migrated_pg, poolclass=NullPool)
     built = _build_app(
-        make_runtime_config(cors_allow_origins=cors_allow_origins),
+        make_runtime_config(cors_allow_origins=cors_allow_origins, preview_origin=preview_origin),
         engine,
         models,
         runtime_plugins,
@@ -222,7 +225,6 @@ def sso_oauth_name() -> str | None:
 
 @pytest.fixture
 async def sso_app(
-    monkeypatch: pytest.MonkeyPatch,
     base_env: None,
     migrated_pg: str,
     sso_transport: httpx.MockTransport,
@@ -230,31 +232,31 @@ async def sso_app(
     root_email: str | None,
     sso_oauth_name: str | None,
 ) -> AsyncGenerator[FastAPI]:
-    monkeypatch.setenv("SSO_BASE_URL", "https://sso.test")
-    monkeypatch.setenv("SSO_REDIRECT_URL", "https://app.test/auth/sso/landing")
-    if root_email:
-        monkeypatch.setenv("ROOT_EMAIL", root_email)
-    if sso_oauth_name:
-        monkeypatch.setenv("SSO_OAUTH_NAME", sso_oauth_name)
-    if pms_transport is not None:
-        monkeypatch.setenv("PMS_BASE_URL", "https://pms.test")
-
-    verifier = SsoVerifier(
-        base_url="https://sso.test",
+    sso = SsoSection(
         app_name="iclip",
+        base_url="https://sso.test",
         redirect_url="https://app.test/auth/sso/landing",
+        pms_base_url="https://pms.test" if pms_transport is not None else None,
+        root_email=root_email,
+    )
+    if sso_oauth_name:
+        sso = sso.model_copy(update={"oauth_name": sso_oauth_name})
+    verifier = SsoVerifier(
+        base_url=sso.base_url,
+        app_name=sso.app_name,
+        redirect_url=sso.redirect_url,
         transport=sso_transport,
     )
     pms = (
-        PmsUserClient(base_url="https://pms.test", transport=pms_transport)
-        if pms_transport is not None
+        PmsUserClient(base_url=sso.pms_base_url, transport=pms_transport)
+        if sso.pms_base_url is not None
         else None
     )
     await _reset(migrated_pg)
     engine = build_engine(migrated_pg)
     try:
         yield build_backed_app(
-            make_runtime_config(),
+            make_runtime_config().model_copy(update={"sso": sso}),
             engine=engine,
             sso_verifier=verifier,
             pms_client=pms,

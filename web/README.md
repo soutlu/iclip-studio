@@ -21,7 +21,7 @@ HOST=127.0.0.1 PORT=3015 VITE_BACKEND_PROXY_TARGET=http://127.0.0.1:7789 pnpm de
 
 `final-cut` 编辑器的预览运行在独立预览域名的沙箱页（`/final-cut-preview.html`）中（规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)）。本地利用 `localhost` 与 `127.0.0.1`（同端口）区分主应用与预览两个站点：
 
-- **`pnpm dev`**：将根目录 `.env` 中的 `FINAL_CUT_PREVIEW_ORIGIN` 设为主应用所用主机名之外的另一个（例如用 `http://localhost:3013` 访问应用时，设为 `http://127.0.0.1:3013`）；未配置时预览无法加载。
+- **`pnpm dev`**：将 `server/configs/config.yaml` 中的 `final_cut.preview_origin` 设为主应用所用主机名之外的另一个（例如用 `http://localhost:3013` 访问应用时，设为 `http://127.0.0.1:3013`）；未配置时预览无法加载。
 - **`pnpm dev:mock`**：无需配置，开发服务器会自动切换到另一主机名托管预览页并响应来源核对请求。
 
 ### 组件库与 Mock 模式

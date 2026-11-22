@@ -4,9 +4,9 @@
 # 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
 # ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 后端、前端与渲染服务的镜像版本、RUNTIME_IMAGE_TAG 运行时服务的镜像版本
 # （都缺省 latest，两边分开记、可以分开升级，步骤见 docs/deploy.md「升级」）、WEB_PORT 对外端口（缺省 80，改了
-# SSO_REDIRECT_URL 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务允许取素材的主机，以及运行时服务那几项（见 runtime 段）。后端的应用变量见 server/src/iclip/config/models.py。
+# config.yaml 里 sso.redirect_url 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务允许取素材的主机，以及运行时服务那几项（见 runtime 段）。后端的密钥变量见 server/src/iclip/config/models.py。
 # 运行配置不进镜像也不进仓库：同目录的 configs/ 只读挂进后端（config.yaml）与运行时服务（runtime.yaml，样例是
-# deploy/runtime.example.yaml），改了要 up -d。模型、agent 与技能存在数据库里，在配置页里改。组件库也不进镜像：同目录的 components/（catalog.json、
+# deploy/runtime.example.yaml），改了要 restart 对应的服务。模型、agent 与技能存在数据库里，在配置页里改。组件库也不进镜像：同目录的 components/（catalog.json、
 # <版本号>/ 与各版本共用的 vendor/）只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
 
 services:
@@ -36,7 +36,7 @@ services:
       start_period: 20s
 
   # Agent 运行时服务：消息与运行、transcript、实时通道的上游、工作区文件、配置页的管理接口。只在 compose
-  # 网络里可达（后端 RUNTIME_URL=http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 或
+  # 网络里可达（后端 config.yaml 的 runtime.url: http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 或
   # video_breakdown 时启动就向后端的内部接口核对插件服务；后端启动时连不上运行时不影响启动，事件流会自己重连。
   runtime:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-runtime:${RUNTIME_IMAGE_TAG:-latest}
@@ -62,7 +62,7 @@ services:
       retries: 5
       start_period: 20s
 
-  # 成片导出的渲染服务：只在 compose 网络里可达（后端 FINAL_CUT_RENDER_URL=http://render:8080），
+  # 成片导出的渲染服务：只在 compose 网络里可达（后端 config.yaml 的 final_cut.render_url: http://render:8080），
   # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「成片渲染服务」。
   render:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-render:${IMAGE_TAG:-latest}

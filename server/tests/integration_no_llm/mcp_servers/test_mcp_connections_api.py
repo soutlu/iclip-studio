@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from pydantic_ai.models import Model
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from iclip.config import SsoSection
 from tests.helpers.agents import TEST_PROVIDER, AgentSeed, model_builder, seed_agents
 from tests.helpers.app import TEST_MODEL_NAME, make_client, make_runtime_config, new_conversation
 from tests.helpers.auth import login_as_editor, register_and_login, set_roles_in_db
@@ -44,7 +45,6 @@ def sso_on() -> bool:
 
 @pytest.fixture
 def app(
-    monkeypatch: pytest.MonkeyPatch,
     base_env: None,
     engine: AsyncEngine,
     auth_server: FakeAuthServer,
@@ -52,11 +52,17 @@ def app(
     models: Mapping[str, Model],
     tmp_path: Path,
 ) -> FastAPI:
-    if sso_on:
-        monkeypatch.setenv("SSO_BASE_URL", "https://sso.test")
-        monkeypatch.setenv("SSO_REDIRECT_URL", f"{APP_ORIGIN}/auth/sso/landing")
+    sso = (
+        SsoSection(
+            app_name="iclip",
+            base_url="https://sso.test",
+            redirect_url=f"{APP_ORIGIN}/auth/sso/landing",
+        )
+        if sso_on
+        else None
+    )
     return build_backed_app(
-        make_runtime_config(),
+        make_runtime_config().model_copy(update={"sso": sso}),
         engine=engine,
         build_model=model_builder(models),
         credential_probe=KeyCheckingProbe({GOOD_KEY}),

@@ -49,11 +49,11 @@ VIDEO_SETTINGS = VideoProviderSettings(
     status_base_url="https://video.test/tasks",
 )
 VIDEO_GROUPS = default_only(video_api_key="secret-key")
-IMAGE_API_BASE = "https://image.test/nano-banana-pro"
-IMAGE_TEXT_TO_IMAGE_URL = f"{IMAGE_API_BASE}/text-to-image"
-IMAGE_EDIT_URL = f"{IMAGE_API_BASE}/image-edit"
+NANO_IMAGE_API_BASE = "https://image.test/nano-banana-pro"
+IMAGE_TEXT_TO_IMAGE_URL = f"{NANO_IMAGE_API_BASE}/text-to-image"
+IMAGE_EDIT_URL = f"{NANO_IMAGE_API_BASE}/image-edit"
 IMAGE_SETTINGS = GatewayImageSettings(
-    api_base=IMAGE_API_BASE,
+    api_base=NANO_IMAGE_API_BASE,
     env="test",
     text_to_image_task="text-to-image",
     image_edit_task="image-edit",

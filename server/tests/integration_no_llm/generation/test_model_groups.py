@@ -53,7 +53,7 @@ pytestmark = [
 MODEL = "vendor-a-seedance-2-5"
 ENHANCE_MODEL = "video-enhance"
 
-VIDEO_SUBMIT_URL = "https://video.test/generate"
+VIDEO_GENERATE_URL = "https://video.test/generate"
 VIDEO_STATUS_URL = "https://video.test/tasks"
 ENHANCE_URL = "https://video.test/videos/enhance/async"
 ASR_URL = "https://asr.test/generation"
@@ -121,7 +121,7 @@ class Upstream:
                 model=body.get("model"),
             )
         )
-        if url in (VIDEO_SUBMIT_URL, ENHANCE_URL):
+        if url in (VIDEO_GENERATE_URL, ENHANCE_URL):
             return httpx.Response(200, json={"task_id": "t-1"})
         if url.startswith(VIDEO_STATUS_URL):
             return httpx.Response(
@@ -174,7 +174,7 @@ def _module(
         lineage=FixedLineage(),
         references=FakeReferenceAssets(),
         video=VideoProviderSettings(
-            submit_url=VIDEO_SUBMIT_URL,
+            submit_url=VIDEO_GENERATE_URL,
             status_base_url=VIDEO_STATUS_URL,
             enhance_submit_url=ENHANCE_URL,
         ),
@@ -297,9 +297,9 @@ async def test_each_user_reaches_upstream_with_their_groups_key_and_model_id(
         STATUS_COMPLETED,
     ], [job.error_message for job in (take, edit, enhance, subtitle, music)]
     assert upstream.sent == [
-        Sent(VIDEO_SUBMIT_URL, video_key, video_model),
+        Sent(VIDEO_GENERATE_URL, video_key, video_model),
         Sent(f"{VIDEO_STATUS_URL}/t-1", video_key, None),
-        Sent(VIDEO_SUBMIT_URL, video_key, video_model),
+        Sent(VIDEO_GENERATE_URL, video_key, video_model),
         Sent(ENHANCE_URL, video_key, enhance_model),
         Sent(ASR_URL, f"Bearer {asr_key}", SUBTITLE_MODEL),
         Sent(MUSIC_URL, f"Bearer {music_key}", MUSIC_MODEL),

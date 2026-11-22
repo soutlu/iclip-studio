@@ -8,13 +8,12 @@ from sqlalchemy import text
 from iclip.app.bootstrap import build_app
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from tests.helpers.app import make_client
+from tests.helpers.app import OBJECT_STORE_KEYS, make_client
 from tests.helpers.auth import login_as_editor
 from tests.helpers.generation import MemoryObjectStore
 from tests.helpers.pg import connected, reset_database, truncate_clean
 from tests.helpers.references import (
     DOCUMENT,
-    STUDIO_ENVS,
     FakeArk,
     ark_pipeline,
     config_with_studio,
@@ -33,9 +32,8 @@ async def _workers(pg_url: str) -> int:
 async def test_breakdowns_and_tagging_run_in_the_app_lifespan_without_media_generation(
     base_env: None, migrated_pg: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name, value in STUDIO_ENVS.items():
+    for name, value in OBJECT_STORE_KEYS.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("VIDEO_SUBMIT_URL", raising=False)
     async with connected(migrated_pg) as conn:
         await reset_database(conn)
         await truncate_clean(conn, ("procrastinate_jobs", "procrastinate_workers"), cascade=True)

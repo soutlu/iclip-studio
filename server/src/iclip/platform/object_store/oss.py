@@ -174,19 +174,17 @@ def validate_public_url_base(value: str) -> str:
     base = value.strip().rstrip("/")
     parts = urlsplit(base)
     if parts.scheme not in {"http", "https"} or not parts.netloc:
-        raise ValueError("对象存储的公网访问前缀必须是 http:// 或 https:// 地址")
+        raise ValueError("object_store.public_url_base 必须是 http:// 或 https:// 地址")
     return base
 
 
-def validate_internal_endpoint(value: str) -> str | None:
+def validate_internal_endpoint(value: str) -> str:
     endpoint = value.strip().rstrip("/")
-    if not endpoint:
-        return None
     parts = urlsplit(endpoint)
     if parts.scheme not in {"http", "https"} or not parts.netloc:
-        raise ValueError("OSS_INTERNAL_ENDPOINT 必须是 http:// 或 https:// 地址")
+        raise ValueError("object_store.internal_endpoint 必须是 http:// 或 https:// 地址")
     if parts.path or parts.query or parts.fragment:
-        raise ValueError("OSS_INTERNAL_ENDPOINT 只写 scheme 与 host，不带路径或查询串")
+        raise ValueError("object_store.internal_endpoint 只写 scheme 与 host，不带路径或查询串")
     return endpoint
 
 
