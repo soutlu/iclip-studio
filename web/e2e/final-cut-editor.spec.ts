@@ -8,6 +8,7 @@ import {
   openFinalCut,
   pauseMockResponses,
   releaseMockResponses,
+  widenWorkbench,
 } from './helpers'
 
 /**
@@ -1354,7 +1355,7 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await expect(side.getByRole('list', { name: '贴片' })).toBeVisible()
 })
 
-test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行，放不下的被卡片裁掉，页面没有横向滚动条', async ({
+test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行，放不下的被卡片裁掉，右栏内容照最窄排、被裁的能横着滑过去，页面没有横向滚动条', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1413,6 +1414,87 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   await expect(last).toBeFocused()
   expect((await boxOf(toolbar.getByRole('button', { name: '撤销' }))).x).toBe(undo.x)
   expect((await boxOf(editor)).x).toBe(workspace.x)
+
+  // 右栏比内容窄：出片卡片不跟着变窄，右边被裁掉；筛选的三个按钮排一行；收起按钮还在右栏里
+  const sideBox = await boxOf(side)
+  const card = await boxOf(
+    side.getByRole('group', { name: '镜头组 2' }).getByRole('article', { name: '出片 A' }),
+  )
+  expect(card.width).toBeGreaterThan(sideBox.width)
+  expect(card.x + card.width).toBeGreaterThan(sideBox.x + sideBox.width)
+  const filters = side.getByRole('group', { name: '素材筛选' }).getByRole('button')
+  await expect(filters).toHaveCount(3)
+  const filterTops = await Promise.all(
+    (await filters.all()).map(async (each) => (await boxOf(each)).y),
+  )
+  expect(new Set(filterTops).size).toBe(1)
+  const toggle = await boxOf(side.getByRole('button', { name: '收起右栏' }))
+  expect(toggle.x + toggle.width).toBeLessThanOrEqual(sideBox.x + sideBox.width)
+  // 在右栏内容上横向滚轮：内容左移，导航、编辑器和页面都不动
+  const shots = side.getByRole('tabpanel', { name: '镜头' })
+  const shotsBefore = await boxOf(shots)
+  await page.mouse.move(sideBox.x + sideBox.width / 2, shotsBefore.y + 200)
+  await page.mouse.wheel(200, 0)
+  await expect.poll(async () => (await boxOf(shots)).x).toBeLessThan(shotsBefore.x)
+  expect((await boxOf(side.getByRole('tab', { name: '镜头' }))).x).toBe(firstTab.x)
+  expect((await boxOf(editor)).x).toBe(workspace.x)
+  expect(await page.evaluate(() => window.scrollX)).toBe(0)
+})
+
+test('拖右栏分割条：往右拖变窄、内容被裁；拖过头收成竖轨，同一次拖回来又展开；松手、刷新后宽度还在；拖过头松手再展开回到拖之前的宽度', async ({
+  page,
+}) => {
+  const panel = await openConversation(page, '夜景延时素材生成')
+  await widenWorkbench(page)
+  const editor = await createFinalCut(panel)
+  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const sideSplitter = editor.getByRole('button', { name: '调整右栏宽度' })
+  const start = await boxOf(side)
+  expect(start.width).toBeGreaterThanOrEqual(376)
+  const grip = await boxOf(sideSplitter)
+  const y = grip.y + grip.height / 2
+  // 指针从分割条中间起，右栏右沿不动：右栏宽 = 右沿 - 指针 - 半条分割条
+  const pointerFor = (width: number) => start.x + start.width - width - grip.width / 2
+
+  await page.mouse.move(grip.x + grip.width / 2, y)
+  await page.mouse.down()
+  await page.mouse.move(pointerFor(240), y, { steps: 8 })
+  await expect.poll(async () => Math.round((await boxOf(side)).width)).toBe(240)
+  const card = await boxOf(
+    side.getByRole('group', { name: '镜头组 2' }).getByRole('article', { name: '出片 A' }),
+  )
+  expect(card.x + card.width).toBeGreaterThan(start.x + start.width)
+
+  // 拖过头：收成 50 宽的竖轨
+  await page.mouse.move(pointerFor(80), y, { steps: 4 })
+  await expect(side.getByRole('button', { name: '展开右栏' })).toBeVisible()
+  await expect.poll(async () => Math.round((await boxOf(side)).width)).toBe(50)
+  // 同一次拖回来又展开、跟着指针
+  await page.mouse.move(pointerFor(300), y, { steps: 8 })
+  await expect.poll(async () => Math.round((await boxOf(side)).width)).toBe(300)
+  await expect(side.getByRole('tabpanel', { name: '镜头' })).toBeVisible()
+  await page.mouse.up()
+
+  // 刷新后重新登录会把侧边栏展开（工作台宽度记着）：再收起，免得右栏被窄工作台夹窄
+  await page.reload()
+  const panelAgain = await openConversation(page, '夜景延时素材生成')
+  await page.getByRole('button', { name: '折叠侧边栏' }).click()
+  const reopened = await openFinalCut(panelAgain)
+  const sideAgain = reopened.getByRole('complementary', {
+    name: '镜头、贴片、场景、配乐、字幕和属性',
+  })
+  await expect.poll(async () => Math.round((await boxOf(sideAgain)).width)).toBe(300)
+
+  // 再拖过头松手：收着；点「展开右栏」回到这次拖之前的 300
+  const gripAgain = await boxOf(reopened.getByRole('button', { name: '调整右栏宽度' }))
+  const yAgain = gripAgain.y + gripAgain.height / 2
+  await page.mouse.move(gripAgain.x + gripAgain.width / 2, yAgain)
+  await page.mouse.down()
+  await page.mouse.move(gripAgain.x + 300, yAgain, { steps: 8 })
+  await page.mouse.up()
+  await expect.poll(async () => Math.round((await boxOf(sideAgain)).width)).toBe(50)
+  await sideAgain.getByRole('button', { name: '展开右栏' }).click()
+  await expect.poll(async () => Math.round((await boxOf(sideAgain)).width)).toBe(300)
 })
 
 // 下面几条在默认布局下跑：侧边栏展开，工作台约 776 宽，和对话并排

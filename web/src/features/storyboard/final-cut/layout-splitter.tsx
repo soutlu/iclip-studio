@@ -71,7 +71,7 @@ export function LayoutSplitter({
     const origin = along(event)
     onStart()
     setDragging(true)
-    const move = (moved: globalThis.PointerEvent) => onMove(along(moved) - origin)
+    const move = (moved: globalThis.PointerEvent) => onMove(along(moved) - origin, 'pointer')
     const finish = (cancelled: boolean) => {
       detachRef.current?.()
       setDragging(false)
@@ -111,7 +111,7 @@ export function LayoutSplitter({
     event.preventDefault()
     event.stopPropagation()
     onStart()
-    onMove(step)
+    onMove(step, 'keyboard')
     onEnd()
   }
 

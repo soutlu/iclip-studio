@@ -1612,18 +1612,16 @@ function EditorBody({
           playback={playback}
         />
       </div>
-      {layout.sideCollapsed ? null : (
-        <LayoutSplitter
-          className="wf-side-splitter"
-          label="调整右栏宽度"
-          max={SIDE_WIDTH.max}
-          min={SIDE_WIDTH.min}
-          orientation="vertical"
-          panelRef={sideRef}
-          sized
-          {...sideSplitter}
-        />
-      )}
+      <LayoutSplitter
+        className="wf-side-splitter"
+        label="调整右栏宽度"
+        max={SIDE_WIDTH.max}
+        min={SIDE_WIDTH.min}
+        orientation="vertical"
+        panelRef={sideRef}
+        sized={!layout.sideCollapsed}
+        {...sideSplitter}
+      />
       <aside
         aria-label="镜头、贴片、场景、配乐、字幕和属性"
         className={cn('wf-panel wf-side', layout.sideCollapsed && 'is-collapsed')}
@@ -1640,214 +1638,220 @@ function EditorBody({
             onCollapsedChange={setSideCollapsed}
             selection={selected.size > 0}
           />
-          <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
-            <MaterialArea
-              closedGroups={closedGroups}
-              filter={takeFilter}
-              groups={materials.groups}
-              keyframes={keyframes}
-              onCarry={(point, carried) =>
-                setGhost(
-                  point === null
-                    ? null
-                    : landingAt(point.clientX, point.clientY, picksSummary(carried).durationMs),
-                )
-              }
-              onClear={() => {
-                setPicks(NO_PICKS)
-                leaveMaterial()
-              }}
-              onDrop={(point, dropped) => {
-                const at = landingAt(point.clientX, point.clientY, picksSummary(dropped).durationMs)
-                setGhost(null)
-                if (at !== null)
-                  placePicks(orderedPicks(materials.groups, dropped), {
-                    row: at.row,
-                    start: at.start,
-                  })
-              }}
-              onFilter={setTakeFilter}
-              onInsert={insert}
-              onInsertWhole={(whole) => void place([whole])}
-              onPicks={changePicks}
-              onToggleGroup={(groupId) =>
-                setClosedGroups((current) => {
-                  const next = new Set(current)
-                  if (!next.delete(groupId)) next.add(groupId)
-                  return next
-                })
-              }
-              onVersion={(takeId, jobId) => {
-                setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
-                const had = picks.get(takeId)
-                if (had === undefined) return
-                changePicks(takeId, { jobId: had.jobId, spans: [] }, null)
-              }}
-              placeholder={
-                videos.isError ? (
-                  <InlineAlert
-                    action={{ label: '重试', onClick: () => void videos.refetch() }}
-                    message={errorMessageOf(videos.error, '读取素材片失败')}
-                  />
-                ) : videos.isPending ? (
-                  <p className="wf-panel-note" role="status">
-                    正在读取素材片…
-                  </p>
-                ) : undefined
-              }
-              picks={picks}
-              playingMs={materialPlaying ? materialMs : undefined}
-              used={usedSpans(videoClips)}
-              versionOf={versionOf}
-              view={materialView}
-            />
-          </TabsContent>
-          {ITEM_KINDS.map((kind) => (
-            <TabsContent
-              className="wf-side-body is-items"
-              key={kind}
-              value={kind}
-              {...catalogPanel(kind)}
-            >
-              <ItemsTab
-                catalog={catalog}
-                filter={itemFilters[kind]}
-                kind={kind}
-                onAdd={addAtPlayhead}
-                onCarry={(item, point) =>
+          <div className="wf-side-scroll">
+            <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
+              <MaterialArea
+                closedGroups={closedGroups}
+                filter={takeFilter}
+                groups={materials.groups}
+                keyframes={keyframes}
+                onCarry={(point, carried) =>
                   setGhost(
                     point === null
                       ? null
-                      : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
+                      : landingAt(point.clientX, point.clientY, picksSummary(carried).durationMs),
                   )
                 }
-                onDrop={(item, point) => {
-                  const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
-                  setGhost(null)
-                  if (at !== null) placeItem(item, { row: at.row, start: at.start })
+                onClear={() => {
+                  setPicks(NO_PICKS)
+                  leaveMaterial()
                 }}
-                onFilterChange={(filter) =>
-                  setItemFilters((current) => ({ ...current, [kind]: filter }))
+                onDrop={(point, dropped) => {
+                  const at = landingAt(
+                    point.clientX,
+                    point.clientY,
+                    picksSummary(dropped).durationMs,
+                  )
+                  setGhost(null)
+                  if (at !== null)
+                    placePicks(orderedPicks(materials.groups, dropped), {
+                      row: at.row,
+                      start: at.start,
+                    })
+                }}
+                onFilter={setTakeFilter}
+                onInsert={insert}
+                onInsertWhole={(whole) => void place([whole])}
+                onPicks={changePicks}
+                onToggleGroup={(groupId) =>
+                  setClosedGroups((current) => {
+                    const next = new Set(current)
+                    if (!next.delete(groupId)) next.add(groupId)
+                    return next
+                  })
                 }
-                origin={window.location.origin}
+                onVersion={(takeId, jobId) => {
+                  setPickedVersions((current) => ({ ...current, [takeId]: jobId }))
+                  const had = picks.get(takeId)
+                  if (had === undefined) return
+                  changePicks(takeId, { jobId: had.jobId, spans: [] }, null)
+                }}
+                placeholder={
+                  videos.isError ? (
+                    <InlineAlert
+                      action={{ label: '重试', onClick: () => void videos.refetch() }}
+                      message={errorMessageOf(videos.error, '读取素材片失败')}
+                    />
+                  ) : videos.isPending ? (
+                    <p className="wf-panel-note" role="status">
+                      正在读取素材片…
+                    </p>
+                  ) : undefined
+                }
+                picks={picks}
+                playingMs={materialPlaying ? materialMs : undefined}
+                used={usedSpans(videoClips)}
+                versionOf={versionOf}
+                view={materialView}
               />
             </TabsContent>
-          ))}
-          <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
-            <AudioTab
-              active={sideTab === 'audio' && sideShown}
-              clips={clips}
-              conversationId={conversationId}
-              onAdd={(audio) =>
-                placeAudio(audio, audioPlayheadSpot(clips, playheadNow(), audio.duration))
-              }
-              onCarry={(audio, point) =>
-                setGhost(
-                  point === null
-                    ? null
-                    : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
-                )
-              }
-              onDrop={(audio, point) => {
-                const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
-                setGhost(null)
-                if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
-              }}
-              onNotice={notice}
-              onReveal={revealClip}
-            />
-          </TabsContent>
-          <TabsContent
-            className="wf-side-body is-captions"
-            value="captions"
-            {...catalogPanel('captions')}
-          >
-            <CaptionsTab
-              active={sideTab === 'captions' && sideShown}
-              onNotice={notice}
-              addBlocked={captionBlocked}
-              captions={captions}
-              texts={{
-                ...itemTexts,
-                hosts: hostsWithText,
-                catalog,
-                onPick: (clip, jump) => {
-                  if (jump) seek(firstFrameMs(clip.start))
-                  selectOnly(clip.id)
-                },
-              }}
-              locale={locale}
-              locales={localeControls}
-              focus={captionsFocus(selectedClips, new Set(hostsWithText.map((host) => host.id)))}
-              narration={narration}
-              onAdd={addCaption}
-              onPick={(caption) => {
-                seek(firstFrameMs(caption.start))
-                selectOnly(caption.id)
-              }}
-              onRecognize={recognize}
-              onRemove={(id) => {
-                leaveMaterial()
-                session.removeClips([id], false)
-              }}
-              onText={setCaptionText}
-              problem={film.captionsProblem}
-              recognizeBlocked={recognizeBlocked}
-              recognizing={recognition.recognizing}
-              selected={selected}
-              voice={voice}
-              translate={
-                pending === undefined
-                  ? undefined
-                  : {
-                      blocked: translateBlockedText,
-                      translating: translation.translating,
-                      onTranslate: () => void translate(),
-                    }
-              }
-            />
-          </TabsContent>
-          <TabsContent
-            className="wf-side-body is-props"
-            hidden={sideTab !== 'props' || layout.sideCollapsed}
-            value="props"
-          >
-            <FilmInspector
-              audioPeaks={audioPeaks}
-              clips={clips}
-              catalog={catalog}
-              canvas={film.canvas}
-              keyframes={keyframes}
-              onDeselect={clearSelection}
-              onGesture={setGesturing}
-              onHide={hideClip}
-              onRemove={removeSelected}
-              onRetime={(timings) => {
-                leaveMaterial()
-                session.retime(timings)
-              }}
-              onTextEditing={setTextEditing}
-              onValues={(id, values) => {
-                leaveMaterial()
-                session.setValues(id, values)
-              }}
-              onAttributes={setClipAttributes}
-              locale={locale}
-              onCaptionText={setCaptionText}
-              onCaptionStyle={(id, changes) => {
-                leaveMaterial()
-                session.setCaptionStyle(id, changes)
-              }}
-              texts={itemTexts}
-              selected={selectedClips}
-              silentSource={silentSource}
-              soundControls={soundControls}
-              sourceMs={sourceMs}
-              sourceName={(src) => sourceNames.get(src)}
-              smartMix={smartMix}
-              onOpenCaptions={() => openSideTab('captions')}
-            />
-          </TabsContent>
+            {ITEM_KINDS.map((kind) => (
+              <TabsContent
+                className="wf-side-body is-items"
+                key={kind}
+                value={kind}
+                {...catalogPanel(kind)}
+              >
+                <ItemsTab
+                  catalog={catalog}
+                  filter={itemFilters[kind]}
+                  kind={kind}
+                  onAdd={addAtPlayhead}
+                  onCarry={(item, point) =>
+                    setGhost(
+                      point === null
+                        ? null
+                        : landingAt(point.clientX, point.clientY, itemDurationMs(item, clips)),
+                    )
+                  }
+                  onDrop={(item, point) => {
+                    const at = landingAt(point.clientX, point.clientY, itemDurationMs(item, clips))
+                    setGhost(null)
+                    if (at !== null) placeItem(item, { row: at.row, start: at.start })
+                  }}
+                  onFilterChange={(filter) =>
+                    setItemFilters((current) => ({ ...current, [kind]: filter }))
+                  }
+                  origin={window.location.origin}
+                />
+              </TabsContent>
+            ))}
+            <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
+              <AudioTab
+                active={sideTab === 'audio' && sideShown}
+                clips={clips}
+                conversationId={conversationId}
+                onAdd={(audio) =>
+                  placeAudio(audio, audioPlayheadSpot(clips, playheadNow(), audio.duration))
+                }
+                onCarry={(audio, point) =>
+                  setGhost(
+                    point === null
+                      ? null
+                      : landingAt(point.clientX, point.clientY, audio.duration, 'audio'),
+                  )
+                }
+                onDrop={(audio, point) => {
+                  const at = landingAt(point.clientX, point.clientY, audio.duration, 'audio')
+                  setGhost(null)
+                  if (at !== null) placeAudio(audio, { row: at.row, start: at.start })
+                }}
+                onNotice={notice}
+                onReveal={revealClip}
+              />
+            </TabsContent>
+            <TabsContent
+              className="wf-side-body is-captions"
+              value="captions"
+              {...catalogPanel('captions')}
+            >
+              <CaptionsTab
+                active={sideTab === 'captions' && sideShown}
+                onNotice={notice}
+                addBlocked={captionBlocked}
+                captions={captions}
+                texts={{
+                  ...itemTexts,
+                  hosts: hostsWithText,
+                  catalog,
+                  onPick: (clip, jump) => {
+                    if (jump) seek(firstFrameMs(clip.start))
+                    selectOnly(clip.id)
+                  },
+                }}
+                locale={locale}
+                locales={localeControls}
+                focus={captionsFocus(selectedClips, new Set(hostsWithText.map((host) => host.id)))}
+                narration={narration}
+                onAdd={addCaption}
+                onPick={(caption) => {
+                  seek(firstFrameMs(caption.start))
+                  selectOnly(caption.id)
+                }}
+                onRecognize={recognize}
+                onRemove={(id) => {
+                  leaveMaterial()
+                  session.removeClips([id], false)
+                }}
+                onText={setCaptionText}
+                problem={film.captionsProblem}
+                recognizeBlocked={recognizeBlocked}
+                recognizing={recognition.recognizing}
+                selected={selected}
+                voice={voice}
+                translate={
+                  pending === undefined
+                    ? undefined
+                    : {
+                        blocked: translateBlockedText,
+                        translating: translation.translating,
+                        onTranslate: () => void translate(),
+                      }
+                }
+              />
+            </TabsContent>
+            <TabsContent
+              className="wf-side-body is-props"
+              hidden={sideTab !== 'props' || layout.sideCollapsed}
+              value="props"
+            >
+              <FilmInspector
+                audioPeaks={audioPeaks}
+                clips={clips}
+                catalog={catalog}
+                canvas={film.canvas}
+                keyframes={keyframes}
+                onDeselect={clearSelection}
+                onGesture={setGesturing}
+                onHide={hideClip}
+                onRemove={removeSelected}
+                onRetime={(timings) => {
+                  leaveMaterial()
+                  session.retime(timings)
+                }}
+                onTextEditing={setTextEditing}
+                onValues={(id, values) => {
+                  leaveMaterial()
+                  session.setValues(id, values)
+                }}
+                onAttributes={setClipAttributes}
+                locale={locale}
+                onCaptionText={setCaptionText}
+                onCaptionStyle={(id, changes) => {
+                  leaveMaterial()
+                  session.setCaptionStyle(id, changes)
+                }}
+                texts={itemTexts}
+                selected={selectedClips}
+                silentSource={silentSource}
+                soundControls={soundControls}
+                sourceMs={sourceMs}
+                sourceName={(src) => sourceNames.get(src)}
+                smartMix={smartMix}
+                onOpenCaptions={() => openSideTab('captions')}
+              />
+            </TabsContent>
+          </div>
         </TabsRoot>
       </aside>
       <LayoutSplitter
