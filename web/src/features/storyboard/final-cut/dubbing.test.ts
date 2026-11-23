@@ -141,6 +141,25 @@ describe('配好的配音建成配音片段', () => {
     ).toEqual([{ id: 'c2', start: 1_000, duration: 1_000 }])
   })
 
+  it('字幕跨过了它的视频片段的结尾：片段上限放宽到字幕的结尾，没跨过的照旧不超出片段', () => {
+    // 字幕 3.5–4.5 秒属于 0–4 秒的视频片段（一句话跨过接缝，整句写在前一个片段名下）
+    const clips = [
+      video({ id: 'va', src: A, duration: 4_000 }),
+      caption({ id: 'c9', variable: 'v9', start: 3_500, duration: 1_000, owner: 'va' }),
+      caption({ id: 'c8', variable: 'v8', start: 3_000, duration: 300, owner: 'va' }),
+    ]
+    const lineOf = (id: string, startMs: number, endMs: number) => ({
+      src: A,
+      voice: null,
+      lines: [{ caption: id, startMs, endMs, text: 'x' }],
+      spans: [],
+    })
+    const durationOf = (request: DubbingRequest) =>
+      dubClips(clips, request, { url: 'dub.m4a', durationMs: 8_000, lines: [] })[0]?.duration
+    expect(durationOf(lineOf('c9', 3_500, 4_500))).toBe(1_000)
+    expect(durationOf(lineOf('c8', 3_000, 3_300))).toBe(1_000)
+  })
+
   it('换掉的只是配好的那几句在这种语言下的配音片段', () => {
     const dub = (id: string, of: string, locale = 'en') =>
       audio({ id, dub: { locale, caption: of, trimmed: false, voice: null } })

@@ -600,8 +600,10 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await openEditor()
     const submitted = serveSubtitles([
       subtitleJob(TAKE_A, { sentences: [said(300, 1_200, '第一句话')] }),
-      // 片段只用到素材的前 1.5 秒：后一句截到片段结尾
-      subtitleJob(TAKE_B, { sentences: [said(200, 1_000, '第二段'), said(1_200, 2_500, '截短')] }),
+      // 片段只用到素材的前 1.5 秒：后一句开头在片段里，结尾超出片段也照句子的结尾
+      subtitleJob(TAKE_B, {
+        sentences: [said(200, 1_000, '第二段'), said(1_200, 2_500, '说到片段外')],
+      }),
     ])
     const panel = await openCaptions(user)
     await user.click(recognizeButton(panel))
@@ -609,10 +611,10 @@ describe('final-cut 编辑器 · 识别字幕', () => {
       expect(savedSceneLines()).toEqual([
         ['第一句话', 0.3, 0.9, 'clip-1'],
         ['第二段', 2.2, 0.8, 'clip-2'],
-        ['截短', 3.2, 0.3, 'clip-2'],
+        ['说到片段外', 3.2, 1.3, 'clip-2'],
       ]),
     )
-    expect(savedVariableTexts()).toEqual(['第一句话', '第二段', '截短'])
+    expect(savedVariableTexts()).toEqual(['第一句话', '第二段', '说到片段外'])
     expect(submitted).toEqual([])
     expect(await screen.findByText('已加入 3 句字幕')).toBeVisible()
     // 都有字幕了：不再识别
