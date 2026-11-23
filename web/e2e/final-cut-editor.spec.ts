@@ -3777,7 +3777,7 @@ const shownOnPage = async (layer: Locator, player: Locator, selector: string) =>
   }
 }
 
-test('画面上点选：点贴片里画出来的字、色底都选中整个贴片，框就是宿主、带把手，透明的地方点到下面的视频；同一处再点一下换成压在下面的视频，再点回到贴片；时间线上选中贴片时也框住宿主、带把手；点空白处取消', async ({
+test('画面上点选：点贴片里画出来的字、色底、矢量图形都选中整个贴片，框就是宿主、带把手，透明的地方点到下面的视频；同一处再点一下换成压在下面的视频，再点回到贴片；时间线上选中贴片时也框住宿主、带把手；点空白处取消', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -3792,6 +3792,16 @@ test('画面上点选：点贴片里画出来的字、色底都选中整个贴�
   alignsWith(await boxOf(frame), await shownOnPage(layer, player, CARD))
   await expect(frame.locator('.wf-canvas-handle')).toHaveCount(4)
   await expect(layer.getByRole('button', { name: '旋转' })).toBeVisible()
+
+  // 矢量图形画的内容（下面压着视频）也是整个贴片
+  await page.keyboard.press('Escape')
+  await expect(card).toHaveAttribute('aria-pressed', 'false')
+  const mark = await canvasSpot(layer, player, `${CARD} #ff-mark`)
+  await page.mouse.click(mark.x, mark.y)
+  await expect(card).toHaveAttribute('aria-pressed', 'true')
+  await expect(video).toHaveAttribute('aria-pressed', 'false')
+  await expect(frame).toBeVisible()
+  alignsWith(await boxOf(frame), await shownOnPage(layer, player, CARD))
 
   // 贴片里透明的地方（宿主框里，没有字、没有色底）点到下面的视频
   await page.keyboard.press('Escape')

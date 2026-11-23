@@ -9,6 +9,7 @@
     shadow  阴影（boolean），脚本按取值给文字加阴影
   文字读正文字体变量 --font-body，组装时自动加上字体可填项。
   色底 0.1 秒起从左滑入、0.6 秒到位，4.6 秒起淡出。
+  左上角另有一块矢量图形画的实心圆（x 300–540、y 200–440，一直显示），测画面上点中矢量图形。
 -->
 <html lang="zh-CN">
   <head>
@@ -48,6 +49,13 @@
         color: #ffffff;
         white-space: nowrap;
       }
+      #root .ff-mark {
+        position: absolute;
+        left: 300px;
+        top: 200px;
+        width: 240px;
+        height: 240px;
+      }
     </style>
   </head>
   <body>
@@ -70,6 +78,9 @@
         <div id="ff-panel" class="ff-panel">
           <div id="ff-text" class="ff-text" data-var-text="text">示例文字</div>
         </div>
+        <svg id="ff-mark" class="ff-mark" viewBox="0 0 240 240" width="240" height="240">
+          <circle cx="120" cy="120" r="120" fill="#ffb020" />
+        </svg>
       </div>
     </div>
 
