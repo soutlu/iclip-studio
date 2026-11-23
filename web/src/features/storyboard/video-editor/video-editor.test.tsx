@@ -489,24 +489,28 @@ describe('VideoEditor', () => {
     {
       name: '默认项能编辑但不在首位时用默认项',
       models: { default: 'wan3.0-video', items: ['vendor-a-seedance-2-5', 'wan3.0-video'] },
+      editless: undefined,
       expected: 'wan3.0-video',
     },
     {
       name: '默认项不能编辑时退到第一个能编辑的',
       models: {
-        default: 'vendor-a-seedance-2-0',
-        items: ['wan3.0-video', 'vendor-a-seedance-2-0', 'vendor-a-seedance-2-5'],
+        default: 'vendor-a-seedance-2-5-flash',
+        items: ['wan3.0-video', 'vendor-a-seedance-2-5-flash', 'vendor-a-seedance-2-5'],
       },
+      editless: 'vendor-a-seedance-2-5-flash',
       expected: 'wan3.0-video',
     },
-  ])('编辑模型：$name', async ({ models, expected }) => {
+  ])('编辑模型：$name', async ({ models, editless, expected }) => {
     server.use(
       http.get('*/api/generations/video-models', () =>
         HttpResponse.json({
           ...VIDEO_MODELS,
           ...models,
           clipModels: models.items.flatMap((id) =>
-            VIDEO_MODELS.clipModels.filter((model) => model.id === id),
+            VIDEO_MODELS.clipModels
+              .filter((model) => model.id === id)
+              .map((model) => (model.id === editless ? { ...model, edit: null } : model)),
           ),
         }),
       ),
@@ -804,29 +808,37 @@ describe('AI 改段的弹出卡', () => {
     expect(within(openCard()).queryByRole('slider', { name: '生成时长（秒）' })).toBeNull()
     await user.click(within(openCard()).getByRole('radio', { name: '图生' }))
     expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
-    await user.click(within(openCard()).getByRole('button', { name: '图生模型' }))
-    await user.click(screen.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0' }))
+    const pickModel = async (name: string) => {
+      await user.click(within(openCard()).getByRole('button', { name: '图生模型' }))
+      await user.click(screen.getByRole('menuitemradio', { name }))
+    }
+    await pickModel('wan3.0-video')
+    expect(duration()).toHaveAttribute('aria-valuemin', '2')
+    act(() => duration().focus())
+    await user.keyboard('{Home}')
+    expect(currentDuration()).toHaveTextContent(/^2\s*秒$/)
+    await pickModel('vendor-a-seedance-2-5-flash')
 
-    expect(currentDuration()).toHaveTextContent(/^30\s*秒$/)
+    expect(currentDuration()).toHaveTextContent(/^2\s*秒$/)
     expect(duration()).toHaveAttribute('aria-valuemin', '4')
-    expect(duration()).toHaveAttribute('aria-valuemax', '15')
-    expect(within(openCard()).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
+    expect(duration()).toHaveAttribute('aria-valuemax', '30')
+    expect(within(openCard()).getByText(/图生时长须为 4–30 秒/)).toBeVisible()
     expect(generateButton()).toBeDisabled()
     act(() => duration().focus())
-    await user.keyboard('{End}')
-    expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
+    await user.keyboard('{Home}')
+    expect(currentDuration()).toHaveTextContent(/^4\s*秒$/)
     expect(generateButton()).toBeEnabled()
     await user.click(generateButton())
     try {
       await waitFor(() => expect(submitted).toHaveLength(1))
       expect(submitted[0]).toMatchObject({
-        model: 'vendor-a-seedance-2-0',
-        seconds: 15,
+        model: 'vendor-a-seedance-2-5-flash',
+        seconds: 4,
         reference_video_urls: [],
       })
       expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true')
-      fireEvent.keyDown(duration(), { key: 'Home' })
-      expect(currentDuration()).toHaveTextContent(/^15\s*秒$/)
+      fireEvent.keyDown(duration(), { key: 'End' })
+      expect(currentDuration()).toHaveTextContent(/^4\s*秒$/)
     } finally {
       await act(async () => accept())
     }

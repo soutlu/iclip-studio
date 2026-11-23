@@ -94,7 +94,7 @@ const mockGroup = (): MockGroup => ({
     generated('park_look', '涂鸦滑板场', '9:16', '户外露天水泥滑板场，坡面和地面喷满街头涂鸦。'),
   ],
   index: 1,
-  model: 'vendor-a-seedance-2-0',
+  model: 'vendor-a-seedance-2-5-flash',
   seconds: 12,
   settings: [
     {
@@ -770,6 +770,7 @@ export const filmHandlers = [
           resolution: body.resolution,
           seconds: group.seconds,
           shot_index: group.index,
+          ...(body.draft === true ? { provider_options: { draft: true } } : {}),
         },
         shotIndex: group.index,
       })

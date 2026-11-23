@@ -319,7 +319,7 @@ describe('submitClipGeneration', () => {
     expect(media.disposed).toBe(1)
   })
 
-  it.each(['vendor-a-seedance-2-0', 'vendor-a-seedance-2-5', 'wan3.0-video'])(
+  it.each(['vendor-a-seedance-2-5-flash', 'vendor-a-seedance-2-5', 'wan3.0-video'])(
     '%s 图生仅提交正文图片与生成时长，不编码或上传参考视频',
     async (id) => {
       await submitClipGeneration({
@@ -353,9 +353,9 @@ describe('submitClipGeneration', () => {
   )
 
   it.each([
-    ['vendor-a-seedance-2-0', 3],
-    ['vendor-a-seedance-2-0', 16],
-    ['vendor-a-seedance-2-0', 5.5],
+    ['vendor-a-seedance-2-5-flash', 3],
+    ['vendor-a-seedance-2-5-flash', 31],
+    ['vendor-a-seedance-2-5-flash', 5.5],
     ['vendor-a-seedance-2-5', 3],
     ['vendor-a-seedance-2-5', 31],
     ['vendor-a-seedance-2-5', 5.5],

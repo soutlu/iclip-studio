@@ -182,10 +182,12 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
               ? undefined
               : {
                   actions: takeActionsOf(selectedTake, { readOnly }),
+                  onConvertDraft: () => void video.completeDraft(shot.index, selectedTake.job.id),
                   onEditVideo: () => go({ video: selectedTake.job.id }),
                   onRefill: () => {
                     if (selectedTake.history !== undefined) refill(selectedTake.history)
                   },
+                  onSelectTake: stage.selectTake,
                   take: selectedTake,
                 }
           }
@@ -230,7 +232,7 @@ function StoryboardWorkspace({ artifact, conversationId, readOnly }: ArtifactRen
             value: document.aspect_ratio,
           }}
           blocker={generateBlocker}
-          models={{ items: video.models, status: video.modelsStatus }}
+          models={{ draft: video.draftSupport, items: video.models, status: video.modelsStatus }}
           notice={generateNotice}
           onChange={video.setOptions}
           onGenerate={() => void generate()}

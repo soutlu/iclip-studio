@@ -38,6 +38,15 @@ function TakesRail({ onSelect, selectedId, takes }: TakeSelection & { takes: rea
   useEffect(() => {
     if (railRef.current !== null) railRef.current.scrollLeft = 0
   }, [newest])
+  useEffect(() => {
+    const rail = railRef.current
+    const card = rail?.querySelector('[aria-pressed="true"]')
+    if (rail === null || card === null || card === undefined) return
+    const view = rail.getBoundingClientRect()
+    const box = card.getBoundingClientRect()
+    if (box.left < view.left) rail.scrollLeft -= view.left - box.left
+    else if (box.right > view.right) rail.scrollLeft += box.right - view.right
+  }, [selectedId])
   const page = (direction: -1 | 1) => {
     const rail = railRef.current
     if (rail !== null)

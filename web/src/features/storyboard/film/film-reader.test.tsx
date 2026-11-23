@@ -396,7 +396,7 @@ describe('制作页', () => {
     expect(videos[0]).toEqual({
       filmVersion: 2,
       generateAudio: DEFAULT_GENERATE_AUDIO,
-      model: 'vendor-a-seedance-2-0',
+      model: 'vendor-a-seedance-2-5-flash',
       resolution: DEFAULT_VIDEO_RESOLUTION,
       runVersion: 1,
       video: 'board_video',
@@ -407,6 +407,29 @@ describe('制作页', () => {
     expect(screen.queryByRole('button', { name: '回填提示词' })).not.toBeInTheDocument()
     await userEvent.click(within(script).getByRole('button', { name: '镜头 1' }))
     await waitFor(() => expect(stageTag()).toBe('@5'))
+  })
+
+  it.each([
+    { pick: '720p', sent: { resolution: '720p' } },
+    { pick: '样片', sent: { draft: true, resolution: '480p' } },
+  ])('选 $pick 出片：发 $sent，不选样片时不带 draft', async ({ pick, sent }) => {
+    const videos = recordVideos()
+    await mount({ complete: true, model: 'vendor-a-seedance-2-5' })
+    const bar = await screen.findByRole('group', { name: '出片工具栏' })
+    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
+    await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+
+    await userEvent.click(within(bar).getByRole('radio', { name: pick }))
+    await userEvent.click(generate)
+
+    await waitFor(() => expect(videos).toHaveLength(1))
+    const { filmVersion: _filmVersion, runVersion: _runVersion, ...choice } = videos[0] ?? {}
+    expect(choice).toEqual({
+      generateAudio: DEFAULT_GENERATE_AUDIO,
+      model: 'vendor-a-seedance-2-5',
+      video: 'board_video',
+      ...sent,
+    })
   })
 
   it('改画幅：先存改了的字，按存好的那一版发，出片栏的画幅换成答复里的新画幅', async () => {

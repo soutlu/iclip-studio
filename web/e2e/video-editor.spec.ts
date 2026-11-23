@@ -453,11 +453,15 @@ test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时�
   await expect(generateButton(dialog)).toBeEnabled()
 
   const duration = card(dialog).getByRole('slider', { name: '生成时长（秒）', exact: true })
-  await duration.press('End')
-  await card(dialog).getByRole('button', { name: '图生模型', exact: true }).click()
-  await page.getByRole('menuitemradio', { name: 'vendor-a-seedance-2-0', exact: true }).click()
-  await expect(card(dialog).getByLabel('当前生成时长', { exact: true })).toHaveText(/^30\s*秒$/)
-  await expect(card(dialog).getByText(/图生时长须为 4–15 秒/)).toBeVisible()
+  const pickModel = async (name: string) => {
+    await card(dialog).getByRole('button', { name: '图生模型', exact: true }).click()
+    await page.getByRole('menuitemradio', { name, exact: true }).click()
+  }
+  await pickModel('wan3.0-video')
+  await duration.press('Home')
+  await pickModel('vendor-a-seedance-2-5-flash')
+  await expect(card(dialog).getByLabel('当前生成时长', { exact: true })).toHaveText(/^2\s*秒$/)
+  await expect(card(dialog).getByText(/图生时长须为 4–30 秒/)).toBeVisible()
   await expect(generateButton(dialog)).toBeDisabled()
   await duration.press('Home')
   const thumb = await centerOf(duration)
@@ -526,11 +530,11 @@ test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时�
   await sent.response()
   const body = sent.postDataJSON() as Record<string, unknown>
   expect(body).toMatchObject({
-    model: 'vendor-a-seedance-2-0',
+    model: 'vendor-a-seedance-2-5-flash',
     prompt: '人物转身',
     range_start_ms: 1000,
     range_end_ms: 2000,
-    seconds: 15,
+    seconds: 30,
     reference_video_urls: [],
   })
   expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
