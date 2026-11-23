@@ -55,4 +55,4 @@ async def test_declared_skill_reaches_the_running_agent(
     await settled(client, conversation_id)
 
     assert "load_capability" in seen_tools
-    assert "get_skill_reference" in seen_tools
+    assert "read_skill_file" in seen_tools
