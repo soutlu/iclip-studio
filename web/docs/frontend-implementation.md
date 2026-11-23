@@ -4,10 +4,10 @@
 
 ## 组件与状态管理
 
-- **优先复用基础组件**：基础按钮、弹窗、输入框等优先使用 `src/shared/ui/` 中的组件；Toast 提示统一使用 `@/shared/ui/toast`；列表中的音频试听统一使用 `@/shared/ui/audition` 的 `useAudition`（全局互斥播放，所在区域隐藏或卸载时自动停止）；组件进退场动画统一使用 `tw-animate-css` 的 `animate-in` / `animate-out` 及设计系统 Token，不单独手写一套新的动画 Keyframes。
+- **优先复用基础组件**：基础按钮、弹窗、输入框、用户头像（`@/shared/ui/user-avatar`）及只读源码预览（`@/shared/ui/source-editor` 的 `SourceViewer`）等优先复用 `src/shared/ui/` 中的组件；Toast 提示统一使用 `@/shared/ui/toast`；列表中的音频试听统一使用 `@/shared/ui/audition` 的 `useAudition`（全局互斥播放，所在区域隐藏或卸载时自动停止）；组件进退场动画统一使用 `tw-animate-css` 的 `animate-in` / `animate-out` 及设计系统 Token，不单独手写一套新的动画 Keyframes。
 - **类型与样式约定**：组件 Props 声明明确的 TypeScript 类型（优先靠近组件定义，跨模块复用时再提取到公共文件）。列表渲染 `key` 必须使用稳定的业务 ID（不要用数组下标）。动态合并 `className` 统一使用 `cn()`，多变体组件样式使用 `cva` 定义。
 - **异步请求与自定义 Hook**：支持取消的查询需透传 `AbortSignal`；自定义 Hook 统一以 `use*` 命名并保持返回结构稳定。
-- **深浅色主题**：全局主题由 `src/app/theme.ts` 统一控制在 `<html>` 标签的 `.dark` 类名上；组件内部直接使用语义化主题 Token，不要各自维护一套独立的主题状态。
+- **深浅色主题**：全局主题由 `src/shared/lib/theme.ts` 统一控制在 `<html>` 标签的 `.dark` 类名上；组件内部直接使用语义化主题 Token，不要各自维护一套独立的主题状态。
 
 ## 交互体验与无障碍（Accessibility）
 
@@ -42,7 +42,7 @@
 
 ## final-cut 编辑器与组件库
 
-- **工作台面板与沙箱隔离**：编辑器作为工作台的「final-cut」页签运行（仅在可写对话且工作区存在主文件 `final-cut/index.html` 时显示；没有时在工作台的「+」里新建），保持固定桌面布局、不做窄屏折行或折叠适配。全局快捷键与 `Esc` 仅在焦点位于编辑器内部时生效，不在 `window` 上抢占（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。预览播放器与工程脚本统一运行在独立预览域名的沙箱页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）中，编辑器仅通过经协议校验的 `postMessage` 与之通信（见[跨端合同 §6](../../contract/conventions.md#final-cut-工程与预览域名)、[ADR-0008](../../docs/adr/0008-final-cut-workspace-project.md)）。
+- **工作台面板与沙箱隔离**：编辑器作为工作台的「final-cut」页签运行（仅在可写对话且工作区存在主文件 `final-cut/index.html` 时显示；未创建时可通过工作台顶栏「+」、空态卡片或折叠竖条按默认模板新建，对话打开期间由 Agent 创建主文件时自动切换至该页签），采用固定三区桌面网格布局（不做窄屏折行重排），支持拖拽分隔条调节右栏宽度与时间线高度、将右栏折叠为竖向图标轨（布局持久化于浏览器本地），右栏窄于最小内容宽度时按容器横向滑动访问。全局快捷键与 `Esc` 仅在焦点位于编辑器内部时生效，不在 `window` 上抢占（[editor-keys.ts](../src/features/storyboard/final-cut/editor-keys.ts)）。预览播放器与工程脚本统一运行在独立预览域名的沙箱页（[preview-page.ts](../src/features/storyboard/final-cut/preview-page.ts)）中，编辑器仅通过经协议校验的 `postMessage` 与之通信（见[跨端合同 §6](../../contract/conventions.md#final-cut-工程与预览域名)、[ADR-0008](../../docs/adr/0008-final-cut-workspace-project.md)）。
 - **组件库与按需中文字体分片**：组件目录结构见 [catalog.ts](../src/features/storyboard/final-cut/composition/catalog.ts)，打包规则见[组装脚本](../scripts/hyperframes-registry.mjs)（组件内部标题与正文分别读取 `var(--font-display)` 与 `var(--font-body)`，使用该变量的组件在打包时自动补齐 `font` 可填项；组件专有目录仅允许包含文本文件）。由于播放运行时会等待主文件声明的全部字体加载完毕后才启动脚本，主文件 `<head>` 字体块仅按工程实际出现的字符声明 Noto Sans SC 子集分片（[fonts.ts](../src/features/storyboard/final-cut/composition/fonts.ts)），组件源码内禁止直接引入整包中文字体样式。
 
 ## 测试

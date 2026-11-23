@@ -4,7 +4,7 @@ import { versionLabel } from '../editing/version-lineage'
 import type { Edge } from '../editing/timeline-drag'
 import { MIN_CLIP_MS, type VideoClip } from './composition/film'
 
-/** 选区加入轨道时拆成的一个片段：从素材的哪里开始放、放多长（毫秒）。一个镜头一个。 */
+/** 选区加入轨道时拆分出的单个视频片段参数：素材入点与时长（毫秒），对应单个镜头。 */
 export type MaterialPiece = { mediaStart: number; duration: number }
 
 export type Material = {
@@ -14,12 +14,12 @@ export type Material = {
   groupId: string
   groupLabel: string
   takeId: string
-  /** 原作在组里的字母：A、B… */
+  /** 原作在镜头组内的字母序号：A、B… */
   takeLetter: string
   takeLabel: string
-  /** 版本的完整名字，如「V1 原片」。 */
+  /** 版本完整名称，如「V1 原片」。 */
   version: string
-  /** 只有版本号那一截：V1、V2… */
+  /** 仅含版本号前缀的短标签：V1、V2… */
   versionNumber: string
 }
 
@@ -36,24 +36,24 @@ export type MaterialGroup = {
   takes: readonly MaterialTake[]
 }
 
-/** 素材里的一段（毫秒）：一个镜头，或选区里的一段。 */
+/** 素材时间区间（毫秒）：可表示单个镜头或选区中的一段。 */
 export type MediaSpan = { startMs: number; endMs: number }
 
-/** 选区里的一段。`id` 只用来在界面上认出它：平移、裁剪时起止在变，并段时留下靠前那段的。 */
+/** 选区中的单段区间。`id` 仅作界面稳定键（平移、裁剪时起止变更，合并时保留靠前段的 `id`）。 */
 export type PickSpan = MediaSpan & { id: string }
 
-/** 一条原作上选中的几段：选在哪个版本上；各段按时间排、互不重叠，相邻两段之间至少空出 `PICK_GAP_MS`。 */
+/** 单条原作下的选区集合：绑定至特定版本；各段按时间升序且互不重叠，相邻段间距不小于 `PICK_GAP_MS`。 */
 export type TakePicks = { jobId: string; spans: readonly PickSpan[] }
 
-/** 「镜头」页签里的选区：可以同时选在几条原作上，按原作 id 分。 */
+/** 「镜头」页签的跨原作选区映射（按原作 ID 索引）。 */
 export type MaterialPicks = ReadonlyMap<string, TakePicks>
 
 export const NO_PICKS: MaterialPicks = new Map()
 
-/** 两段之间空出不到一个最短片段时并成一段：那么短的空档放不出片段，分开也没有用。 */
+/** 相邻选区间隔不足最短片段时长时自动合并，避免产生无法独立入轨的无效空档。 */
 const PICK_GAP_MS = MIN_CLIP_MS
 
-/** 换掉 `takeId` 这条原作上的选区；一段都不剩时这条原作不再记着。 */
+/** 更新指定原作 `takeId` 的选区；区间清空时移除该原作条目。 */
 export const withTakePicks = (
   picks: MaterialPicks,
   takeId: string,
@@ -65,7 +65,7 @@ export const withTakePicks = (
   return updated
 }
 
-/** 把 `added` 并进选区：和已有的段重叠、或空档不到 `PICK_GAP_MS` 的连成一段。 */
+/** 将 `added` 合入现有选区：与已有区间重叠或间距小于 `PICK_GAP_MS` 时合并。 */
 export const addSpan = <T extends MediaSpan>(spans: readonly T[], added: T): T[] => {
   const merged: T[] = []
   for (const span of [...spans, added].toSorted((left, right) => left.startMs - right.startMs)) {
@@ -77,7 +77,7 @@ export const addSpan = <T extends MediaSpan>(spans: readonly T[], added: T): T[]
   return merged
 }
 
-/** Shift 点一个镜头：从这条原作上最靠后的一段连到这个镜头（照稿子），没有选区时只选它。 */
+/** Shift 点击镜头扩展选区：从当前原作最后一段连选至目标镜头；尚无选区时直接选中该镜头。 */
 export const extendToShot = <T extends MediaSpan>(spans: readonly T[], shot: T): T[] => {
   const last = spans.at(-1)
   return addSpan(
@@ -92,7 +92,7 @@ export const extendToShot = <T extends MediaSpan>(spans: readonly T[], shot: T):
   )
 }
 
-/** 盖着 `ms` 这一刻的那一段是第几段；没有时是 undefined。 */
+/** 查找包含时刻 `ms` 的选区下标；未命中时返回 `undefined`。 */
 export const spanIndexAt = (spans: readonly MediaSpan[], ms: number): number | undefined => {
   const index = spans.findIndex((span) => span.startMs <= ms && ms < span.endMs)
   return index < 0 ? undefined : index
@@ -101,7 +101,7 @@ export const spanIndexAt = (spans: readonly MediaSpan[], ms: number): number | u
 export const removeSpan = <T extends MediaSpan>(spans: readonly T[], index: number): T[] =>
   spans.filter((_, at) => at !== index)
 
-/** 第 `index` 段能伸到哪里：不出素材的头尾，和相邻的段之间留着 `PICK_GAP_MS`。 */
+/** 计算第 `index` 段允许延伸的时间边界：受素材起止与相邻选区间隔 `PICK_GAP_MS` 约束。 */
 const roomOf = (spans: readonly MediaSpan[], index: number, durationMs: number) => {
   const before = spans[index - 1]
   const after = spans[index + 1]
@@ -111,7 +111,7 @@ const roomOf = (spans: readonly MediaSpan[], index: number, durationMs: number) 
   }
 }
 
-/** 第 `index` 段的 `edge` 这一端能挪到哪里：可以越过镜头切口，不压到相邻的段，两端之间至少留一个最短片段。 */
+/** 计算第 `index` 段 `edge` 端可拖动的边界：允许跨越镜头切点，不侵占相邻选区且保留最短片段时长。 */
 export const edgeLimits = (
   spans: readonly MediaSpan[],
   index: number,
@@ -129,7 +129,7 @@ export const edgeLimits = (
 const clamp = (value: number, { min, max }: { min: number; max: number }) =>
   Math.min(max, Math.max(min, value))
 
-/** 把第 `index` 段的 `edge` 这一端挪 `deltaMs`，挪不过去时停在能到的地方。 */
+/** 将第 `index` 段的 `edge` 端调整 `deltaMs`，超出边界时钳制至极限值。 */
 export const trimSpan = <T extends MediaSpan>(
   spans: readonly T[],
   index: number,
@@ -148,7 +148,7 @@ export const trimSpan = <T extends MediaSpan>(
   )
 }
 
-/** 把第 `index` 段整段平移 `deltaMs`，长短不变；碰到相邻的段或素材的头尾就停下。 */
+/** 将第 `index` 段整体平移 `deltaMs`（保持时长不变），碰触相邻选区或素材边界时停止。 */
 export const slideSpan = <T extends MediaSpan>(
   spans: readonly T[],
   index: number,
@@ -164,8 +164,8 @@ export const slideSpan = <T extends MediaSpan>(
 }
 
 /**
- * 加入轨道时一段拆成的片段：在段里的镜头切口处切开，一个镜头一个片段。
- * 离一端或上一个切口不到一个最短片段的切口不切，那一小截并进旁边的片段。
+ * 将选区按内部镜头切点拆分为待入轨片段（每个镜头对应一个片段）。
+ * 距首尾或前一有效切点不足最短片段时长的切点跳过拆分，并入相邻片段。
  */
 export const spanPieces = (span: MediaSpan, shots: readonly MediaSpan[]): MaterialPiece[] => {
   const edges = [span.startMs]
@@ -182,7 +182,7 @@ export const spanPieces = (span: MediaSpan, shots: readonly MediaSpan[]): Materi
 
 export type PickedSpan = { material: Material; span: MediaSpan }
 
-/** 选区里的各段，按加入轨道的先后排：原作按在「镜头」页签里的顺序，同一条原作里按时间。 */
+/** 按入轨顺序展平全部选区：原作遵循「镜头」页签排列顺序，同一原作内按时间升序。 */
 export const orderedPicks = (
   groups: readonly MaterialGroup[],
   picks: MaterialPicks,
@@ -197,7 +197,7 @@ export const orderedPicks = (
     }),
   )
 
-/** 选区一共几段、多长（毫秒）。 */
+/** 汇总当前选区的总段数与总时长（毫秒）。 */
 export const picksSummary = (picks: MaterialPicks): { count: number; durationMs: number } => {
   const spans = [...picks.values()].flatMap((picked) => picked.spans)
   return {
@@ -208,7 +208,7 @@ export const picksSummary = (picks: MaterialPicks): { count: number; durationMs:
 
 export type UsedSpan = { clipId: string; startMs: number; endMs: number }
 
-/** 视频片段用掉的素材段，按素材地址分：素材区按版本的地址对上这段对话的素材。 */
+/** 统计时间线视频片段已使用的素材区间（按素材 URL 索引），供素材区按版本地址匹配入轨状态。 */
 export const usedSpans = (
   videos: readonly VideoClip[],
 ): ReadonlyMap<string, readonly UsedSpan[]> => {
@@ -224,16 +224,16 @@ export const usedSpans = (
   return used
 }
 
-/** 一条原作算不算已入轨：只要有一个版本被时间线上的视频片段用着。`used` 见 `usedSpans`。 */
+/** 判断原作是否已入轨：任一版本被时间线视频片段引用即视为已入轨（`used` 见 `usedSpans`）。 */
 export const takeInTrack = (
   take: MaterialTake,
   used: ReadonlyMap<string, readonly UsedSpan[]>,
 ): boolean => take.versions.some((item) => used.has(item.url))
 
-/** 「镜头」页签按入轨筛选：全部、未入轨、已入轨。 */
+/** 「镜头」页签入轨状态筛选条件：全部、未入轨、已入轨。 */
 export type TakeFilter = 'all' | 'unused' | 'used'
 
-/** 按 `filter` 筛出各组的原作；一条都不剩的组不要。 */
+/** 按入轨筛选条件过滤各镜头组原作，剔除过滤后为空的分组。 */
 export const filterTakes = (
   groups: readonly MaterialGroup[],
   filter: TakeFilter,
@@ -276,8 +276,8 @@ export const materialCatalog = (groups: readonly ConversationVideoGroup[]): Mate
     const takes = [...byTake].flatMap(([takeId, videos], index): MaterialTake[] => {
       const letter = takeLetter(index)
       const takeLabel = `出片 ${letter}`
-      // 版本号按出片各自排（组里按完成时间排好，原片在前）：V1 是原片，合成接着 V2、V3…；
-      // 和版本组按整个镜头组编的号不是一回事
+      // 版本号按原作独立编号（组内已按完成时间排序，原片居首）：V1 为原片，后续合成依次为 V2、V3…，
+      // 与版本历史中按整个镜头组统一编号相互独立
       const versions = videos.map((video, index) => ({
         jobId: video.id,
         url: video.outputUrl,

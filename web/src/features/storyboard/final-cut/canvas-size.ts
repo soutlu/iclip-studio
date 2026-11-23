@@ -1,6 +1,6 @@
 import type { Canvas } from './composition/film'
 
-/** 「画面尺寸」能选的比例，短边都是 1080。 */
+/** 画面尺寸预设列表，短边统一为 1080 像素。 */
 export const CANVAS_SIZES = [
   { label: '9:16', canvas: { width: 1080, height: 1920 } },
   { label: '3:4', canvas: { width: 1080, height: 1440 } },
@@ -10,20 +10,19 @@ export const CANVAS_SIZES = [
   { label: '21:9', canvas: { width: 2520, height: 1080 } },
 ] as const
 
-/** 宽高正好是 `canvas` 的那种比例；都不是时是 undefined。 */
+/** 查找与 `canvas` 宽高完全匹配的预设；无匹配时返回 `undefined`。 */
 export const presetOf = (canvas: Canvas) =>
   CANVAS_SIZES.find(
     (each) => each.canvas.width === canvas.width && each.canvas.height === canvas.height,
   )
 
-// 约分后的比例两项都不超过这个数时写成比例，再大就写宽×高
+// 宽高约分后两项均不超过此上限时以比例形式展示，否则直接展示 `宽×高`
 const SIMPLE_RATIO_MAX = 32
 
 const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b))
 
 /**
- * 画面尺寸的简称：正好是某种比例时写它（`9:16`），否则宽高约分后两项都不超过 32 时写约分的比（1280×800 →
- * `8:5`），再不然写 `宽×高`。
+ * 生成画面尺寸简称：命中预设时返回预设名（如 `9:16`）；否则若约分后两项均不超过 32 返回最简整数比（如 1280×800 → `8:5`）；其余情况返回 `宽×高`。
  */
 export function canvasLabel(canvas: Canvas): string {
   const preset = presetOf(canvas)
@@ -36,14 +35,14 @@ export function canvasLabel(canvas: Canvas): string {
 }
 
 const SHORT_SIDE = 1080
-// 素材的宽高是取过整的（常取成偶数）：每边和按预设比例算的差在这么多像素以内，算同一个比例
+// 素材宽高常经编码器取偶舍入，单边与预设比例偏差在该像素容差内即视为同一比例
 const ROUNDING_PX = 2
 
 const even = (value: number) => Math.round(value / 2) * 2
 
 /**
- * final-cut 放进第一段视频时画面改成的尺寸，`video` 是这段视频的宽高：比例跟视频，短边 1080，宽高取偶数；和
- * 预设的比例只差取整误差时用预设的尺寸（480×854 → 1080×1920，1280×720 → 1920×1080）。
+ * 计算首次向空白工程加入视频时的目标画布尺寸：按 `video` 比例将短边归一化为 1080 并取偶数；
+ * 若与某预设仅存在编码取整误差则直接采用预设尺寸（如 480×854 → 1080×1920，1280×720 → 1920×1080）。
  */
 export function canvasForVideo(video: Canvas): Canvas {
   const scale = SHORT_SIDE / Math.min(video.width, video.height)

@@ -1,19 +1,16 @@
-/* final-cut 编辑器：工作台「final-cut」页签的内容。左上是预览舞台，右上是右栏（镜头 / 贴片 / 场景 / 配乐 /
-   字幕 / 属性），下面是剪辑工具与时间线；保存状态和「导出」在工作台顶栏右边。 */
+/* final-cut 编辑器：工作台「final-cut」页签主体布局（左上预览舞台、右上右栏、底部剪辑工具与时间线；保存状态与导出位于工作台顶栏右侧）。 */
 
-/* final-cut 自己的取值，只在本文件用。声明在 :root 上而不是编辑器根上，因为浮层（菜单、「生成音乐」卡片、
-   歌曲详情）挂在 body 上，不在编辑器根下。
-   能用语义角色表达的都用语义角色；没有对应角色的才直接取原始色阶，本文件只有这一块这样做 */
+/* 本模块专用变量，仅限本文件引用。声明于 :root 而非编辑器根节点，以便挂载在 body 下的浮层（菜单、「生成音乐」卡片、音频详情）共享。
+   优先复用语义色角色，仅在无对应语义角色时直接引用基础色阶，且严格限定于此区块 */
 :root {
-  /* 中性控件：tick 是滑杆的零点刻度；control 一族是中性实心控件（滑杆走过的那段、选中的音色小块）上的
-     浅底与描边，knob 是滑杆拇指和开关圆钮 */
+  /* 中性控件：tick 为滑杆零点刻度；control-soft/ring 为中性实心控件（滑杆已选段、已选音色胶囊）的浅底与描边；knob 为滑杆拇指与开关圆钮 */
   --wf-tick: var(--n70);
   --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
   --wf-knob: var(--n100);
-  /* led 是深色实心按钮上图标的指示光 */
+  /* 深色实心主按钮图标的指示光色 */
   --wf-led: var(--t80);
-  /* 中性实心的主操作（「加入轨道」）：上浅下深的一点渐变，上沿一道高光；深色模式下是浅底 */
+  /* 中性实心主操作（「加入轨道」）：纵向微渐变叠加顶部高光；深色模式下反转为浅底 */
   --wf-action-fill: linear-gradient(
     180deg,
     color-mix(in srgb, var(--color-action-neutral) 94%, var(--color-on-scrim)) 0%,
@@ -22,16 +19,16 @@
   --wf-shadow-action:
     0 1px 3px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
-  /* 很淡的一层墨色底：只有一个版本时的「V1」小块 */
+  /* 极淡中性衬底：用于单版本「V1」标签 */
   --wf-wash: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
-  /* 紧凑分段的槽和与它并排的「V1」小块的圆角：里面格子的圆角加槽的内边距，四角同心 */
+  /* 紧凑分段容器及并排「V1」标签外圆角：内项圆角 + 容器内边距，保持四角同心 */
   --wf-radius-seg-compact: calc(var(--radius-xs) + 2px);
-  /* 「镜头」页签底部操作条的外圆角：里面按钮的圆角加 6px 内边距，四角同心 */
+  /* 「镜头」页签底部操作条外圆角：内部按钮圆角 + 6px 内边距，保持四角同心 */
   --wf-radius-dock: calc(var(--radius-sm) + 6px);
-  /* 镜头条上的已入轨条：镜头条深浅色下都是黑底，用不随主题换的鲜绿 */
+  /* 镜头条底部已入轨指示条：镜头条在深浅主题下均为黑底，采用固定鲜绿色 */
   --wf-in-track: var(--p70);
-  /* 片段：ink 是音频片段的标题；edge 是字幕胶囊和音频卡的描边，label 是音频卡顶上的标题条和它的分隔线；
-     三条渐变依次是贴片 / 场景、字幕胶囊、音频卡的卡底 */
+  /* 时间线片段：ink 为音频片段标题色；edge 为字幕胶囊与音频卡描边；label/label-line 为音频卡顶部标题条底色与分隔线；
+     三条渐变依次对应贴片/场景、字幕胶囊与音频卡背景 */
   --wf-original-ink: var(--color-tone-slate);
   --wf-dub-ink: var(--t30);
   --wf-music-ink: var(--p20);
@@ -43,10 +40,9 @@
   --wf-clip-component: linear-gradient(180deg, var(--n20) 0%, var(--n12) 100%);
   --wf-clip-caption: linear-gradient(180deg, var(--n99) 0%, var(--n96) 100%);
   --wf-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
-  /* 滑杆拇指和开关圆钮的投影；浮起面板的细线、投影和圆角是全局 Token（--color-panel-line、--shadow-panel 一族、
-     --radius-panel / --radius-control） */
+  /* 滑杆拇指与开关圆钮投影；浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
   --wf-shadow-knob: 0 1px 3px color-mix(in srgb, var(--n0) 20%, transparent);
-  /* 比全站最小字号小一档：时间线上音频片段 13px 高的标题条、画面上安全区的标注，只用在这两处 */
+  /* 低于全站最小字号一档：仅用于时间线 13px 高音频标题条与画布安全区标注 */
   --wf-text-clip-label: 9.5px;
 }
 
@@ -85,7 +81,7 @@
   flex-direction: column;
 }
 
-/* 根节点只承接点在空白处时的焦点，好让快捷键生效；操作控件仍保留各自的 ui-focus 焦点环。 */
+/* 根节点仅承接点击空白处的焦点以维持编辑器快捷键作用域；内部交互控件各自保留 ui-focus 焦点环 */
 .wf-editor:focus {
   outline: none;
 }
@@ -97,15 +93,15 @@
   line-height: var(--text-body-sm--line-height);
 }
 
-/* ---- 通用控件：编辑器里各处共用的一套样子。浮层菜单挂在 body 上不在编辑器根下，另带 wf-menu ---- */
+/* ---- 通用控件：编辑器共用基础外观（挂载于 body 的浮层菜单额外携带 .wf-menu 作用域） ---- */
 
-/* 能点的按钮是手型（同 shared/ui 的按钮），置灰的不是。零特异性：控件自己写的光标（裁剪把手、镜头的十字、
-   拖动中的 grabbing 等）照旧生效 */
+/* 可交互按钮默认显示手型光标（禁用态除外），与 shared/ui 按钮一致；
+   通过 :where() 保持零优先级，避免覆盖裁剪把手、镜头十字或拖拽 grabbing 等专用光标 */
 :where(.wf-editor, .wf-menu) :where(button:not(:disabled, [aria-disabled='true'])) {
   cursor: pointer;
 }
 
-/* 双色图标的填充层：悬停加深一档，按下、选中再加深一档（变量见 shared/icons 的 final-cut-glyphs.css） */
+/* 双色图标填充层不透明度：悬停加深，激活/选中态进一步加深（变量定义见 shared/icons/final-cut-glyphs.css） */
 :where(.wf-editor, .wf-menu) :where(.ui-state:hover) {
   --icon-fill-opacity: 0.25;
 }
@@ -122,14 +118,14 @@
   --icon-fill-opacity: 0.3;
 }
 
-/* 浮起面板：侧栏、时间线这样的大块 */
+/* 浮起面板容器（用于右栏、时间线等主区域） */
 .wf-panel {
   border-radius: var(--radius-panel);
   background: var(--color-surface);
   box-shadow: var(--shadow-panel), var(--shadow-specular);
 }
 
-/* 面板里的白色分组卡 */
+/* 面板内部白色分组卡片 */
 .wf-card {
   display: flex;
   flex-direction: column;
@@ -140,8 +136,7 @@
   box-shadow: var(--shadow-panel-card), var(--shadow-specular);
 }
 
-/* 小胶囊按钮：带字（或图标加字）的次要操作；is-active / aria-pressed 是开着的开关，is-warning 是要处理的提示，
-   is-soft 是建议先做的那一步（深色实底） */
+/* 胶囊形次要操作按钮：is-active / aria-pressed 为激活开关态，is-warning 为警示态，is-soft 为推荐主动作（深色实底） */
 .wf-chip-btn {
   display: inline-flex;
   height: 26px;
@@ -176,7 +171,7 @@
   color: var(--color-on-surface-faint);
 }
 
-/* 深色实心的胶囊：一块里最主要的那个动作（生成音乐、翻译、插入配音），图标点一点暖色指示光 */
+/* 深色实心胶囊：区域内首要动作（如生成音乐、翻译、插入配音），图标配暖色指示光 */
 .wf-chip-btn.is-soft {
   --icon-fill-color: var(--wf-led);
   --icon-fill-opacity: 0.32;
@@ -194,7 +189,7 @@
   color: var(--wf-led);
 }
 
-/* 置灰时底色也换成置灰的：不然深底上的灰字看不见 */
+/* 禁用态同步切换禁用底色，避免深底灰字对比度不足 */
 .wf-chip-btn.is-soft[aria-disabled='true'] {
   background-color: var(--color-disabled-container);
   box-shadow: none;
@@ -204,7 +199,7 @@
   color: inherit;
 }
 
-/* 下拉的触发钮：浅底细框，右边一个小箭头，展开时箭头朝上 */
+/* 下拉选择器触发按钮：浅底内描边，展开时右侧箭头旋转 180° */
 .wf-select {
   display: flex;
   height: 28px;
@@ -232,8 +227,8 @@
   rotate: 180deg;
 }
 
-/* 两段 / 多段切换：一条凹槽，当前那段是浮起的白块（「镜头」页签里的多一圈细线，见 wf-materials）；
-   is-compact 是矮的一档，和旁边 20 高的小块并排时用 */
+/* 分段切换控件：凹槽底配浮起白色激活项（「镜头」页签内附加外细线，见 .wf-materials）；
+   is-compact 为紧凑高度，供与 20px 高元素同行排布 */
 .wf-editor .wf-seg {
   gap: 2px;
   padding: 2px;
@@ -242,7 +237,7 @@
   box-shadow: var(--shadow-control-well);
 }
 
-/* 悬停只把字变深：交互态叠层（ui-state）的颜色置成透明，只留它的过渡 */
+/* 悬停仅加深文字色：将 ui-state 叠层色置透明，保留过渡曲线 */
 .wf-editor .wf-seg-item {
   --color-state-hover: transparent;
   --color-state-pressed: transparent;
@@ -264,7 +259,7 @@
   color: var(--color-on-surface);
 }
 
-/* 三个条件压过分段切换自带的选中底色和阴影（它的选中态是「类 + 属性」两个条件） */
+/* 三个选择器条件用于覆盖通用分段组件的双条件选中样式（类名 + 状态属性） */
 .wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
   background: var(--color-card);
   box-shadow: var(--shadow-pill), var(--shadow-specular);
@@ -272,7 +267,7 @@
   font-weight: 600;
 }
 
-/* 深色下槽底压得更深、当前那段用浅一档的面，才浮得起来（同工作台顶部的分段页签） */
+/* 深色主题下压暗槽底并提亮激活项表面，保持浮起层次（与工作台顶栏分段页签一致） */
 .dark .wf-editor .wf-seg {
   background: var(--color-control-well);
 }
@@ -294,9 +289,8 @@
   font-size: var(--text-caption);
 }
 
-/* 输入框、文字框和装着输入框的条：凹进去的浅底，聚焦时浮起成白底、外面一圈 1.5px 淡框（照稿子）。
-   焦点只画这圈淡框：边框不转墨色，设计系统的焦点环宽度置 0，不再叠一圈墨色框。
-   两个类压过输入框自带的边框、圆角、底色和焦点环宽度：构建后工具类与这里同层，单个类比不过加载顺序 */
+/* 输入框、文本域与复合输入容器：常态凹槽浅底，聚焦浮起白底配 1.5px 浅色描边环；
+   关闭设计系统默认焦点环宽度避免双重描边。使用双类选择器覆盖基础组件工具类，防止构建后因同层加载顺序被覆盖 */
 .wf-editor .wf-field {
   --state-focus-ring: 0px;
   border: 1px solid transparent;
@@ -317,14 +311,14 @@
   box-shadow: 0 0 0 1.5px var(--color-error);
 }
 
-/* 框里再套一个输入框时（宽高框、「显示时长」），悬停、按下的叠色和焦点框只看外面的框，里面的输入框不自己画 */
+/* 外框嵌套内层输入框时（如像素尺寸框、「显示时长」），悬停、按下与焦点效果统一由外框承担，关闭内层叠色与焦点环 */
 .wf-editor .wf-field input {
   --color-state-hover: transparent;
   --color-state-pressed: transparent;
   --state-focus-ring: 0px;
 }
 
-/* 细边一档：和所在的面同底，只有一圈细边；悬停边略深，聚焦边更深，报错边变红 */
+/* 细边变体：透明底配 1px 细边，悬停与聚焦逐级加深，校验错误时转错误色 */
 .wf-editor .wf-field.is-outline {
   border-color: var(--color-hairline);
   background: transparent;
@@ -343,7 +337,7 @@
   border-color: var(--color-error);
 }
 
-/* 侧栏页签顶上的搜索条；四周的空隙由所在的页签头决定 */
+/* 侧栏页签顶部搜索栏（外边距由所属页签头部控制） */
 .wf-editor .wf-search {
   width: auto;
   height: 30px;
@@ -362,8 +356,8 @@
   font-size: var(--text-label);
 }
 
-/* 浮层菜单：白底大圆角，浮起的阴影加顶部高光；选中的那项是中性浅底。
-   菜单挂在 body 上，靠 wf-menu 认；两个条件压过浮层自带的边框、底色和阴影 */
+/* 浮层菜单：白底大圆角、浮层阴影与顶部高光，选中项配中性浅底；
+   菜单挂载于 body 下，通过 .wf-menu[data-state] 双条件覆盖默认边框、背景与阴影 */
 .wf-menu[data-state] {
   padding: 6px;
   border: 0;
@@ -381,8 +375,8 @@
   background: var(--wf-control-soft);
 }
 
-/* 滑杆：走过的那段用控件墨色实时填上，轨道是凹槽，零点刻度是一道短竖线，拇指是白底描边的圆钮。
-   挂点见 shared/ui/slider；两个类压过它自带的轨道、刻度和圆点 */
+/* 滑杆：凹槽轨道、中性实心进度条、短竖线零点刻度与白底描边拇指；
+   挂载点见 shared/ui/slider，以双类选择器覆盖默认样式 */
 .wf-editor .slider-track {
   height: 3.5px;
   background: var(--color-surface-container-high);
@@ -416,8 +410,8 @@
     0 0 0 4px var(--wf-control-soft);
 }
 
-/* 开关：关着是凹槽、白圆钮；开着和全站开关一样，墨色轨道配页面底色的圆钮（深色下轨道是浅灰，白圆钮会看不见）。
-   挂点见 shared/ui/switch；两个类压过它自带的尺寸和底色 */
+/* 开关：关闭态为凹槽配白色圆钮；开启态沿用全站样式，前景色轨道配背景色圆钮（避免深色主题下白圆钮融入浅灰轨道）；
+   挂载点见 shared/ui/switch，以双类选择器覆盖默认尺寸与底色 */
 .wf-editor .switch-root {
   width: 34px;
   height: 19px;
@@ -443,15 +437,13 @@
   background: var(--color-background);
 }
 
-/* ---- 外框：凹底上三块浮起面板，左上预览舞台、右上右栏、下面整宽的时间线，块与块之间是可拖的分隔条 ----
-   任何宽度都是这一种摆法，不做小屏适配：放不下的内容由所在的卡片裁掉，不换行。唯一能横向滑的是右栏的页签内容
-   （见「右栏」一节）：右栏窄时它整块被裁，要滑过去才够得着被裁掉的按钮；别处只裁不滚。
-   编辑区和各卡片用 clip 不用 hidden：hidden 仍能滚动，滚轮或聚焦被裁掉的控件会把内容带偏。
-   夹值和 use-editor-layout.ts 里的一致：右栏拖定的宽度 150–580，舞台至少留 360 宽（播放条刚好排开一行）、200 高，
-   时间线至少 186 高 */
+/* ---- 外框：凹底三区浮起网格（左上预览舞台、右上右栏、底部全宽时间线），面板间置可拖拽分隔条 ----
+   固定桌面三区结构，不做窄屏折行重排：超出部分由所在面板直接裁切。仅右栏页签内容支持横向滑动访问（见「右栏」一节）；
+   各容器使用 overflow: clip 而非 hidden，防止滚轮或聚焦被裁控件触发隐式滚动位移。
+   钳制数值与 use-editor-layout.ts 保持同步：右栏拖拽范围 150–580px，舞台至少保留 360×200px（播放条单行排开），时间线最小高 186px */
 .wf-workspace {
   --wf-splitter: 10px;
-  /* 右栏页签内容至少按这么宽排；右栏比它窄时内容不挤，整块被面板裁掉 */
+  /* 右栏页签内容最小排版宽度；右栏窄于该值时不挤压内容，整块裁切并横向滚动 */
   --wf-side-content: 376px;
 
   display: grid;
@@ -461,8 +453,8 @@
     'preview side-splitter side'
     'timeline-splitter timeline-splitter timeline-splitter'
     'timeline timeline timeline';
-  /* 右栏按拖定的宽度，给舞台留 360；舞台不够 360 时右栏让到内容宽，拖定的比内容宽还窄就照拖定的。
-     工作台很窄时舞台优先：至少留 300 给舞台和播放条，右栏再让 */
+  /* 右栏优先取用户拖拽宽度并为舞台保留 360px；空间不足时退让至内容宽（或用户更窄的设定宽）；
+     极端窄工作台下舞台优先，至少保留 300px 给舞台与播放条 */
   grid-template-columns:
     minmax(0, 1fr) var(--wf-splitter)
     min(
@@ -472,9 +464,9 @@
       ),
       100% - 300px - var(--wf-splitter)
     );
-  /* 没拖过时时间线按内容高、最多占一小半，放不下时只压缩轨道区 */
+  /* 未手动调整高度时，时间线按内容自适应且不超过 46% 高度，超限时仅压缩轨道区 */
   grid-template-rows: minmax(0, 1fr) var(--wf-splitter) fit-content(46%);
-  /* 上边紧贴工作台 48 高的顶栏 */
+  /* 上缘紧贴工作台 48px 顶栏 */
   padding: 0 12px 12px;
   overflow: clip;
   background: var(--color-control-well);
@@ -492,12 +484,12 @@
     max(186px, min(var(--wf-timeline-height), 100% - 200px - var(--wf-splitter)));
 }
 
-/* 拖高以后轨道区撑满多出来的高度（没拖过时按内容高，见「下半」一节） */
+/* 手动拉高时间线后由轨道区吸收多余高度（未调整时按内容自适应，见「下半」一节） */
 .wf-workspace.is-timeline-sized > .wf-timeline > .wf-tracks {
   flex-grow: 1;
 }
 
-/* 分隔条：占着块与块之间的缝，悬停、拖动、聚焦时中间亮出一道短把手 */
+/* 面板间可拖拽分隔条：悬停、拖拽或键盘聚焦时居中显露短握把 */
 .wf-splitter {
   display: grid;
   place-items: center;
@@ -547,8 +539,8 @@
   width: 68px;
 }
 
-/* ---- 右栏：顶上一排导航（镜头 / 贴片 / 场景 / 配乐 / 字幕，竖线后是属性，最右收起），下面是页签内容；
-   收起时整栏缩成一条竖的图标轨 ---- */
+/* ---- 右栏：顶部导航（镜头 / 贴片 / 场景 / 配乐 / 字幕、分隔线、属性及收起按钮）与下方页签内容；
+   收起态收缩为竖向图标轨 ---- */
 
 .wf-side {
   display: flex;
@@ -577,8 +569,7 @@
   container: wf-side-nav / inline-size;
 }
 
-/* 右栏窄时排不下的页签在收起按钮前面裁掉。只裁横向；四边让出位置给选中块的细圈和投影（上下让到导航的
-   上下沿，渐隐的遮罩也不裁到它们），负外边距抵掉，排法不变 */
+/* 右栏较窄时，溢出页签在收起按钮前横向裁切；四周通过正内边距与负外边距为激活项外框与阴影留出空间，避免被裁切或渐隐遮罩吞噬 */
 .wf-side-tabs {
   min-width: 0;
   flex: 1;
@@ -589,15 +580,15 @@
   overflow-x: clip;
 }
 
-/* 裁口右端渐隐。318 是六个页签、竖线和收起按钮排满一行要的宽（右栏 335 宽时），在浏览器里量的 */
+/* 裁切右缘渐隐：318px 为六个页签、分隔线与收起按钮单行完整排布所需的最小容器宽度（对应右栏约 335px 宽） */
 @container wf-side-nav (width < 318px) {
   .wf-side-tabs {
     mask-image: linear-gradient(to left, transparent, black 16px);
   }
 }
 
-/* 一个导航项：图标在上、短词在下。线条一律中性色，填充层按页签的色调淡淡一层；「属性」是墨色、不填色。
-   两个类压过共用页签自带的内边距、圆角、字号和字色 */
+/* 导航页签项：图标在上、文字标签在下；描边保持中性色，填充层按页签色调低不透明度着色（「属性」仅用中性前景色且无填充）。
+   使用双类选择器覆盖共用 TabsTrigger 的默认内边距、圆角、字号与文字色 */
 .wf-side-nav .wf-side-tab {
   --icon-fill-color: var(--wf-nav-tone);
   --icon-fill-opacity: 0.16;
@@ -652,8 +643,8 @@
   color: var(--color-on-surface);
 }
 
-/* 当前页签浮起成白块（深色下是高一级的面），线条换成页签的色调，填充层加深。
-   认 aria-selected：页签上叠着提示，data-state 归提示用 */
+/* 激活页签呈浮起白块（深色下为高一级表面），图标描边切为页签色调并加深填充层；
+   使用 aria-selected 而非 data-state，因按钮外层包裹 TooltipTrigger 会占用 data-state */
 .wf-side-nav .wf-side-tab[aria-selected='true'] {
   --icon-fill-opacity: 0.28;
 
@@ -675,7 +666,7 @@
   color: var(--wf-nav-tone);
 }
 
-/* 目录页签和「属性」之间的竖线，「属性」靠右；选中「属性」时淡出，免得贴着浮起的白块 */
+/* 目录页签与「属性」间的竖向分隔线（推右对齐）；选中「属性」时淡出，避免紧贴浮起块边缘 */
 .wf-side-sep {
   width: 1px;
   height: 18px;
@@ -689,7 +680,7 @@
   opacity: 0;
 }
 
-/* 有片段选中时「属性」右上角的圆点，描一圈底色和图标分开 */
+/* 存在选中片段时「属性」页签右上角的指示圆点，配外圈表面色描边以区分图标 */
 .wf-side-dot {
   position: absolute;
   top: 5px;
@@ -709,7 +700,7 @@
   box-shadow: 0 0 0 1.5px var(--color-surface-container-high);
 }
 
-/* 收起：竖排，展开按钮在最上面，「属性」沉到底（页签内容由编辑器藏起来、不卸掉） */
+/* 收起态：纵向图标轨，展开按钮置顶、「属性」置底（页签内容仅隐藏而不卸载） */
 .wf-side.is-collapsed .wf-side-nav {
   height: 100%;
   flex-direction: column;
@@ -745,8 +736,8 @@
   right: 4px;
 }
 
-/* 六个页签内容外面一层：比 --wf-side-content 窄时横向滑（触控板、Shift+滚轮、聚焦被裁的控件），
-   不出横向滚动条，滑到头不带动浏览器前进后退。导航在它外面，不跟着滑 */
+/* 页签内容外层横向滑动容器：右栏窄于 --wf-side-content 时支持触控板、Shift+滚轮或焦点自动滚动访问被裁区域；
+   隐藏横向滚动条，并通过 overscroll-behavior-x: contain 防止边界滑动触发浏览器前进/后退。导航位于外部不随之滚动 */
 .wf-side-scroll {
   display: flex;
   min-height: 0;
@@ -992,7 +983,7 @@
   padding-top: 12px;
 }
 
-/* 一句字幕（「组件文字」的一块也是它）：白色卡片，当前这一句左边一条墨色细条、外圈描深一档（照稿子） */
+/* 单条字幕卡片（「组件文字」卡片共用）：白色底卡，当前激活项左侧附加竖向指示条并加深外描边 */
 .wf-caption {
   position: relative;
   flex: none;
@@ -1066,7 +1057,7 @@
   color: var(--color-error);
 }
 
-/* 文字直接写在卡片上，聚焦时只换成浅底、不画焦点框（照稿子）；两个类压过文字框自带的边框、圆角、内边距和字号 */
+/* 无边框内联文本域，聚焦时仅切换浅底而不绘制焦点环；双类选择器用于覆盖基础文本域边框、圆角、内边距与字号 */
 .wf-caption .wf-caption-text {
   --state-focus-ring: 0px;
   min-height: 0;
@@ -1858,7 +1849,7 @@
   flex: none;
 }
 
-/* 一张卡（样子见 wf-card）：内边距和行距照稿子的属性卡，比通用的白卡松一些 */
+/* 属性卡片（复用 .wf-card 外观）：内边距与行距较通用卡片更舒展 */
 .wf-prop-card {
   gap: 13px;
   padding: 14px 15px;
@@ -2783,10 +2774,10 @@
   white-space: nowrap;
 }
 
-/* ---- 预览：影院舞台，浅深两种外观都是深色放映底；圆角浮起面板，画面四周透出当前镜头的一层淡淡溢光。
-   舞台上的文字和控件一律按深底配色（on-scrim），浮层（倍速菜单、快捷键面板）仍跟着外观走 ---- */
+/* ---- 预览舞台：浅深主题下均为深色放映底的圆角浮起面板，画面四周透出柔和氛围溢光。
+   舞台内文案与控件统一按深底配色（on-scrim），弹出浮层（倍速菜单、快捷键面板、画面设置）仍跟随全局主题 ---- */
 
-/* final-cut 预览和素材预览叠在舞台的同一格里，各自铺满 */
+/* final-cut 预览与素材预览重叠置于同一网格单元并各自撑满 */
 .wf-preview,
 .wf-material-preview {
   position: relative;
@@ -2798,8 +2789,8 @@
   overflow: hidden;
 }
 
-/* 溢光：模糊铺底只透出一点颜色，舞台始终读作深色（稿子的氛围光约 14%）。
-   三个类才压得过共用样式里深色外观的那一条 */
+/* 氛围溢光：模糊铺底叠加暗色面纱，仅透出轻微色调以保持深色舞台基调；
+   需三类选择器才能覆盖共用舞台样式中的深色主题规则 */
 .wf-stage .stage-backdrop > .stage-backdrop-image {
   opacity: 0.35;
   filter: blur(64px) saturate(1.2);
@@ -2809,20 +2800,20 @@
   background: color-mix(in srgb, var(--color-storyboard-stage) 55%, transparent);
 }
 
-/* 画面：上留 20、左右留 24，下面让出 50 高的播放条，画面底边离进度条 32（放得下框下面的旋转把手） */
+/* 画面留白：顶 20px、左右 24px，底部预留 50px 播放条 + 32px 间距（容纳选中框下方旋转把手） */
 .wf-preview > .editor-hero-wrap,
 .wf-material-preview > .editor-hero-wrap {
   inset: 20px 24px 82px;
 }
 
-/* 投影压在深底上，描边换成浅色细线 */
+/* 深色放映底上的画布投影与浅色微描边 */
 .wf-stage .stage-picture {
   box-shadow:
     0 24px 60px color-mix(in srgb, var(--color-scrim) 65%, transparent),
     0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
 }
 
-/* final-cut 的编辑画面是直角：四角就是导出画面的四角（素材预览的圆角见 wf-material-video） */
+/* final-cut 编辑画布保留直角以忠实呈现导出画幅边界（素材预览圆角见 .wf-material-video） */
 .wf-stage .wf-player-host {
   border-radius: var(--radius-none);
 }
@@ -2831,7 +2822,7 @@
   display: none;
 }
 
-/* 失败提示里有「重试」按钮，要压过铺满预览卡片的画面点选层 */
+/* 加载失败提示含「重试」按钮，提升层级压过全画面点选编辑层 */
 .wf-player-host[data-failed] {
   z-index: var(--z-local-1);
 }
@@ -2841,8 +2832,7 @@
   inset: 0;
 }
 
-/* 预览域名下的预览页，播放器和 final-cut 都在它里面。和播放器自己的 iframe 一样不接指针：
-   点在预览上时焦点留在编辑器里，空格等快捷键照常用 */
+/* 独立预览域名承载页（运行播放器与合成文档）：禁用指针事件使点击焦点保留在编辑器根节点，保证空格等快捷键生效 */
 .wf-preview-frame {
   position: absolute;
   inset: 0;
@@ -2853,8 +2843,8 @@
   pointer-events: none;
 }
 
-/* ---- 画面上的编辑：一层和画面一样大、盖在画面上（位置由预览量出画面后给），选中框和把手可以伸到画面外面；
-   照稿子：白色细框、四角白色方块、框下面的白色圆形旋转把手，都按深底配色 ---- */
+/* ---- 画布交互编辑层：与画面等大叠加（坐标由预览实测同步），选中框与控制柄允许越界伸出画布；
+   白色细框、四角方块缩放柄及底部圆形旋转柄统一按深底配色 ---- */
 
 .wf-canvas-slot {
   position: absolute;
@@ -2867,8 +2857,8 @@
   touch-action: none;
 }
 
-/* 框本身不接指针，只有把手接。编辑层里的框、参考线、改字框都不设层级，按先后叠放，整层在舞台右上角的胶囊下面
-   （见 wf-stage-hud） */
+/* 选中框本身不拦截指针，仅由各控制柄响应。编辑层内的选中框、参考线与原地改字框均不设 z-index，按 DOM 顺序层叠，
+   整层位于舞台右上角胶囊（.wf-stage-hud）之下 */
 .wf-canvas-frame {
   position: absolute;
   border-radius: var(--radius-xs);
@@ -2947,7 +2937,7 @@
   cursor: grabbing;
 }
 
-/* 旋转中的实时度数：在旋转把手右边、和把手上下居中，不压到下面的进度条 */
+/* 旋转实时角度读数：置于旋转柄右侧并垂直居中，避免下探遮挡进度条 */
 .wf-canvas-angle {
   position: absolute;
   top: calc(100% + 19px);
@@ -3003,8 +2993,7 @@
   white-space: nowrap;
 }
 
-/* ---- 画面上的参考线：构图网格的细线和短视频平台会挡住的区域，盖在画面上（和画面编辑层同一格，在它下面），
-   只画在编辑器里、不接指针 ---- */
+/* ---- 画面参考线：构图网格线与短视频平台遮挡安全区，位于画布编辑层之下，仅作编辑态辅助且不拦截指针 ---- */
 
 .wf-framing {
   position: absolute;
@@ -3045,7 +3034,7 @@
   height: 1px;
 }
 
-/* 遮挡区：琥珀色虚线框、压暗一点，角上写它是什么 */
+/* 平台遮挡安全区：琥珀色虚线框叠加轻微暗幕，角部标注区域名称 */
 .wf-framing-zone {
   position: absolute;
   display: flex;
@@ -3059,7 +3048,7 @@
   white-space: nowrap;
 }
 
-/* 竖屏：右侧的点赞、评论一列 */
+/* 竖屏右侧互动按钮列（点赞、评论等） */
 .wf-framing-zone[data-zone='side'] {
   right: 6px;
   bottom: 18%;
@@ -3069,7 +3058,7 @@
   padding: 5px 0 0;
 }
 
-/* 竖屏：底部的标题、文案；横屏：底部的播放控制 */
+/* 竖屏底部标题文案区与横屏底部播控栏区 */
 .wf-framing-zone:is([data-zone='bottom'], [data-zone='controls']) {
   right: 6px;
   bottom: 5px;
@@ -3082,11 +3071,11 @@
   height: 17%;
 }
 
-/* ---- 舞台右上角的画面设置：一枚压在深底上的胶囊（画面尺寸 ⌄ │ 参考线），点开的浮层跟着外观走 ---- */
+/* ---- 舞台右上角画面设置胶囊（画面尺寸 ⌄ │ 参考线），展开的设置浮层跟随全局主题 ---- */
 
-/* 和播放条一样叠在舞台的同一格里，靠右上；压过整个画面编辑层（选中框、把手、参考线、改字框）。
-   三格：画面尺寸、分隔线、参考线开关；收起时前两格缩成 0，右边缘不动（见下面的 hover 媒体查询）。
-   悬停、按下的叠色和焦点环从 on-scrim 派生，同播放条 */
+/* 与播放条共占舞台网格单元并靠右上对齐，层级压过整个画布编辑层（选中框、控制柄、参考线、改字框）。
+   三列网格依次为尺寸按钮、分隔线与参考线开关；收起态下前两列收缩为 0 保持右缘锚定（见下方 hover 媒体查询）。
+   交互叠色与焦点环统一由 on-scrim 派生，与播放条一致 */
 .wf-stage-hud {
   --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 13%, transparent);
   --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
@@ -3114,7 +3103,7 @@
   transition: grid-template-columns var(--dur-s) var(--ease);
 }
 
-/* 收起时这一格缩成 0 宽：裁掉里面的字，内边距、透明度和胶囊宽度一起变（时长、曲线同 ui-state） */
+/* 收起态列宽归零并裁切内容，同步过渡内边距、透明度与胶囊宽度（时长与缓动曲线复用 ui-state） */
 .wf-stage-hud-size {
   display: inline-flex;
   height: 24px;
@@ -3130,7 +3119,7 @@
   white-space: nowrap;
 }
 
-/* 简称后面的「· 导出档位」（或宽×高）：比简称淡一级，和 ⌄ 同一档 */
+/* 简称后的导出档位（或像素尺寸）：弱化一级，与展开箭头透明度一致 */
 .wf-stage-hud-tier {
   color: color-mix(in srgb, var(--color-on-scrim) 62%, transparent);
   font-weight: 400;
@@ -3140,7 +3129,7 @@
   background: var(--color-state-hover);
 }
 
-/* 尺寸按钮悬停、展开时和关着的参考线开关悬停时，字和图标转纯白；开着的参考线保持琥珀色 */
+/* 尺寸按钮悬停/展开及未激活参考线开关悬停时转纯白；激活态参考线保持琥珀色 */
 .wf-stage-hud
   :is(
     .wf-stage-hud-size:is(:hover, [data-state='open']),
@@ -3149,7 +3138,7 @@
   color: var(--color-on-scrim);
 }
 
-/* 比例小框（见 AspectGlyph）放在固定 14px 的方格里居中，长短不同的框后面的字从同一条竖线起排 */
+/* 比例缩略框（AspectGlyph）置于 14px 固定方格中居中，确保不同画幅后的文字左缘对齐 */
 .wf-ratio-glyph {
   display: inline-grid;
   width: 14px;
@@ -3159,7 +3148,7 @@
   opacity: 0.78;
 }
 
-/* 圆角收小一半，竖的 9:16 才不像个椭圆 */
+/* 圆角减半，避免 9:16 窄竖框视觉接近椭圆 */
 .wf-ratio-glyph > .storyboard-bar-glyph {
   border-radius: calc(var(--radius-xs) / 2);
 }
@@ -3171,13 +3160,13 @@
     opacity var(--dur-s) var(--ease);
 }
 
-/* 展开时 ⌄ 转过来，和字一样亮 */
+/* 浮层展开时箭头旋转 180° 并恢复全不透明度 */
 .wf-stage-hud-size[data-state='open'] > svg {
   opacity: 1;
   rotate: 180deg;
 }
 
-/* 竖线居中在 5px 宽的那一格里，左右各留 2 */
+/* 分隔竖线在 5px 列内居中，左右各留 2px 间距 */
 .wf-stage-hud-sep {
   width: 1px;
   height: 12px;
@@ -3186,8 +3175,8 @@
   transition: opacity var(--dur-s) var(--ease);
 }
 
-/* 平时只留参考线开关；鼠标移到胶囊上、键盘焦点在里面（:focus-visible，鼠标点过留下的焦点不算）或画面设置浮层
-   开着时，画面尺寸和分隔线向左展开。没有悬停的设备一直展开。收起时按钮仍在、Tab 得到 */
+/* 常态仅显露参考线开关；悬停胶囊、键盘聚焦内部（仅 :focus-visible，排除鼠标点击焦点）或浮层展开时向左展开尺寸按钮。
+   无悬停能力设备保持常展；收起态下按钮仍驻留 DOM 并可被 Tab 聚焦 */
 @media (hover: hover) {
   .wf-stage-hud:not(:hover, :has(:focus-visible, .wf-stage-hud-size[data-state='open'])) {
     grid-template-columns: 0fr 0 auto;
@@ -3200,7 +3189,7 @@
   }
 }
 
-/* 参考线开关（样子见 wf-tool）：关着时淡白，开着时琥珀色浅底 */
+/* 参考线快捷开关（复用 .wf-tool）：关闭态淡白，开启态琥珀浅底 */
 .wf-stage-hud .wf-tool {
   width: 24px;
   height: 24px;
@@ -3216,8 +3205,8 @@
   color: var(--color-tertiary-fixed);
 }
 
-/* 画面设置浮层（白底大圆角见 wf-menu）：上面六种比例，下面一行一项，右边的控件对齐在同一条竖线上。
-   两个条件、写在 wf-menu 后面，内边距才压得过它的 6px */
+/* 画面设置浮层（基础白卡外观复用 .wf-menu）：上方 3×2 比例网格，下方逐行排布配置项且右侧控件等宽对齐；
+   与 .wf-menu[data-state] 同优先级且置于其后，以覆盖默认 6px 内边距 */
 .wf-canvas-settings[data-state] {
   display: flex;
   width: 256px;
@@ -3243,7 +3232,7 @@
   font-size: var(--text-caption);
 }
 
-/* 宽高、构图网格这些控件一样宽，右对齐 */
+/* 导出分辨率、像素尺寸与构图网格控件保持等宽并右对齐 */
 .wf-canvas-control {
   width: 156px;
   flex: none;
@@ -3255,7 +3244,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-/* 比例按钮：小框和数字靠左排，上下两行对齐；当前的那个是浅底 */
+/* 比例预设按钮：缩略框与数值左对齐保证两行纵向齐平，激活项配高一级容器浅底 */
 .wf-canvas-ratio {
   display: inline-flex;
   height: 28px;
@@ -3289,7 +3278,7 @@
   gap: 3px;
 }
 
-/* 宽或高的框（样子见 wf-field 的细边一档）：左边一个小字「宽」「高」，数字靠右 */
+/* 宽/高输入框外框（复用 .wf-field.is-outline）：左侧标注「宽」「高」，右侧输入像素值 */
 .wf-canvas-side {
   display: inline-flex;
   height: 25px;
@@ -3303,7 +3292,7 @@
   cursor: text;
 }
 
-/* 两个类压过输入框自带的边框、底色、内边距和高度 */
+/* 双类选择器覆盖基础 Input 的边框、底色、内边距与高度 */
 .wf-canvas-side .wf-canvas-side-input {
   width: 100%;
   height: auto;
@@ -3345,7 +3334,7 @@
   white-space: nowrap;
 }
 
-/* 色点：一圈淡边分开浅色和浮层底；选中的外面再套一圈墨色 */
+/* 底色色块：内细边区分浅色块与浮层底，选中态外加双层隔离描边环 */
 .wf-canvas-swatch {
   width: 15px;
   height: 15px;
@@ -3366,7 +3355,7 @@
     0 0 0 2.75px var(--color-on-surface);
 }
 
-/* 导出分辨率、构图网格的分段：三段一样宽，比通用的分段矮一档 */
+/* 导出分辨率与构图网格三等分分段控件，高度较通用分段紧凑一档 */
 .wf-canvas-seg {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -3378,12 +3367,12 @@
   font-size: var(--text-caption);
 }
 
-/* 这个画面导不出的档位：字压成禁用色，悬停也不变深（压过 wf-seg-item 的悬停字色：同样三个条件，写在后面） */
+/* 当前画幅不支持的导出档位：保持禁用文字色且悬停不加深（与 .wf-seg-item:hover 同优先级并置于其后） */
 .wf-canvas-seg > .wf-seg-item[aria-disabled='true'] {
   color: var(--color-disabled-text);
 }
 
-/* 原地改字：盖在藏起来的那段文字上，照稿子的白框、浅黑底 */
+/* 画布原地改字输入框：覆盖在隐藏的原文字上方，采用白色描边与半透明深底 */
 .wf-canvas-text {
   position: absolute;
   padding: 0 4px;
@@ -3398,7 +3387,7 @@
   outline: none;
 }
 
-/* 字幕：多行、居中，和画面上的字幕一样排 */
+/* 字幕多行居中排版，与画面字幕样式保持一致 */
 .wf-canvas-text.is-multiline {
   overflow: hidden;
   line-height: 1.3;
@@ -3406,11 +3395,10 @@
   resize: none;
 }
 
-/* ---- 播放条：贴在预览底部，final-cut 和素材两种预览共用，总高 50。上面一条白色进度条，
-   下面左边是播放圆钮和时间，右边是静音、倍速、循环、全屏、快捷键 ---- */
+/* ---- 播放控制条：贴合预览舞台底部（final-cut 与素材预览共用，总高 50px），含上方白色进度条与下方左右控制组 ---- */
 
 .wf-transport {
-  /* 压在深色舞台上：悬停、按下的叠色和焦点环都从 on-scrim 派生，同制作页舞台 */
+  /* 叠加于深色舞台之上：交互叠色与焦点环均从 on-scrim 派生，与制作页舞台保持一致 */
   --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 11%, transparent);
   --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
   --color-state-active: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
@@ -3489,7 +3477,7 @@
   display: none;
 }
 
-/* 不压缩：放不下时右边那组往右超出，由舞台裁掉，不和左边的播放键、时间叠在一起 */
+/* 两侧工具组不压缩折行，极端窄宽下由舞台裁切右侧溢出项，避免与左侧播放键及时间读数重叠 */
 .wf-transport-row {
   display: flex;
   align-items: center;
@@ -3513,7 +3501,7 @@
   border-radius: var(--radius-control);
 }
 
-/* 关着的开关（工具条上是淡色）在舞台上也照常亮 */
+/* 深色舞台上未激活开关保持高对比度（覆盖工具条上的淡色弱化样式） */
 .wf-transport .wf-tool,
 .wf-transport .wf-tool[aria-pressed='false'] {
   color: color-mix(in srgb, var(--color-on-scrim) 88%, transparent);
@@ -3523,13 +3511,13 @@
   color: var(--color-on-scrim);
 }
 
-/* 开着的循环播放：舞台不随外观变，用不随外观变的白字加一层淡白底，和关着时的淡白字拉开 */
+/* 激活态循环播放：采用与主题无关的纯白字与半透明白底，与未激活态区分 */
 .wf-transport .wf-tool.is-pressed {
   background: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
   color: var(--color-on-scrim);
 }
 
-/* 半透明的白色播放圆钮，顶上一道高光 */
+/* 半透明圆形播放按钮，叠加顶部微高光 */
 .wf-transport .wf-tool.wf-play {
   width: 28px;
   height: 28px;
@@ -3545,7 +3533,7 @@
   background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
 }
 
-/* 时间读数，等宽字：当前时间亮，总长淡 */
+/* 等宽时间读数：当前时刻高亮，总时长弱化 */
 .wf-clock {
   padding-left: 7px;
   font-family: var(--font-mono);
@@ -3561,7 +3549,7 @@
   font-weight: 400;
 }
 
-/* 倍速按钮写着当前倍速，宽度按最长的「0.25×」留，换档时旁边的按钮不挪 */
+/* 倍速按钮按最长档位「0.25×」预留最小宽度，切换倍速时避免邻近按钮抖动 */
 .wf-transport .wf-tool.wf-rate {
   min-width: 44px;
   padding: 0 6px;
@@ -3574,8 +3562,7 @@
   background: var(--color-state-active);
 }
 
-/* 舞台：深色放映底的浮起面板，包着预览和播放条，全屏时整块进全屏；里面仍按 preview 这一格叠放。
-   放不下的播放条在这里裁掉 */
+/* 舞台面板：深色放映底浮起容器，承载预览、画布设置与播放条，全屏时整体进入全屏；溢出播放条在此裁切 */
 .wf-stage {
   container: wf-stage / inline-size;
   display: grid;
@@ -3589,7 +3576,7 @@
   border-radius: var(--radius-panel);
   background: var(--color-storyboard-stage);
   box-shadow: var(--shadow-panel);
-  /* outline 画在模糊铺底上面；内阴影会被铺底盖住 */
+  /* 使用内缩 outline 绘制细边框，避免 inset box-shadow 被内部模糊背景层遮挡 */
   outline: 1px solid var(--color-storyboard-stage-line);
   outline-offset: -1px;
 }
@@ -3598,8 +3585,8 @@
   border-radius: var(--radius-none);
 }
 
-/* 舞台窄（并排时工作台约 780 宽，舞台只剩 360 上下）：画面四周少留一点，播放条横向收紧一档、仍排一行，
-   高度和画面到进度条的距离同宽舞台 */
+/* 窄舞台适配（容器宽低于 440px，如分栏并排态下舞台约 360px）：收紧四周留白与播放条横向间距以维持单行排布，
+   保持播放条高度及画布距进度条间距不变 */
 @container wf-stage (width < 440px) {
   .wf-preview > .editor-hero-wrap,
   .wf-material-preview > .editor-hero-wrap {
@@ -3631,7 +3618,7 @@
   }
 }
 
-/* 素材预览左上角的提示块：琥珀色小点、放的是哪条素材，最右「回到 final-cut」。磨砂深底，不随外观变 */
+/* 素材预览左上角状态胶囊（琥珀圆点、素材标题与返回 final-cut 按钮），磨砂深底不随主题切换 */
 .wf-source-pill {
   position: absolute;
   z-index: var(--z-local-1);
@@ -3683,7 +3670,7 @@
   background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
 }
 
-/* 快捷键面板：说明在左，按键在右 */
+/* 快捷键一览面板：左侧动作说明，右侧按键帽 */
 .wf-shortcuts {
   width: 272px;
   padding: 10px 12px 12px;
@@ -3727,7 +3714,7 @@
   place-items: center;
   padding: 0 5px;
   border-radius: var(--radius-xs);
-  /* 面板底色半透明，按键底色跟着文字色调，深浅两种主题都看得出 */
+  /* 面板背景半透明，按键底色从前景色派生以确保深浅主题均有足够对比度 */
   background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
   color: var(--color-on-surface);
   font: inherit;
@@ -3745,7 +3732,7 @@
   text-align: center;
 }
 
-/* 加载失败的提示按外观取文字色，直接压在深色舞台上看不清：给它一块浮层色的底 */
+/* 加载失败提示沿用主题文本色，添加浮层衬底避免在深色舞台上对比度不足 */
 .wf-preview-alert {
   position: relative;
   max-width: calc(100% - 32px);
@@ -3929,7 +3916,7 @@
   white-space: nowrap;
 }
 
-/* ---- 工作台顶栏右边：保存状态和导出。经挂点放进顶栏，不在 .wf-editor 里（圆角变量见文件开头） ---- */
+/* ---- 工作台顶栏右侧：保存状态与导出（通过顶栏挂点渲染，位于 .wf-editor 之外） ---- */
 
 .wf-header-actions {
   display: flex;
@@ -4994,7 +4981,7 @@
   box-shadow: none;
 }
 
-/* ---- 「镜头」页签：顶上一行入轨筛选和总数，按镜头组排的原作卡片在中间滚，有选区时底下浮一条操作条 ---- */
+/* ---- 「镜头」页签：顶部入轨筛选与统计、中部可滚动镜头组卡片列表及底部浮动选区操作条 ---- */
 
 .wf-side-body.is-shots {
   display: flex;
@@ -5019,15 +5006,15 @@
   padding: 10px 14px 4px;
 }
 
-/* 「镜头」页签里的分段（筛选、版本）比通用的多一圈细线，同工作台顶栏的分段页签
-   （和通用分段同样两个条件，写在它后面才压得过它的阴影） */
+/* 「镜头」页签内的分段控件（入轨筛选与版本切换）附加外圈细线，与工作台顶栏分段一致；
+   与通用 .wf-editor .wf-seg 同优先级并置于其后，以覆盖默认阴影 */
 .wf-materials .wf-seg {
   box-shadow:
     var(--shadow-control-well),
     inset 0 0 0 1px var(--color-panel-line);
 }
 
-/* 「全部 / 未入轨 / 已入轨」（样子见 wf-seg） */
+/* 入轨状态分段筛选（「全部 / 未入轨 / 已入轨」，复用 .wf-seg） */
 .wf-materials-filter {
   display: inline-flex;
 }
@@ -5039,7 +5026,7 @@
   white-space: nowrap;
 }
 
-/* 底边淡出：滚到一半的卡片不会被列表下沿生硬地切开 */
+/* 列表底部渐隐遮罩，柔化滚出视口的卡片截断边缘 */
 .wf-materials-list {
   display: flex;
   min-height: 0;
@@ -5064,7 +5051,7 @@
   gap: 8px;
 }
 
-/* 组头：左边短竖条和组名，右边几条出片和箭头；整行是收起 / 展开的按钮，收起时箭头朝右 */
+/* 镜头组头部：整行为折叠/展开触发按钮，左侧为竖条与组名，右侧为出片数与折叠箭头（折叠态箭头旋向右侧） */
 .wf-material-group-head {
   display: flex;
   height: 24px;
@@ -5109,7 +5096,7 @@
   margin-right: 4px;
 }
 
-/* 一条原作一张白卡：顶行见 wf-take-head，下面是镜头条；素材预览放着它时描一圈墨色 */
+/* 原作白色卡片（顶栏见 .wf-take-head，下方为镜头条）；素材预览激活态描深色外框 */
 .wf-take {
   position: relative;
   padding: 6px 7px 7px;
@@ -5132,7 +5119,7 @@
     var(--shadow-panel-card);
 }
 
-/* 顶行：「出片 A」、版本、「● 已入轨」，右边镜头数、总长和「+」；版本多到放不下时只有版本分段缩、自己横着滚 */
+/* 卡片顶栏：出片名、版本、「● 已入轨」与右侧统计及「+」；版本溢出时仅版本分段收缩并内部横向滚动 */
 .wf-take-head {
   display: flex;
   height: 20px;
@@ -5147,7 +5134,7 @@
   flex: none;
 }
 
-/* 「出片 A」至少占一样宽：各卡片的版本从同一条竖线开始 */
+/* 固定「出片 A」最小宽度，使各卡片的版本控件纵向左对齐 */
 .wf-take-name {
   min-width: 40px;
   color: var(--color-on-surface);
@@ -5155,7 +5142,7 @@
   font-weight: 600;
 }
 
-/* 只有一个版本时的「V1」：和紧凑的分段一样高、一样的圆角，一层很淡的墨色底 */
+/* 单版本「V1」标签：与紧凑分段保持同高与同圆角，配极淡中性底 */
 .wf-take-version {
   display: inline-flex;
   height: 20px;
@@ -5169,7 +5156,7 @@
   font-weight: 500;
 }
 
-/* 两个及以上版本的分段（紧凑的 wf-seg）：版本多到放不下时只有它缩、自己横着滚 */
+/* 多版本紧凑分段选择器（复用 .wf-seg.is-compact）：溢出时自身横向滚动 */
 .wf-take-versions {
   display: flex;
   min-width: 0;
@@ -5179,7 +5166,7 @@
   scrollbar-width: none;
 }
 
-/* 入了轨的小绿点：「● 已入轨」、没在看的已入轨版本、收起的组头 */
+/* 已入轨状态圆点（用于「● 已入轨」、非当前已入轨版本与折叠镜头组头） */
 .wf-take-dot {
   width: 5px;
   height: 5px;
@@ -5206,7 +5193,7 @@
   font-size: var(--text-caption);
 }
 
-/* 按「00.0s」五个等宽字留宽、靠右：各卡片的「+」上下对齐 */
+/* 按「00.0s」预留 5ch 等宽右对齐，使各卡片右侧「+」按钮纵向对齐 */
 .wf-take-duration {
   min-width: 5ch;
   color: var(--color-on-surface-muted);
@@ -5216,7 +5203,7 @@
   text-align: right;
 }
 
-/* 「+」（Tool）：压过工具条图标按钮的 30px 圆形，缩成卡片顶行里的小方块；按下时缩一下 */
+/* 整条加入轨道「+」按钮（基于 Tool 覆盖为 20px 紧凑圆角方块，按下轻微缩放反馈） */
 .wf-take-add {
   width: 20px;
   height: 20px;
@@ -5234,8 +5221,8 @@
   scale: 0.92;
 }
 
-/* 素材很长、镜头条比卡片宽时在卡片里横着滚（最小宽度由组件按秒数给），不显示滚动条；
-   四周多让出一圈，露出贴着两头的选区抓手和镜头的焦点框 */
+/* 镜头条横向滚动容器：长素材最小宽度由组件按时长设定，隐藏滚动条；
+   通过四周正内边距与负外边距为两端选区把手及焦点环预留可视空间 */
 .wf-take-scroll {
   margin: -3px -5px;
   overflow: auto hidden;
@@ -5243,8 +5230,8 @@
   scrollbar-width: none;
 }
 
-/* 镜头首尾相接铺满，切口线画在 wf-take-marks 里。
-   和 .wf-tracks 一样不让选文字：Shift 点镜头会把文本选区扩进来，之后按下选区拖动会变成浏览器原生拖拽 */
+/* 镜头首尾相接铺满，切口线由 .wf-take-marks 统一绘制；
+   与 .wf-tracks 一致禁用文本选中，避免 Shift 连选触发浏览器文本选区导致后续拖拽退化为原生拖拽 */
 .wf-take-strip {
   position: relative;
   height: 54px;
@@ -5263,7 +5250,7 @@
   font-size: var(--text-caption);
 }
 
-/* 镜头只放画面，不写镜头号和起止；头尾两个镜头跟着镜头条的圆角 */
+/* 镜头缩略帧按钮：仅呈现画面（不叠加文字标签），首尾镜头继承条形圆角 */
 .wf-shot {
   position: absolute;
   top: 0;
@@ -5284,8 +5271,8 @@
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-/* 悬停的镜头提亮一层。镜头不是层叠上下文，这层和 wf-take-marks 比层级：压在暗角和压暗之上；
-   和选区同一层、排在选区前面，仍在选区之下 */
+/* 悬停镜头微亮叠层：因 .wf-shot 未创建独立层叠上下文，此伪元素与 .wf-take-marks 及 .wf-pick 共享层叠上下文，
+   位于压暗与暗角之上，且因 DOM 顺序居前而仍处于选区框（同为 --z-local-2）之下 */
 .wf-shot::after {
   content: '';
   position: absolute;
@@ -5301,14 +5288,14 @@
   opacity: 1;
 }
 
-/* 还没有帧图时的占位图标压在深色镜头上，用浅色 */
+/* 帧图加载前的占位图标叠于深底镜头上，采用浅色 */
 .wf-shot > .timeline-frames {
   width: 100%;
   color: color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
 }
 
-/* 盖在镜头上、按镜头条圆角裁切的一层：镜头切口线、底沿的已入轨条、有选区时选区以外的压暗（按这个先后叠）。
-   内阴影是上沿一道 1px 高光和底沿的暗角，压在三者下面，好让已入轨条在亮画面上也看得清 */
+/* 镜头条视觉叠层（继承圆角裁切）：依次叠加镜头切口线、底部已入轨条与未选中区压暗遮罩；
+   顶部 1px 高光与底部暗角内阴影垫于三者之下，确保亮画面上的已入轨条清晰可辨 */
 .wf-take-marks {
   position: absolute;
   z-index: var(--z-local-1);
@@ -5321,7 +5308,7 @@
   pointer-events: none;
 }
 
-/* 镜头切口：一道 1px 亮线，上下两头各一个方角小刻度 */
+/* 镜头切口标记：1px 竖线配上下端小刻度 */
 .wf-take-cut {
   position: absolute;
   top: 0;
@@ -5349,7 +5336,7 @@
   bottom: 0;
 }
 
-/* 已入轨条：嵌在镜头条底沿，起止由组件给 left / right，两头各缩进 4px */
+/* 底部已入轨指示条：起止由组件写入 left / right，两端各内缩 4px */
 .wf-take-used {
   position: absolute;
   bottom: 4px;
@@ -5368,8 +5355,7 @@
   backdrop-filter: saturate(0.75);
 }
 
-/* 选区：暖金色框，拖中间平移（按住时抓紧的手），两端是金色胶囊把手；正在划出来的那段同样子（把手、时长都有）、
-   不接指针 */
+/* 选区框：暖金色描边与胶囊把手，拖拽主体平移（按下切换 grabbing）；划选草稿（.is-draft）复用同外观但不拦截指针 */
 .wf-pick {
   position: absolute;
   top: 0;
@@ -5384,7 +5370,7 @@
   touch-action: none;
 }
 
-/* 够长的选区在左上角写时长 */
+/* 达到最小长度阈值的选区左上角时长角标 */
 .wf-pick-time {
   position: absolute;
   top: 4px;
@@ -5413,8 +5399,8 @@
   background: color-mix(in srgb, var(--color-tertiary-fixed-dim) 18%, transparent);
 }
 
-/* 两个类压过共用把手的白底小方块：这里是一颗金色胶囊，中间一道深色握痕，悬停、按下时变亮变长。
-   点按区收到 18px 宽，1 秒的镜头不到 30px 时选区中间和紧挨着的镜头还按得到 */
+/* 双类选择器覆盖共用裁剪把手外观：金色胶囊配中央深色握痕，悬停与按下时提亮拉长；
+   点击热区收窄至 18px，确保 1 秒短镜头（宽不足 30px）仍留出选区主体与邻近镜头的可点击区域 */
 .wf-pick .timeline-handle {
   width: 9px;
   height: 26px;
@@ -5446,7 +5432,7 @@
   background: color-mix(in srgb, var(--color-on-tertiary-fixed) 65%, transparent);
 }
 
-/* 键盘聚焦：胶囊换成白色，和悬停分得开 */
+/* 键盘聚焦态切换为纯白胶囊，与悬停态清晰区分 */
 .wf-pick .timeline-handle:focus-visible {
   height: 30px;
   background: var(--color-on-scrim);
@@ -5456,7 +5442,7 @@
   background: color-mix(in srgb, var(--color-scrim) 65%, transparent);
 }
 
-/* 拖动时在卡片顶上跟着指针的「起 – 止 · 时长」，样子同提示气泡 */
+/* 拖拽区间时的浮动读数气泡（起止与时长），沿用提示气泡反色外观 */
 .wf-take-tip {
   position: absolute;
   top: 2px;
@@ -5474,7 +5460,7 @@
   pointer-events: none;
 }
 
-/* 底部浮着的操作条：已选几段、多长，清空，加入轨道。外圆角 = 里面按钮的圆角 + 内边距，四角同心 */
+/* 底部浮动选区操作条（选区汇总、清空与加入轨道）：外圆角与内部按钮保持同心 */
 .wf-pick-dock {
   display: flex;
   flex: none;
@@ -5515,8 +5501,7 @@
   background: var(--color-tertiary-fixed-dim);
 }
 
-/* 「清空」：小胶囊按钮（wf-chip-btn）和旁边的主操作一样高、一样大的字，字色淡一级。
-   :where 把特异性降到和 wf-chip-btn 一样，悬停照旧变深 */
+/* 「清空」按钮对齐主操作高度与字号并弱化文字色；通过 :where() 保持与 .wf-chip-btn 同优先级，保留悬停加深 */
 .wf-pick-dock > :where(.wf-chip-btn) {
   height: 28px;
   border-radius: var(--radius-sm);
@@ -5524,7 +5509,7 @@
   font-size: var(--text-label);
 }
 
-/* 中性实心的主操作（渐变和投影见 --wf-action-*）：悬停提亮，按下缩一下。不挂 ui-state：它的悬停叠层会换掉渐变 */
+/* 中性实心主操作（背景与阴影见 --wf-action-*）：悬停提亮、按下微缩；不挂 ui-state 避免其悬停叠层覆盖线性渐变 */
 .wf-pick-dock-insert {
   display: inline-flex;
   height: 28px;
@@ -5552,7 +5537,7 @@
   scale: 0.97;
 }
 
-/* 预览在放选区时，选区里走的播放头 */
+/* 素材预览播放期间同步行进于镜头条上的播放头竖线 */
 .wf-material-playhead {
   position: absolute;
   top: 0;
@@ -5566,7 +5551,7 @@
   pointer-events: none;
 }
 
-/* 预览切到素材：盖在 final-cut 预览上（同一格，样子见「预览」一节），回到 final-cut 时卸掉 */
+/* 素材预览叠层：覆盖于 final-cut 预览之上（共享舞台网格单元，见「预览舞台」一节），退出素材预览后卸载 */
 .wf-material-preview {
   isolation: isolate;
   background: var(--color-storyboard-stage);

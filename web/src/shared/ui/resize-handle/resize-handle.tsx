@@ -95,7 +95,7 @@ export function ResizeHandle({
       type="button"
     >
       <span aria-hidden className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" />
-      {/* 悬停、聚焦、拖动时中间亮出一道短握把，和 final-cut 编辑器里的分隔条同一个样 */}
+      {/* 悬停、聚焦或拖动时居中显现短握把，与 final-cut 编辑器分隔条保持一致 */}
       <span
         aria-hidden
         className={cn(

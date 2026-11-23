@@ -108,7 +108,9 @@ describe('final-cut 编辑器 · 属性', () => {
     ])
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
     await user.click(sideTab('属性'))
-    expect(within(inspector()).getByText('点选时间线上的片段，调整画面、声音或字幕')).toBeVisible()
+    expect(
+      within(inspector()).getByText('点选时间线上的片段，可调整画面、声音或字幕'),
+    ).toBeVisible()
 
     await pick(user, '测试可填项')
     await user.keyboard('{Shift>}')

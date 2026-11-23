@@ -4,12 +4,12 @@ import { catalogQuery } from './component-catalog'
 import { DEFAULT_CANVAS, emptyProject, PROJECT_MAIN } from './composition/film'
 import { createProjectFile, PROJECT_MAIN_PATH } from './final-cut.api'
 
-// 和读取、保存失败一样只写哪一步失败：服务端给了原因时接在后面
+// 与读取、保存报错保持一致，仅说明失败阶段；后端返回具体原因时拼接在后
 const CREATE_FAILED_TEXT = 'final-cut 新建失败'
 
 /**
- * 工作台「新建 final-cut」：按默认模版（见 `DEFAULT_CANVAS`）在对话工作区里建工程主文件，答复主文件的路径。
- * 组件库目录按 `catalogQuery` 读（已读过就用读过的）。别处刚建好（409）时当已建好；别的失败照样抛出。
+ * 工作台「新建 final-cut」：按默认模板（见 `DEFAULT_CANVAS`）在对话工作区创建工程主文件并返回其工作区路径。
+ * 组件库目录经 `catalogQuery` 获取（命中缓存则复用）；若并发创建已存在（409）则视为成功，其余错误照常抛出。
  */
 export const createFinalCut = async (
   conversationId: string,

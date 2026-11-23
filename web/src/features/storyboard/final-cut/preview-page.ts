@@ -64,10 +64,10 @@ type PlayerElement = HTMLElement & {
   readonly _media: { _createEntry: () => null }
 }
 
-// 运行库挂在播放器页面上的播放对象的全局名。按值引入根入口会把整包（约 70 KB）打进预览页，这里只借类型校验名字
+// 运行库挂载在播放器页面上的全局播放对象名。仅以类型导入校验名称，避免值导入 `@hyperframes/core` 根入口将整包（约 70 KB）打入预览页
 const RUNTIME_PLAYER: (typeof HYPERFRAME_RUNTIME_GLOBALS)['player'] = '__player'
 
-/** 播放器页面里运行库的播放对象，这里只用到它的时钟。 */
+/** 播放器页面内运行库挂载的播放对象（此处仅读取其时钟方法）。 */
 type RuntimeClock = { getTime: () => number }
 
 const isRuntimeClock = (value: unknown): value is RuntimeClock =>
@@ -76,7 +76,7 @@ const isRuntimeClock = (value: unknown): value is RuntimeClock =>
   'getTime' in value &&
   typeof value.getTime === 'function'
 
-/** `player` 里运行库时钟的当前时刻（毫秒，不小于 0）；运行库还没起来、读不到或读出的不是数时是 null。 */
+/** 读取 `player` 内运行库时钟当前时刻（毫秒，非负）；运行库未就绪、对象缺失或读数非法时返回 `null`。 */
 const runtimeMsOf = (player: PlayerElement) => {
   const page = player.iframeElement.contentWindow
   const runtime: unknown = page === null ? undefined : Reflect.get(page, RUNTIME_PLAYER)
@@ -479,7 +479,7 @@ export const createPreviewPage = (
       }
     }
     const running = () => wantsPlay && !player.paused
-    // 在放时逐帧读运行库的时钟报时刻：timeupdate 最多 0.1 秒一次，播放头跟着它一跳一跳地走
+    // 播放期间逐帧轮询运行库时钟上报时刻：timeupdate 上限约 10 Hz，直接依赖会导致播放头跳跃
     let frame: number | null = null
     let lastMs: number | null = null
     let clockMissing = false
@@ -488,7 +488,7 @@ export const createPreviewPage = (
       if (!running() || seekHeld) return
       const ms = runtimeMsOf(player)
       if (ms === null) {
-        // 不退回去读播放器的 currentTime（一秒只变约 30 次），读不到就报错，把问题露出来
+        // 不回退至 player.currentTime（约 30 Hz 离散步进），读不到时钟时显式报错以暴露异常
         if (!clockMissing) console.error('预览页读不到播放器里运行库的时钟，播放中报不出时刻')
         clockMissing = true
         return
@@ -497,10 +497,10 @@ export const createPreviewPage = (
       lastMs = ms
       send({ type: 'time', ms, seq: seekSeq })
     }
-    /** 想放时让逐帧报时刻跑着，不想放时停掉。 */
+    /** 根据播放意图启停逐帧时钟轮询循环。 */
     const followClock = () => {
       if (wantsPlay && frame === null) {
-        // 重新跑起来的第一帧总要报：跳转后编辑器已按新序号丢掉之前的时刻
+        // 每次重启轮询时首帧强制上报，因为跳转后编辑器已按新序号丢弃历史时刻
         lastMs = null
         frame = requestAnimationFrame(tick)
       } else if (!wantsPlay && frame !== null) {
@@ -510,7 +510,7 @@ export const createPreviewPage = (
     }
     const onTimeUpdate = (event: Event) => {
       const seconds = (event as CustomEvent<{ currentTime: number }>).detail.currentTime
-      // 在放时由逐帧读时钟报；timeupdate 带的是播放器缓存的旧值，再报会把播放头往回拉
+      // 播放期间由逐帧时钟循环负责上报；timeupdate 携带播放器缓存旧值，重复上报会导致播放头回跳
       if (!seekHeld && !running())
         send({ type: 'time', ms: Math.round(seconds * 1000), seq: seekSeq })
       syncMedia()

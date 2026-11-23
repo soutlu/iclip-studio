@@ -27,12 +27,12 @@ const FAILURE_TEXT: Record<string, string> = {
   'lint-failed': 'final-cut 未通过导出前检查，无法导出',
 }
 
-/** 一次导出的语言（`locale`）和分辨率档位（`resolution`，按画面尺寸导出是 null）。 */
+/** 单次导出的目标版本：语言代码（`locale`，原文为 `null`）与分辨率档位（`resolution`，按画布原尺寸导出为 `null`）。 */
 export type ExportVersion = Pick<WholeFilmExportOut, 'locale' | 'resolution'>
 
 /**
- * 导出现在的样子。提交中、进行中和完成的带着这次导出的语言和档位（见 `ExportVersion`）：提交中的是点「导出」那一刻
- * 编辑器显示的语言和亮着的档位，之后的取接口答的，导出后切了语言、换了档位也不变。
+ * 导出任务视图状态。提交中、进行中与完成态携带本次导出的目标版本（见 `ExportVersion`）：
+ * 提交态锁定点击「导出」瞬间编辑器当前语言与激活档位，后续状态取自后端响应，不受之后切换语言或档位影响。
  */
 export type ExportView =
   | { kind: 'idle' }
@@ -49,10 +49,10 @@ const isRunning = (status: WholeFilmExportOut['status']) =>
 
 const failureText = (error: WholeFilmExportOut['error']) => {
   if (error?.code === 'RENDER_REJECTED') return `成片导出失败：${error.message}`
-  // 渲染服务给的 message 是缺的字体名，用「、」连接
+  // 渲染服务返回的 message 为缺失字体名列表（顿号分隔）
   if (error?.code === 'font-missing')
     return `用到的字体 ${error.message} 不在可选字体里，无法导出；请换成可选字体后重新导出`
-  // 渲染服务给的 message 就是给人看的那句（见 composition/export-resolution.ts 的 tierUnsupportedText）
+  // 渲染服务返回的 message 即面向用户的完整提示文案（见 composition/export-resolution.ts 的 tierUnsupportedText）
   if (error?.code === 'resolution-unsupported') return error.message
   return FAILURE_TEXT[error?.code ?? ''] ?? '成片导出失败，请重新导出'
 }
@@ -78,8 +78,8 @@ const viewOf = (state: WholeFilmExportOut): ExportView => {
 }
 
 /**
- * 这段对话最近一次导出的样子，发起和取消导出。发起时给出导出哪种语言（编辑器当前显示的）和分辨率档位（按画面尺寸
- * 导出是 null）；发起前先等 `settle` 把没存的改动存完，它答 false（没存成）就不发起。
+ * 查询本对话最近一次成片导出状态，并提供发起与取消操作。
+ * 发起时传入当前展示语言与导出分辨率档位（按画布原尺寸导出传 `null`）；提交前先通过 `settle` 落盘未保存改动，落盘失败则中止发起。
  */
 export function useWholeFilmExport(conversationId: string, settle: () => Promise<boolean>) {
   const [local, setLocal] = useState<ExportView | null>(null)

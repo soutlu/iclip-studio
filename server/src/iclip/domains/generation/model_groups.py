@@ -11,10 +11,10 @@ from iclip.domains.identity.public import ModelGroupOf
 
 @dataclass(frozen=True, slots=True)
 class ModelGroup:
-    """一个配置组在媒体生成里用的 key 与网关 model_id。
+    """单个配置组在媒体生成中使用的密钥与网关 model_id 映射。
 
-    ``video_models`` 是「产品模型名 → 该组网关 model_id」；字幕、配乐、配音没开通时对应的 key 为
-    ``None``。
+    ``video_models`` 为「产品模型名 → 该组网关 model_id」映射；字幕、配乐或配音未启用时，
+    对应密钥为 ``None``。
     """
 
     name: str
@@ -26,11 +26,11 @@ class ModelGroup:
 
 
 class ModelGroups:
-    """媒体生成按配置组区分 key 与网关 model_id。
+    """媒体生成按配置组解析对应的密钥与网关 model_id。
 
-    受理时按属主定组（``group_of`` / ``video_model_of``），定下的组名与 model_id 写进生成记录；调用上游时
-    只看记录上的组（``of``）。``default`` 是没选组的人用的那一组，记录上组名为空即是它；``named`` 是能选给
-    人的其余组。
+    受理阶段按属主确定配置组（``group_of`` / ``video_model_of``）并将组名与网关 model_id 写入生成记录；
+    上游调用阶段仅依据记录所绑定的配置组解析（``of``）。``default`` 为未分组用户的默认组，在记录中以
+    ``None`` 表示；``named`` 为其余可分配配置组。
     """
 
     def __init__(
@@ -45,35 +45,37 @@ class ModelGroups:
         self._group_of = group_of
 
     async def group_of(self, owner: uuid.UUID) -> str | None:
-        """属主所在配置组的组名，默认组答 ``None``；组已不在配置里时由注入的「用户 → 组」查询抛错。"""
+        """返回属主所属配置组名，默认组返回 ``None``；绑定组已从配置中移除时由注入的查询端口抛错。"""
         name = await self._group_of(owner)
         if name is not None and name not in self._groups:
             raise RuntimeError(
-                f"配置组 {name} 不在媒体生成的组里：两边应取自同一份 model_groups，组合根接错了"
+                f"配置组 {name} 未在媒体生成配置组中注册：身份域与生成域须共享同一份 model_groups 配置"
             )
         return name
 
     async def video_model_of(self, owner: uuid.UUID, model: str) -> tuple[str | None, str]:
-        """属主的组名（默认组为 ``None``）与该组发给视频网关的 model_id。"""
+        """返回属主的配置组名（默认组为 ``None``）及该组对应的视频网关 model_id。"""
         name = await self.group_of(owner)
         group = self._default if name is None else self._groups[name]
         upstream = group.video_models.get(model)
         if upstream is None:
-            raise RuntimeError(f"配置组 {group.name} 没写 {model} 的 model_id，启动校验应当已拒绝")
+            raise RuntimeError(
+                f"配置组 {group.name} 未配置模型 {model} 的网关 model_id；启动校验应当已拒绝该配置"
+            )
         return name, upstream
 
     def of(self, job: GenerationJob) -> ModelGroup:
-        """生成记录上的配置组；组名为空即默认组。
+        """解析生成记录绑定的配置组；组名为 ``None`` 时返回默认组。
 
         Raises:
-            ProviderError: 记录上的组已不在配置里（不重试）。
+            ProviderError: 记录绑定的配置组已不在部署配置中（不重试）。
         """
         if job.model_group is None:
             return self._default
         group = self._groups.get(job.model_group)
         if group is None:
             raise ProviderError(
-                f"记录上的配置组 {job.model_group} 已不在配置里",
+                f"生成记录绑定的配置组 {job.model_group} 已不在当前部署配置中",
                 code="MODEL_GROUP_UNKNOWN",
                 retryable=False,
             )
@@ -81,10 +83,10 @@ class ModelGroups:
 
 
 def group_key(group: ModelGroup, key: str | None, *, what: str) -> str:
-    """配置组的某把 key；没配时抛不重试的 ``ProviderError``，说明是哪个组缺了哪把。"""
+    """获取配置组对应的服务密钥；未配置时抛出不可重试的 ``ProviderError``，指明缺失项所属配置组与能力。"""
     if key is None:
         raise ProviderError(
-            f"配置组 {group.name} 没配{what}的 key",
+            f"配置组 {group.name} 未配置{what}密钥",
             code="MODEL_GROUP_KEY_MISSING",
             retryable=False,
         )

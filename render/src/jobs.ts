@@ -36,15 +36,15 @@ export interface UploadTarget {
 
 export interface RenderJobInput {
   id: string
-  /** final-cut 工程的文件，已经查过（见 `projectProblem`）；按语言导出时主文件已经改好（见 `localizeProject`）。 */
+  /** 已通过校验的 final-cut 工程文件（见 `projectProblem`）；按语言导出时主文件已完成本地化改写（见 `localizeProject`）。 */
   files: readonly ProjectFile[]
-  /** 主文件里写的素材地址 → 去下载的地址。 */
+  /** 主文件中引用的素材地址到实际下载地址的映射。 */
   media: ReadonlyMap<string, string>
-  /** 交给渲染器的变量值：按语言导出时是那种语言校验过的值表，原文时是 null。 */
+  /** 传入渲染器的变量值表：按语言导出时为校验通过的语言值表，导出原文时为 null。 */
   variables: Readonly<Record<string, unknown>> | null
-  /** 导出分辨率档位；按画面尺寸导出时是 null。 */
+  /** 导出分辨率档位；按画面尺寸导出时为 null。 */
   resolution: ExportTier | null
-  /** 公共目录：工程里的 `vendor` 指向它。 */
+  /** 公共资源目录：渲染时拷贝为工程根目录下的 `vendor/`。 */
   vendorDir: string
 }
 

@@ -32,9 +32,9 @@
 
 ## 3. 工具注册与参数校验
 
-工具统一通过 `Tool(..., args_validator=...)` 注册到插件（Capability）中（参考 [shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py)，以及运行时项目的 `src/agent_runtime/plugins/workspace/capability.py` 与 `src/agent_runtime/harness/skills.py`）：
+工具统一通过 `Tool(..., args_validator=...)` 注册到插件（Capability）中（参考 [shot_video](../plugins/video/src/iclip_video/shot_video/toolset.py) 与运行时项目的 `src/agent_runtime/plugins/workspace/capability.py`）：
 
-- **前置参数校验放 `args_validator`**：像媒体地址、已挂载的技能这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里。地址不在参数里、要从工程文件读出来的（`check_film`、`generate_images`）在工具主体里检查，`check_film` 把不能用的地址列进问题清单。共用的地址校验在运行时项目的 `src/agent_runtime/harness/materials.py`：
+- **前置参数校验放 `args_validator`**：像媒体地址这类单工具入参范围检查，统一放在 `args_validator` 中拦截，不要散落在工具主体代码里；需从工程文件读取的地址（`check_film`、`generate_images`）在工具主体中校验，其中 `check_film` 将不可用地址汇总至问题清单。共用的地址校验在运行时项目的 `src/agent_runtime/harness/materials.py`：
   - `require_http` 只检查地址形状是否为合法的 HTTP(S) 链接。
   - 提交类工具用 `require_media` 检查链接能否打开、类型是否正确。有不能用的地址时抛 `ModelRetry`，按位置称呼（如「第 2 组第 1 张」）逐条列出称呼与原因，让模型换地址，不回显地址。
   - 读取类工具不做这项检查（规则见 [CONTEXT.md「媒体地址」](CONTEXT.md#媒体地址media-address)）。

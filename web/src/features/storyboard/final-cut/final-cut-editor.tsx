@@ -213,7 +213,7 @@ const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
 const NO_LINE_VOICES: LineVoices = {}
-// 在播时播放头的 state 最多这么久跟一次时钟：按播放头算的功能这么快就够用，编辑器不用每帧整个重画
+// 播放期间 state 层的播放头节流同步间隔：兼顾依赖播放头的常规功能与性能，避免整个编辑器逐帧重绘
 const PLAYING_COMMIT_MS = 100
 
 /** 预览里的各句字幕（见 `PreviewCaptions`）：显示的字是 `locale` 值表里的字，没翻的是原文。 */
@@ -242,8 +242,8 @@ const watchFullscreen = (notify: () => void) => {
 const fullscreenElementOf = () => document.fullscreenElement ?? null
 
 /**
- * 工作台「final-cut」页签编辑器（填满页签内容区）。页签只在工作区里有主文件时才有（新建在工作台的「+」里），
- * 编辑中主文件在别处被删掉时放下工程、说明已删除，工作台随后按文件列表去掉页签。
+ * 工作台「final-cut」页签编辑器（填满页签内容区）。仅当对话工作区存在主文件时呈现（新建入口见工作台顶栏「+」）；
+ * 编辑期间若主文件被外部删除，会话自动卸载工程并提示已删除，由工作台据此移除页签。
  * `saveDelayMs` 控制停手后自动保存的防抖毫秒数（缺省使用 `useFilmSession` 默认值，测试中可传入短延迟加速验证）。
  */
 export function FinalCutEditor({
@@ -268,7 +268,7 @@ export function FinalCutEditor({
           conversationId={conversationId}
           initial={stored}
           keysRef={keysRef}
-          // 会话刚读到主文件没了，不用再读一次。页签由工作台按工作区文件列表去掉（它也盯着工作区的变动）
+          // 会话已检测到主文件删除，直接置空缓存避免重复请求；页签移除由工作台监听工作区文件列表统一处理
           onMissing={() =>
             queryClient.setQueryData<StoredProject | null>(
               wholeFilmQueryKeys.project(conversationId),
@@ -301,7 +301,7 @@ const shotNumberOf = (ms: number, url: string, keyframes: KeyframeStates) => {
   return state?.kind === 'ready' ? shotAt(keyframeRanges(state.index), ms / 1000) : undefined
 }
 
-/** 选区里的一段加入轨道时拆成的片段，各带素材地址和名字（「A · 镜头 2」）。 */
+/** 将选区单段按镜头切点拆分为待入轨片段，附带素材地址与展示名（如「A · 镜头 2」）。 */
 const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
   spanPieces(span, takeShots(keyframes.get(material.url))).map((piece) => {
     const shot = shotNumberOf(piece.mediaStart, material.url, keyframes)
@@ -312,7 +312,7 @@ const piecesOf = ({ material, span }: PickedSpan, keyframes: KeyframeStates) =>
     }
   })
 
-/** 素材预览放的这一段跨了哪几个镜头，按加入轨道时拆成的片段算。 */
+/** 计算素材预览区间跨越的镜头编号文案（按入轨拆分规则计算）。 */
 const shotsLabelOf = (span: MediaSpan, url: string, keyframes: KeyframeStates) => {
   const pieces = spanPieces(span, takeShots(keyframes.get(url)))
   const first = pieces[0]
@@ -385,7 +385,7 @@ function EditorBody({
   })
   const [materialView, setMaterialView] = useState<MaterialView | null>(null)
   const [materialMs, setMaterialMs] = useState(0)
-  // 素材预览时播放条订阅的时钟，和 materialMs 一起写，频率照素材预览报时刻的频率
+  // 供素材预览态下播放控制条订阅的时钟，与 materialMs 同步写入，更新频率跟随素材预览时间回调
   const [materialClock] = useState(createPlayheadClock)
   const followMaterial = (ms: number) => {
     setMaterialMs(ms)
@@ -422,13 +422,13 @@ function EditorBody({
     return found
   }, [materials])
   const [pickedVersions, setPickedVersions] = useState<Readonly<Record<string, string>>>({})
-  // 「镜头」页签的筛选和收起的组：同 itemFilters 记在这里，切去别的页签再回来还在
+  // 「镜头」页签的入轨筛选与分组折叠状态：与 itemFilters 同级托管，切走页签后返回仍可保持
   const [takeFilter, setTakeFilter] = useState<TakeFilter>('all')
   const [closedGroups, setClosedGroups] = useState<ReadonlySet<string>>(() => new Set())
   const versionOf = (take: MaterialTake): Material =>
     take.versions.find((item) => item.jobId === pickedVersions[take.id]) ?? take.latest
-  // 「镜头」页签里显示着的版本，加上 final-cut 里视频片段用的素材（可能是没显示着的旧版本）：镜头、总长、
-  // 有没有声音都先读好——加进 final-cut 时不用再等，裁剪和「原片截取」也要知道素材的总长
+  // 预加载「镜头」页签当前展示版本及工程视频片段所引用的全部素材（含未展示的旧版本）的镜头索引、总时长与音轨状态：
+  // 确保加入轨道时无需额外等待，同时满足裁剪与「原片截取」对素材总时长的依赖
   const videoUrls = useStableValue(
     [
       ...new Set([
@@ -440,12 +440,12 @@ function EditorBody({
   const keyframes = useKeyframeIndexes(videoUrls)
   const audioTracks = useVideoAudio(videoUrls)
 
-  // 播放头只有一个来源：`clock` 每条时刻都跟，时间线竖线、播放条读数和进度条订阅它；`playheadMs` 给其余按播放头
-  // 算的功能用，在播时最多约每 PLAYING_COMMIT_MS 跟一次，免得整个编辑器每帧重画，停下时跟上时钟最后的值
+  // 播放头单一数据源：`clock` 实时跟随每帧时刻，供时间线播放头竖线、播放条读数与进度条独立订阅；
+  // `playheadMs` 供其余依赖播放头的组件使用，播放期间以 `PLAYING_COMMIT_MS` 节流同步以避免整页逐帧重绘，停播时立即对齐时钟末值
   const [clock] = useState(createPlayheadClock)
   const [playheadMs, setPlayheadMs] = useState(0)
   const [playing, setPlaying] = useState(false)
-  // 预览报来的消息按到达先后处理，「在不在播」要用最新的，不等重画
+  // 预览事件按到达顺序同步处理，通过 ref 读取最新播放态，不等待 React 重渲染
   const playingRef = useRef(false)
   const committedAtRef = useRef(Number.NEGATIVE_INFINITY)
   const followPreviewTime = (ms: number) => {
@@ -467,7 +467,7 @@ function EditorBody({
   const canvasNudgeRef = useRef<CanvasNudge | null>(null)
   const [picks, setPicks] = useState<MaterialPicks>(NO_PICKS)
   const [playback, setPlayback] = useState<PlaybackSettings>({ rate: 1, muted: false, loop: false })
-  // 画面上的参考线：只管这次编辑时看，一开始都关着
+  // 画面参考线配置：仅作用于本次编辑会话，初始全部关闭
   const [framing, setFraming] = useState<Framing>({ grid: 'off', safeArea: false })
   const toggleMute = () => setPlayback((current) => ({ ...current, muted: !current.muted }))
   const toggleLoop = () => setPlayback((current) => ({ ...current, loop: !current.loop }))
@@ -498,7 +498,7 @@ function EditorBody({
 
   const total = film?.durationMs ?? 0
   const playhead = Math.min(playheadMs, total)
-  // 按键、点按钮那一刻竖线所在的时刻：在播时 `playhead` 最多落后约 0.1 秒，按它算会落在竖线左边
+  // 取操作瞬间播放头竖线的精确时刻：播放期间 state 层的 `playhead` 最多滞后约 0.1 秒，直接使用会导致落点偏左
   const playheadNow = () => Math.min(clock.get(), total)
   const frameMs = Math.min(playhead, Math.max(0, total - 1))
   // 垫在预览后面的那一帧取最上面显示着的片段：文件里写在后面的在上面
@@ -511,7 +511,7 @@ function EditorBody({
     setPlayheadMs(ms)
     previewRef.current?.seek(ms)
   }
-  /** 点选时间线上的片段后把播放头挪进它里面：一次普通的定位，正在播 final-cut 时从新位置接着播（照原型）。 */
+  /** 点选时间线片段后将播放头定位至其内部：属于常规跳转，播放期间跳转后继续播放。 */
   const jumpInto = (ms: number) => {
     const resume = playing
     seek(ms)
@@ -545,7 +545,7 @@ function EditorBody({
   const [catalogTab, setCatalogTab] = useState<CatalogTab>('shots')
   const selectionKey = [...selected].sort().join(' ')
   const [seenSelection, setSeenSelection] = useState(selectionKey)
-  // 照稿子：停在「字幕」页签时选中什么都不切走，选中的字幕在列表里标出来
+  // 停留在「字幕」页签时点选片段不自动切走，对应字幕直接在列表中高亮标注
   if (selectionKey !== seenSelection) {
     setSeenSelection(selectionKey)
     if (sideTab !== 'captions') setSideTab(selectionKey === '' ? catalogTab : 'props')
@@ -553,7 +553,7 @@ function EditorBody({
   const selectOnly = (id: string) => setSelectedIds(new Set([id]))
   const sideRef = useRef<HTMLElement | null>(null)
   const timelinePanelRef = useRef<HTMLDivElement | null>(null)
-  // 右栏宽度、收起，时间线高度。选中片段时右栏收着就收着（「属性」上亮圆点），点页签或双击片段才展开
+  // 右栏宽度、收起态与时间线高度。选中片段时若右栏已收起则保持收起（仅点亮「属性」圆点），点击页签或双击片段时展开
   const { layout, setSideCollapsed, sideSplitter, timelineSplitter } = useEditorLayout(() => ({
     stage,
     side: sideRef.current,
@@ -583,8 +583,8 @@ function EditorBody({
   const [textEditing, setTextEditing] = useState(false)
   // 时间线上点下去做什么：B 在切开和选择之间来回换，V、A 回到选择，Esc 取消选中以后也回到选择
   const [tool, setTool] = useState<EditTool>('select')
-  // Esc 先退全屏（浏览器多半自己退，按键还是传到页面时才轮到这里），再退出素材预览，再取消选中，再清空「镜头」里的选区，
-  // 再回到选择工具；都没有时不用掉这一下
+  // Esc 逐层回退：先退出全屏（通常由浏览器原生接管，仅按键透传至页面时在此兜底），
+  // 其次退出素材预览、取消片段选中、清空「镜头」选区、恢复选择工具；均无待回退状态时不消费按键
   useEditorEscape(
     fullscreen ||
       textEditing ||
@@ -606,7 +606,7 @@ function EditorBody({
   }
   const selectAround = (side: 'left' | 'right') =>
     selectOnTimeline(new Set(aroundPlayhead(clips, playheadNow(), side)))
-  /** 双击时间线上的片段：只选中它，右栏切到「属性」（停在别的页签时也切，收着时展开）。 */
+  /** 双击时间线片段：单独选中该片段，并将右栏切换至「属性」页签（右栏收起时自动展开）。 */
   const inspectClip = (id: string) => {
     selectOnTimeline(new Set([id]))
     openSideTab('props')
@@ -778,11 +778,10 @@ function EditorBody({
           movedId,
         )
 
-  // 上一次还没加完时不接下一次，免得连点两下把同一组加两遍
+  // 防止前一次入轨尚未完成时重入，避免快速连点导致同一批片段重复加入
   const addingPicksRef = useRef(false)
   /**
-   * 把素材里的各段一次放进 final-cut（一步撤销），按 `chosen` 的先后首尾相接：给了 `at` 从那里放起，
-   * 没给就接在主轨的末尾。答复放进去了没有。
+   * 将选中的素材区间批量首尾相接加入轨道（记为一步撤销）：传入 `at` 时从指定轨道与时刻起排，否则追加至主轨末尾；返回是否成功加入。
    */
   const place = (
     chosen: readonly PickedSpan[],
@@ -793,8 +792,7 @@ function EditorBody({
       notice(ADDING_PICKS_TEXT)
       return Promise.resolve(false)
     }
-    // 照参照的工作台：确认素材有声音才写成有声音，没有声音、读不出来都按静音写。
-    // 素材区读镜头时已经一起读过，这里多半直接拿到
+    // 仅在确认素材包含音轨时标记为有声；无音轨或检测失败一律按静音写入（素材区预加载多半已命中缓存）
     const audible = new Map(
       [...new Set(chosen.map(({ material }) => material.url))].map((url) => [
         url,
@@ -804,7 +802,7 @@ function EditorBody({
         ),
       ]),
     )
-    // 时间线上还没有视频片段（隐藏的也算有）时，画面尺寸改成跟放进去的第一段一致；读不出它的宽高时不改
+    // 时间线尚无任何视频片段（含隐藏片段）时，自动将画布尺寸适配为首个加入片段的画幅；读不到宽高时保持不变
     const first = chosen[0]?.material.url
     const canvas =
       first === undefined || clips.some((clip) => clip.kind === 'video')
@@ -832,7 +830,7 @@ function EditorBody({
       addingPicksRef.current = false
     })
   }
-  /** 把选区放进 final-cut（`at` 同 `place`），放进去以后清空选区。 */
+  /** 将当前选区加入轨道（落位规则同 `place`），成功后清空选区。 */
   const placePicks = (chosen: readonly PickedSpan[], at?: { row: RowTarget; start: number }) =>
     void place(chosen, at).then((added) => {
       if (added) setPicks(NO_PICKS)
@@ -842,9 +840,9 @@ function EditorBody({
     else placePicks(picked)
   }
 
-  // 照参照的工作台：上一个条目还没加完时不接下一个，免得两次都按加之前的样子算落点
+  // 防止前一条组件或场景尚未落位时重入，避免并发调用均按旧时间线状态计算落点
   const addingItemRef = useRef(false)
-  /** 把组件库的一个条目放进 final-cut 的 `at`。 */
+  /** 将组件库单个条目加入轨道的 `at` 位置。 */
   const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
     if (addingItemRef.current) {
       notice(ADDING_ITEM_TEXT)
@@ -864,7 +862,7 @@ function EditorBody({
   const addAtPlayhead = (item: CatalogItem) =>
     placeItem(item, playheadSpot(clips, item, playheadNow(), itemDurationMs(item, clips)))
 
-  /** 把一整条音频放进 final-cut 的 `at`。 */
+  /** 将单条完整音频加入轨道的 `at` 位置。 */
   const placeAudio = (audio: NewAudio, at: { row: RowTarget; start: number }) => {
     const spot = trackFor(at.row)
     if (session.addAudio(audio, { track: spot.track, start: at.start }, spot.renumber))
@@ -878,8 +876,8 @@ function EditorBody({
   }
   const shortcut = (event: KeyboardEvent, editor: HTMLElement) => {
     if (event.defaultPrevented || !isEditorKeyTarget(event, editor)) return
-    // 全屏时菜单挂在编辑器里面，菜单里按的键归菜单；「属性」里的滑杆、下拉、取色、开关上按的键也归控件
-    // 自己，照参照的工作台。时间尺上的播放位置也是滑杆，点过它以后快捷键照常用
+    // 全屏模式下菜单挂载在编辑器容器内，菜单内按键交由菜单自身处理；「属性」内的滑杆、下拉、取色与开关同理。
+    // 时间尺上的播放头滑杆不在此列，点击后仍允许全局快捷键生效
     if (
       event.target instanceof Element &&
       event.target.closest(
@@ -1426,7 +1424,7 @@ function EditorBody({
     },
   }
   const hostsWithText = textHosts(clips, catalog)
-  // 语言切换和添加：工具条上和「字幕」页签顶部共用这一份
+  // 工具条与「字幕」页签顶部共用的语言切换与添加控制
   const localeControls: LocaleControls = {
     current: locale.code,
     present: film?.locales ?? [],
@@ -1443,7 +1441,7 @@ function EditorBody({
   const viewedMaterial = materialView === null ? undefined : materials.byJob.get(materialView.jobId)
   const materialLabel = (material: Material, viewed: MediaSpan) =>
     `素材 · ${material.groupLabel} · ${material.takeLabel}${shotsLabelOf(viewed, material.url, keyframes)}`
-  /** 「镜头」页签里一条原作的选区改了：`view` 放进素材预览，去掉了预览着的那条原作上的一段时回到 final-cut 的预览。 */
+  /** 更新「镜头」页签单条原作选区：传入 `view` 时切入素材预览，移除当前预览原作的选区时退回 final-cut 预览。 */
   const changePicks = (takeId: string, next: TakePicks, view: MaterialView | null) => {
     setPicks((current) => withTakePicks(current, takeId, next))
     if (view !== null) {
@@ -1503,7 +1501,6 @@ function EditorBody({
       </>
     )
 
-  // 会话还在打开工程
   if (film === null)
     return (
       <p className="wf-state" role="status">
@@ -1514,15 +1511,15 @@ function EditorBody({
   const exportTier = exportTierOf(film.canvas, chosenTier)
 
   /**
-   * 切到「属性」或右栏收起时，切走前停的目录页签留在页面上（藏起来），回来时搜索词、分类、滚动位置都还在。
-   * 收起时「属性」也藏起来，不卸掉。
+   * 切至「属性」或收起右栏时，保留切离前所在目录页签的挂载状态（仅隐藏展示），返回时保留搜索词、筛选条件与滚动位置；
+   * 右栏收起时「属性」页签同样仅隐藏而不卸载。
    */
   const catalogPanel = (tab: CatalogTab) =>
     tab === catalogTab
       ? { forceMount: true as const, hidden: sideTab !== tab || layout.sideCollapsed }
       : {}
 
-  // 右栏收着时页签内容藏起来，和工作台折叠一样当作看不见：试听、播放跟着停
+  // 右栏收起时页签内容隐藏，与工作台折叠一致视为不可见，同步暂停页签内的试听与预览播放
   const sideShown = !collapsed && !layout.sideCollapsed
 
   return (

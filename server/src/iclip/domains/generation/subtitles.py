@@ -61,7 +61,7 @@ class QwenSubtitleProvider:
         api_key = group_key(group, group.subtitle_api_key, what=_LABEL)
         audio = await self._speech_audio(request.video_url)
         if audio is None:
-            _logger.info("素材片没有音轨，字幕记为没有口播", job_id=job.id)
+            _logger.info("素材视频无音轨，字幕结果记为空", job_id=job.id)
             return ProviderSubmission(
                 provider_task_id=str(job.id), provider_status="no_audio", sentences=()
             )
@@ -93,7 +93,7 @@ class QwenSubtitleProvider:
                     )
             except MediaError as exc:
                 raise ProviderError(
-                    f"取不到要识别的视频: {exc}",
+                    f"无法下载待识别视频: {exc}",
                     code="MEDIA_SOURCE_UNREACHABLE",
                     retryable=False,
                 ) from exc

@@ -401,7 +401,7 @@ const withPickableRoots = <T>(
 
 /**
  * 画布单点拾取单元：`unit` 为应选中的可编辑单元（如宿主或独立层），`target` 为指针下实际命中的最顶层内部元素
- * （贴片、场景里用矢量图形画的内容命中的是 SVG 元素）。
+ * （贴片或场景内的矢量图形可能命中 SVG 元素）。
  */
 export type PointerUnit = { unit: Laid; target: Element }
 
@@ -426,7 +426,7 @@ export const unitsAt = (
   for (const target of result) {
     if (passThrough.has(target)) continue
     const host = outermostHostOf(target)
-    // 先归到宿主再看能不能量版面：命中的可以是 SVG 元素，被选中的宿主才要是版面元素
+    // 先归属至宿主再校验是否为布局元素：内部命中节点允许是 SVG 元素，最终选中的单元才须具备布局属性
     const unit: Element = host !== null && isHost(host) ? host : target
     if (!isLaid(unit)) continue
     if (!units.some((each) => each.unit === unit)) units.push({ unit, target })

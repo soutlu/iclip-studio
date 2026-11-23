@@ -2,7 +2,7 @@ import { DuoGlyph, type GlyphProps } from '@/shared/icons/duo-glyph'
 
 const FILL = 'final-cut-glyph-fill'
 
-/** 「设置 · 用户」头部的双色人群图标：前面一个人垫淡填充，后面一个人只有淡线。 */
+/** 「设置 · 用户」头部双色人群图标：前景人物叠加浅色填充，背景人物以半透明描边呈现。 */
 export function PeopleGlyph(props: GlyphProps) {
   return (
     <DuoGlyph {...props}>

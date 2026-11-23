@@ -62,19 +62,18 @@ export const filterItems = (
   )
 }
 
-// 和参照的工作台一样：条目没写时长时取 10 秒和 final-cut 现有总长里大的那个
+// 条目未指定默认时长时，取 10 秒与当前工程总时长中的较大值
 const DEFAULT_ITEM_MS = 10_000
 
-/** 条目放进 final-cut 时的时长（毫秒）；`clips` 是 final-cut 里现有的片段。 */
+/** 计算条目加入轨道时的默认时长（毫秒）；`clips` 为当前工程已有片段。 */
 export const itemDurationMs = (item: CatalogItem, clips: readonly FilmClip[]): number =>
   item.duration === null
     ? Math.max(DEFAULT_ITEM_MS, ...clips.map((clip) => clip.start + clip.duration))
     : Math.round(item.duration * 1000)
 
 /**
- * 点「加到播放头」时组件或块的片段放在哪：从 `startMs` 起、长 `durationMs`。
- * 照参照的工作台：`block` 类的条目放画面区第一行，`component` 类的放画面区最下面新开的一行；
- * 第一行在这段时间已经有片段时，在它下面紧挨着新开一行。
+ * 计算组件或区块条目加入播放头时的目标轨道行与起始时间（`startMs` 起、时长 `durationMs`）：
+ * `block` 条目优先置于画面区首行（该时段被占用时在其下方紧邻新建一行）；`component` 条目置于画面区底部新建一行。
  */
 export const playheadSpot = (
   clips: readonly FilmClip[],

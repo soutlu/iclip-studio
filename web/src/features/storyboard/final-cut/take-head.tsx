@@ -6,20 +6,20 @@ import type { Material, MaterialTake, UsedSpan } from './materials'
 
 type TakeHeadProps = {
   take: MaterialTake
-  /** 显示着的版本。 */
+  /** 当前展示的版本。 */
   version: Material
-  /** 时间线上用掉的素材段，按素材地址分（见 `usedSpans`）：哪个版本入了轨按它看。 */
+  /** 时间线已占用的素材区间映射（按素材地址索引，见 `usedSpans`），用于标识各版本是否已入轨。 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 镜头数和总长（毫秒），镜头读好了才有。 */
+  /** 镜头数与总时长（毫秒），分镜镜头解析完成后可用。 */
   shotCount: number | undefined
   durationMs: number | undefined
-  /** 「+」还加不了时的原因。 */
+  /** 「+」按钮不可用时的禁用原因说明。 */
   blocked: string | undefined
   onVersion: (takeId: string, jobId: string) => void
   onInsertWhole: () => void
 }
 
-/** 原作卡片的顶行：「出片 A」、版本、「● 已入轨」，右边镜头数、总长和整条加入轨道的「+」。 */
+/** 原作卡片顶栏：依次展示「出片 A」、版本选择器、「● 已入轨」标识，右侧展示镜头数、总时长及整条加入轨道按钮。 */
 export function TakeHead({
   take,
   version,
@@ -62,7 +62,7 @@ export function TakeHead({
   )
 }
 
-/** 两个及以上的版本：一排分段，点一下直接切；没在看的版本入了轨时带一个小绿点。 */
+/** 多版本分段选择器：点击即切换当前展示版本；非当前展示但已入轨的版本附带绿色圆点提示。 */
 function TakeVersions({
   take,
   version,
@@ -71,9 +71,8 @@ function TakeVersions({
 }: Pick<TakeHeadProps, 'take' | 'version' | 'used' | 'onVersion'>) {
   const [listRef, { width }] = useElementSize<HTMLDivElement>()
   const currentRef = useRef<HTMLButtonElement>(null)
-  // 版本多到放不下时分段在自己的位置里横着滚：把选中的那段（默认是最新的，排在最右）滚进来。
-  // 分段变窄时（镜头读好后顶行多出镜头数和总长）也要重新滚。只滚分段自己，不用 scrollIntoView，
-  // 免得带着整个素材列表滚
+  // 版本数量超出可用宽度时在分段容器内横向滚动，确保当前选中版本（默认最新版，位于最右）处于视口内；
+  // 镜头数据就绪后顶栏新增统计信息会压缩容器宽度，亦需重新对齐。仅操作自身 scrollLeft 而非 scrollIntoView，避免带动整个素材列表滚动
   useLayoutEffect(() => {
     const current = currentRef.current
     const list = current?.parentElement
@@ -85,7 +84,7 @@ function TakeVersions({
   }, [version.jobId, width])
   return (
     <div
-      aria-label={`${take.label}的版本`}
+      aria-label={`${take.label} 的版本`}
       className="wf-seg is-compact wf-take-versions"
       ref={listRef}
       role="group"
@@ -101,7 +100,7 @@ function TakeVersions({
                 aria-pressed={current}
                 className="wf-seg-item ui-state ui-focus"
                 onClick={() => {
-                  // 点正在看的那段不算换版本：换版本会收起这条原作上的选区
+                  // 点击当前正在展示的版本不触发切换，避免误清空该原作下的镜头选区
                   if (!current) onVersion(take.id, item.jobId)
                 }}
                 ref={current ? currentRef : undefined}

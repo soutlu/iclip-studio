@@ -16,8 +16,8 @@ type WorkbenchRailProps = {
 }
 
 /**
- * 工作台收起成竖条时，排在「展开工作台」下面的内容（放进外框给的竖条插槽，见 `WorkbenchLayout.railSlot`）：
- * 一道细分隔、各常驻页签的图标（点了展开工作台并打开它），最底下是能新建的类型的「+」。
+ * 工作台收起为竖轨时位于「展开工作台」下方的快捷区（挂载至外框提供的 `WorkbenchLayout.railSlot`）：
+ * 依次渲染细分隔线、各常驻页签图标（点击展开工作台并切换至对应产物），底部固定放置可新建产物的「+」入口。
  */
 export function WorkbenchRail({
   items,

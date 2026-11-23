@@ -1,6 +1,6 @@
 /**
- * 可选的角色，从低到高；菜单按这个顺序列出。`dotClass` 是角色色点的底色，`description` 是菜单里角色名下面的说明。
- * root 用墨色而不是品牌绿：品牌绿只留给「生成」和完成状态。
+ * 可分配角色定义（按权限从低到高排列，下拉菜单沿用此顺序）。`dotClass` 指定角色圆点颜色，`description` 为菜单项副标题。
+ * `root` 使用墨色而非品牌绿（品牌绿仅用于「生成」主操作与成功状态）。
  */
 export const ROLE_OPTIONS = [
   {
@@ -26,12 +26,12 @@ export const ROLE_OPTIONS = [
 
 export type RoleOption = (typeof ROLE_OPTIONS)[number]
 
-/** 按角色筛选的分段：先「全部」，再从高到低列出每个角色。 */
+/** 角色筛选分段项：首项为「全部」，其余按权限从高到低排列。 */
 export const ROLE_FILTERS = [
   { label: '全部', value: 'all' },
   ...ROLE_OPTIONS.toReversed().map(({ label, value }) => ({ label, value })),
 ] as const
 
-/** 用户的角色里排得最高的那个；一个都不认识时为 `null`。 */
+/** 返回用户角色列表中权限最高的已知角色；无匹配时返回 `null`。 */
 export const highestRole = (roles: readonly string[]): string | null =>
   ROLE_OPTIONS.findLast((option) => roles.includes(option.value))?.value ?? null

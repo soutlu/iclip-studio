@@ -75,7 +75,9 @@ class QwenMusicProvider:
             )
         except ObjectStoreUnavailable as exc:
             raise ProviderError(
-                f"音乐已生成但存不进桶: {exc}", code="OUTPUT_STORE_FAILED", retryable=False
+                f"音乐已生成，但上传至对象存储失败: {exc}",
+                code="OUTPUT_STORE_FAILED",
+                retryable=False,
             ) from exc
         return ProviderSubmission(
             provider_task_id=request_id,
@@ -102,7 +104,7 @@ class QwenMusicProvider:
             except MediaError as exc:
                 cause = type(exc.__cause__).__name__ if exc.__cause__ is not None else "内容不合格"
                 raise ProviderError(
-                    f"音乐已生成但下载不下来（{cause}），不重新生成以免重复计费",
+                    f"音乐已生成但下载失败（{cause}），不重新生成以免重复计费",
                     code="OUTPUT_DOWNLOAD_FAILED",
                     retryable=False,
                 ) from exc

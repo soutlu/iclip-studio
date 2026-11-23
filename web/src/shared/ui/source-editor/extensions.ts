@@ -77,7 +77,7 @@ const PHRASES = EditorState.phrases.of({
   'replaced match on line $': '已替换第 $ 行的匹配项',
 })
 
-// 编辑器和只读查看器都要的：高亮、选中、查找、折行与中文提示
+// 编辑器与只读查看器共用的基础扩展：语法高亮、选区绘制、查找、自动折行与中文界面文案
 const READING: Extension = [
   highlightSpecialChars(),
   drawSelection(),
@@ -101,7 +101,7 @@ export const BASE: Extension = [
   keymap.of([...defaultKeymap, ...searchKeymap, ...historyKeymap]),
 ]
 
-/** 只读查看：可聚焦、可选中复制、可查找，带行号与折叠；不改内容，也不做写法检查。 */
+/** 只读查看器扩展集：支持聚焦、选中复制、查找、行号与代码折叠；禁止编辑且不启用语法诊断。 */
 export const VIEWER: Extension = [
   READING,
   EditorState.readOnly.of(true),
@@ -157,8 +157,8 @@ const LANGUAGES: Record<FileKind, Extension> = {
 export const languageFor = (kind: FileKind): Extension => LANGUAGES[kind]
 
 /**
- * 只读查看用的语言：JSON 直接给（不带写法检查），其余按文件名在语言表里找，多数语言要异步加载。
- * 找不到时返回 `null`，按纯文本显示。
+ * 解析只读查看器对应的语言扩展：JSON 直接返回无诊断版本，其余按文件名匹配语言表（多数语言需异步加载）。
+ * 未匹配时返回 `null`，按纯文本渲染。
  */
 export const viewerLanguageFor = (
   kind: FileKind,

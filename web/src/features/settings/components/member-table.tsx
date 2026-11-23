@@ -5,8 +5,8 @@ import { TabsContent } from '@/shared/ui/tabs'
 import { MEMBER_GRID_CLASS, TRAY_SURFACE_CLASS } from './settings-surface'
 
 /**
- * 成员表白卡，是角色筛选分段对应的内容区（`value` 跟当前筛选走）。表头固定，`children` 在表头下面滚动；
- * 窄屏每行自己折成两行，不显示表头。
+ * 成员表白色卡片容器，对应角色筛选分段的 `TabsContent`（`value` 与当前筛选值同步）。
+ * 表头固定于顶部，`children` 在下方区域纵向滚动；窄屏下隐藏表头并由各行折为两行展示。
  */
 export function MemberTable({ children, value }: { children: ReactNode; value: string }) {
   return (
@@ -29,7 +29,7 @@ export function MemberTable({ children, value }: { children: ReactNode; value: s
   )
 }
 
-/** 搜索或筛选后没有人；给了 `onClear` 才显示「清除筛选条件」。 */
+/** 成员列表筛选空态；传入 `onClear` 时提供「清除筛选条件」操作。 */
 export function NoMatch({ onClear }: { onClear?: (() => void) | undefined }) {
   return (
     <div className="m-auto flex flex-col items-center gap-2 px-6 py-12 text-center">
@@ -41,7 +41,7 @@ export function NoMatch({ onClear }: { onClear?: (() => void) | undefined }) {
       >
         <Icon decorative name="search" size="md" />
       </span>
-      <p className="text-body font-medium text-on-surface">没有匹配的成员</p>
+      <p className="text-body font-medium text-on-surface">暂无匹配的成员</p>
       {onClear ? (
         <button
           className="cursor-pointer rounded-xs text-label text-on-surface-variant ui-focus hover:underline"

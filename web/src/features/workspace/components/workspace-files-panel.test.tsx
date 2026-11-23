@@ -151,7 +151,7 @@ describe('WorkspaceFilesPanel 目录树', () => {
 
     await user.clear(filter)
     await user.type(filter, '没有这个')
-    expect(await screen.findByText('没有匹配的文件')).toBeVisible()
+    expect(await screen.findByText('暂无匹配的文件')).toBeVisible()
   })
 })
 

@@ -20,12 +20,12 @@ type ToolProps = {
   label: string
   tip: ReactNode
   blocked?: string | undefined
-  /** 开关类按钮现在是开还是关；不是开关就不给。 */
+  /** 开关类按钮的当前激活状态；非开关按钮省略。 */
   pressed?: boolean
   onClick: () => void
   shortcuts?: string
   className?: string
-  /** 提示挂到哪个元素里，见 `TooltipContent` 的 `container`。 */
+  /** 提示浮层的挂载容器，透传至 `TooltipContent` 的 `container`。 */
   tipContainer?: HTMLElement | null
 }
 
@@ -74,7 +74,7 @@ export function Tool({
 
 export const Keys = ({ children }: { children: string }) => <kbd className="wf-kbd">{children}</kbd>
 
-/** 时间线上点下去做什么：选择（选中、拖动、裁剪）或切开（剃刀）。 */
+/** 时间线编辑工具模式：选择（点选、拖拽与裁剪）或切开（剃刀）。 */
 export type EditTool = 'select' | 'razor'
 
 const TOOLS: Readonly<
@@ -84,7 +84,7 @@ const TOOLS: Readonly<
   razor: { name: '切开工具', icon: 'final-cut-split', keys: 'B', className: 'wf-tool-razor' },
 }
 
-/** 选择、切开两个工具排成一条分段，当前的那段浮起。 */
+/** 选择与切开工具组成的分段控件，当前激活项呈浮起态。 */
 function ToolSwitch({ tool, onTool }: Pick<EditorToolbarProps, 'tool' | 'onTool'>) {
   return (
     <div aria-label="编辑工具" className="wf-seg" role="group">
@@ -111,7 +111,7 @@ function ToolSwitch({ tool, onTool }: Pick<EditorToolbarProps, 'tool' | 'onTool'
 
 type CommandsProps = Pick<EditorToolbarProps, 'onSelectAround' | 'splitBlocked' | 'onSplit'>
 
-/** 分段右边的小箭头：三条一次性的命令（在播放头处切开、选中播放头左边或右边的片段），点完工具不变。 */
+/** 分段控件右侧的下拉菜单：提供一次性剪辑命令（在播放头处切开、选中播放头左/右侧片段），执行后不切换当前工具。 */
 function EditCommands({ onSelectAround, splitBlocked, onSplit }: CommandsProps) {
   const [open, setOpen] = useState(false)
   const [hint, setHint] = useState(false)
@@ -123,7 +123,7 @@ function EditCommands({ onSelectAround, splitBlocked, onSplit }: CommandsProps) 
       }}
       open={open}
     >
-      {/* 点开后指针还停在按钮上，提示会重新出现、压在向上弹出的菜单底下 */}
+      {/* 菜单展开时若指针仍停留在触发按钮上，禁用 Tooltip 避免提示压在向上弹出的菜单下方 */}
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
@@ -168,21 +168,21 @@ function EditCommands({ onSelectAround, splitBlocked, onSplit }: CommandsProps) 
 
 const COMMANDS_LABEL = '更多剪辑命令'
 
-/** 切开的命令在下拉和片段右键菜单里都叫这个。 */
+/** 「在播放头处切开」命令名称，下拉菜单与片段右键菜单共用。 */
 export const SPLIT_LABEL = '在播放头处切开'
 
-/** 工具条上的语言切换：`current` 是显示着的语言，`present` 是工程里有值表的语言。 */
+/** 工具条语言切换状态与操作：`current` 为当前展示语言，`present` 为工程内已存在值表的语言列表。 */
 export type LocaleControls = {
   current: Language
   present: readonly LocaleCode[]
   onSwitch: (code: Language) => void
-  /** 加一种语言并切过去。 */
+  /** 新增一种语言值表并切换至该语言。 */
   onAdd: (code: LocaleCode) => void
 }
 
 const localeButtonName = ({ name, tag }: { name: string; tag: string }) => `${name}（${tag}）`
 
-/** 语言切换里的一个按钮：切到哪种语言，按钮上的字、无障碍名和提示。 */
+/** 语言切换栏单个按钮配置：目标语言、展示代码、无障碍名称与悬停提示。 */
 type LocaleButton = { code: Language; tag: string; label: string; tip: string }
 
 const SOURCE_BUTTON: LocaleButton = {
@@ -193,10 +193,9 @@ const SOURCE_BUTTON: LocaleButton = {
 }
 
 /**
- * 语言切换：原文和工程里有的语言各一个按钮（原文写「原文」，别的写语言代码，无障碍名是语言的名字加代码），
- * 当前的高亮；最后的「+」点开列出还没加的语言，选一个加上并切过去，都加了时不显示。工具条上的
- * （`inPanel` 不给）菜单往上弹；「字幕」页签顶部的（`inPanel`）是一排小块，菜单往下弹。两处切换、添加的是
- * 同一份 `LocaleControls`。
+ * 语言切换栏：展示原文及工程内已有值表的语言按钮（原文显示「原文」，其余显示语言代码，无障碍名称为完整语言名与代码），当前项高亮；
+ * 末尾「+」菜单列出尚未添加的语言，选定后新建并切换，全部添加后隐藏。
+ * 底部工具条（默认）向上弹出菜单，「字幕」页签顶部（`inPanel`）以紧凑行排列并向下弹出；两处共享同一份 `LocaleControls`。
  */
 export function LocaleBar({
   current,
@@ -217,7 +216,7 @@ export function LocaleBar({
   const addable = LOCALES.filter(({ code }) => !present.includes(code))
   const side = inPanel ? 'bottom' : 'top'
   return (
-    // 侧栏里的这一组不能叫「语言」：按名字找工具条上那一组时会把它也找到
+    // 侧栏语言组使用独立无障碍名称，避免按「语言」查询工具条分组时产生歧义
     <div
       aria-label={inPanel ? '原文与译文' : '语言'}
       className={cn('wf-locales', inPanel && 'is-panel')}
@@ -246,7 +245,7 @@ export function LocaleBar({
   )
 }
 
-/** 菜单和提示往哪边弹。 */
+/** 菜单与提示的弹出方向。 */
 type PopSide = 'top' | 'bottom'
 
 function AddLocale({
@@ -268,7 +267,7 @@ function AddLocale({
       }}
       open={open}
     >
-      {/* 和选择工具的下拉一样：菜单开着时不出提示，免得压在向上弹出的菜单底下 */}
+      {/* 菜单展开时抑制 Tooltip，避免遮挡向上弹出的菜单 */}
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
@@ -299,17 +298,17 @@ type EditorToolbarProps = {
   onRedo: () => void
   tool: EditTool
   onTool: (tool: EditTool) => void
-  /** 选中播放头左边或右边的片段，替换原有选中。 */
+  /** 选中播放头左侧或右侧的片段（替换当前选区）。 */
   onSelectAround: (side: 'left' | 'right') => void
-  /** 在播放头处切不开选中的片段时的原因；能切时是 undefined。 */
+  /** 在播放头处无法切开选中片段时的禁用原因；可切开时为 `undefined`。 */
   splitBlocked: string | undefined
-  /** 在播放头处切开选中的片段，和按 S 一样。 */
+  /** 在播放头处切开选中片段（等效快捷键 S）。 */
   onSplit: () => void
-  /** 有没有选中的片段；没有时「删除」「缩放到选中的片段」置灰。 */
+  /** 是否存在选中片段；无选中时置灰「删除」与「缩放到选中的片段」。 */
   hasSelection: boolean
-  /** 删掉选中的片段，和按 Delete 一样。 */
+  /** 删除选中片段（等效快捷键 Delete）。 */
   onRemove: () => void
-  /** 「删除」右边的分离音频钮：分离或合并回视频，和按 ⇧⌘B 一样。 */
+  /** 分离/合并视频原声按钮配置（等效快捷键 ⇧⌘B）。 */
   sound: { kind: 'detach' | 'merge'; blocked: string | undefined; onClick: () => void }
   onZoomToSelection: () => void
   snap: boolean
@@ -317,10 +316,10 @@ type EditorToolbarProps = {
   ripple: boolean
   onRipple: () => void
   zoom: Zoom
-  /** 「适应宽度」时一秒画多少像素，缩放的档位和滑杆都以它为准。 */
+  /** 「适应宽度」模式下的每秒像素数，缩放档位与滑杆均以此为基准。 */
   fitPps: number
   onZoom: (zoom: Zoom) => void
-  /** 语言切换，排在右边那组的最前面。 */
+  /** 语言切换控件配置，位于右侧工具组首位。 */
   locales: LocaleControls
 }
 

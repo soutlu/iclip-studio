@@ -4252,7 +4252,7 @@ export type MetricsOut = {
 /**
  * ModelGroupsOut
  *
- * ``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。
+ * ``config.yaml`` 中可分配的配置组名列表（不含保留组 ``default``），按配置顺序排列；未配置时为空列表。
  */
 export type ModelGroupsOut = {
   /**
@@ -6010,8 +6010,8 @@ export type SubtitleIn = {
 /**
  * SubtitleSentence
  *
- * 字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
- * camelCase；早先的记录没有逐词时间，读出来是空。
+ * 单条字幕记录：包含在视频中的起止时间（毫秒）、文本、说话人标识与逐词时间戳。
+ * 落库使用 snake_case 键名，对外序列化为 camelCase；缺少逐词时间戳时默认为空元组。
  */
 export type SubtitleSentence = {
   /**
@@ -7802,7 +7802,7 @@ export type VideoSearchOut = {
 /**
  * VideoShotIn
  *
- * 结构化的镜头组：全局设定加逐镜时间线。发给模型的正文由服务端按 common.shot_prompt 的规则拼。
+ * 结构化镜头组：包含全局设定与逐镜时间线。发往模型的提示词正文由服务端按 ``iclip_video.shot_prompt`` 规则拼装。
  */
 export type VideoShotIn = {
   /**
@@ -7965,8 +7965,8 @@ export type WholeFilmExportErrorOut = {
 /**
  * WholeFilmExportIn
  *
- * 发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文；``resolution`` 是导出分辨率档位，
- * 不带或 null 按画面尺寸导出。
+ * 成片导出请求：``locale`` 指定目标语言，省略或为 ``null`` 时导出原文；``resolution`` 指定导出分辨率档位，
+ * 省略或为 ``null`` 时按画面尺寸导出。
  */
 export type WholeFilmExportIn = {
   /**
@@ -7991,8 +7991,8 @@ export type WholeFilmExportLatestOut = {
 /**
  * WholeFilmExportOut
  *
- * 一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null；``resolution`` 是导出分辨率
- * 档位，按画面尺寸导出时是 null。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。
+ * 成片导出状态视图。``locale`` 为目标导出语言，原文版本为 ``null``；``resolution`` 为导出分辨率档位，
+ * 按画面尺寸导出时为 ``null``。``downloadUrl`` 仅在 ``done`` 状态提供，``error`` 仅在 ``failed`` 状态提供。
  */
 export type WholeFilmExportOut = {
   /**
@@ -13953,7 +13953,7 @@ export type PutUserModelGroupUsersUserIdModelGroupPutData = {
 
 export type PutUserModelGroupUsersUserIdModelGroupPutErrors = {
   /**
-   * 没有这个用户
+   * 用户不存在
    */
   404: unknown
   /**

@@ -276,7 +276,7 @@ export function recognitionTargets(
 /** 识别出来的一句：在素材里的起止（毫秒）和字。 */
 export type Sentence = Pick<SubtitleSentence, 'startMs' | 'endMs' | 'text'>
 
-/** 一句要加进 final-cut 的字幕：起止（毫秒）、字，属于哪个视频片段（手动加的是 null）。 */
+/** 待加入轨道的单句字幕：起止时间（毫秒）、文本及归属的视频片段 ID（手动添加时为 `null`）。 */
 export type NewCaption = Span & { text: string; owner: string | null }
 
 /**
@@ -329,8 +329,9 @@ export function placeCaptions(
 }
 
 /**
- * 识别结果（视频片段编号 → 它的素材识别出的句子）换算成要加进 final-cut 的字幕：每个片段取用掉的那段素材里的
- * 句子（见 `sentenceCaptions`），再按 `placeCaptions` 避开已有的字幕。`silent` 是一句都没有换算出来的片段。
+ * 将语音识别结果（视频片段 ID → 对应素材识别出的句子列表）换算为待加入轨道的字幕：
+ * 先按各片段裁切区间过滤并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
+ * `silent` 记录未能换算出任何有效字幕的片段 ID。
  */
 export function recognizedCaptions(
   clips: readonly FilmClip[],

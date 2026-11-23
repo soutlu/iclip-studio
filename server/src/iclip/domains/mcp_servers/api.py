@@ -54,7 +54,7 @@ def create_mcp_servers_router(runtime: RuntimeClient, *, callback_url: str | Non
     async def mcp_callback_url(
         _principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> McpCallbackUrlOut:
-        """连接时发给授权服务器的回调地址，管理员在服务那边手工登记客户端时填它；没配 SSO 时为 ``null``。"""
+        """授权连接时发往授权服务器的回调地址，供管理员在外部服务侧手动登记 OAuth 客户端；未配置 SSO 时为 ``null``。"""
 
         return McpCallbackUrlOut(callback_url=callback_url)
 
@@ -206,9 +206,7 @@ def create_mcp_connections_router(
         """发起连接，返回让浏览器去的授权地址（5 分钟内有效）；授权服务器回调到前端的 ``/mcp/callback``。"""
 
         if callback_url is None:
-            raise McpCallbackUnconfigured(
-                "没有配置 sso.redirect_url，不能连接按用户登录的 MCP 服务"
-            )
+            raise McpCallbackUnconfigured("未配置 sso.redirect_url，无法连接按用户授权的 MCP 服务")
         started = await runtime.authorize_mcp(
             server_id, McpAuthorizeIn(redirect_uri=callback_url), user=principal.user_id
         )

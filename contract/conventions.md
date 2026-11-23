@@ -14,12 +14,12 @@
 
 系统同时支持「浏览器用户」和「API Key 机器调用方」，两者使用同一套权限体系：
 
-- **浏览器登录态（`SessionCookie`）**：后端通过 HttpOnly Cookie 维护会话，前端 JS 不读写该 Cookie，也不保存 API Key。开启 `cookie_secure` 时 Cookie 名为 `__Host-iclip_session`（带 `Secure`、`Path=/`、不设 `Domain`，禁止子域名覆盖同名 Cookie，见 [ADR-0008](../docs/adr/0008-final-cut-workspace-project.md)），未开启时（HTTP 访问）名为 `iclip_session`；后端只识别当前配置对应的名称。企业 SSO 登录跳回前端时，落地页读取 URL 上的 `jwt_token`（兼容 `jwt`）调用 `GET /auth/sso/callback?jwt=...` 换取 Cookie，随后立即用 `replace` 清除地址栏票据参数。前端判断当前是否已登录，唯一以 `GET /users/me` 的结果为准（返回 `401` 即未登录）。
+- **浏览器登录态（`SessionCookie`）**：后端通过 HttpOnly Cookie 维护会话，前端 JS 不读写该 Cookie，也不保存 API Key。开启 `cookie_secure` 时 Cookie 名为 `__Host-iclip_session`（带 `Secure`、`Path=/`、不设 `Domain`，禁止子域名覆盖同名 Cookie，见 [ADR-0008](../docs/adr/0008-final-cut-workspace-project.md)），未开启时（HTTP 访问）名为 `iclip_session`；后端只识别当前配置对应的名称。企业 SSO 登录跳回前端时，落地页读取 URL 上的 `jwt_token`（兼容 `jwt`）调用 `GET /auth/sso/callback?jwt=...` 换取 Cookie，随后立即用 `replace` 清除地址栏票据参数。首次通过 SSO 登录创建的新账号默认赋予只读角色 `viewer`（匹配 `sso.root_email` 时授予 `root`），须由管理员分配写权限角色后方可执行创作与生成操作。前端判断当前是否已登录，唯一以 `GET /users/me` 的结果为准（返回 `401` 即未登录）。
 - **机器调用方（`BearerToken`）**：在请求头携带 `Authorization: Bearer <token>`（明文仅在创建时返回一次）。**凭证优先级**：只要请求头携带了 `Authorization: Bearer`，后端就只按 API Key 验证；若 Key 无效直接返回 `401`，绝不回退读取浏览器 Cookie（WebSocket 握手同理）。
 - **请求来源检查**：`POST`、`PUT`、`PATCH`、`DELETE` 请求与 WebSocket 握手携带 `Origin` 头时，其主机和端口必须等于请求的 `Host`，或命中配置 `security.cors_allow_origins`；否则写请求在所有路由之前直接返回 `403`（`{ detail }`），WebSocket 握手以 `1008` 关闭。`Origin: null` 与同站其他子域名（含预览域名）均不放行；不带 `Origin` 的非浏览器请求（如 API Key 调用方与运行时内部回调）不受影响。
 - **接口权限声明**：每个接口所需权限以 `openapi.json` 的 `security` 字段为准（数组各项之间为「或」关系，内部 scopes 为必须同时具备的权限名；空数组代表只需登录；无 `security` 代表公开接口；`POST /auth/logout` 仅限浏览器 Cookie 调用）。
 - **修改用户时的防越权检查**：调用 `PATCH /users/{id}` 修改他人账号（含启停账号）时，若对方现有权限或修改后权限包含当前操作者自身没有的权限，返回 `403`；尝试修改自身权限或停用自己返回 `400`。
-- **给用户选配置组**：`PUT /users/{id}/model-group` 的 `modelGroup` 传 `null` 放回默认组，改组即时生效；可选组名取自 `GET /model-providers/groups`。`UserOut.modelGroup` 为 `null` 即默认组。
+- **分配用户配置组**：`PUT /users/{id}/model-group`（需 `model:manage` 权限）传入 `modelGroup` 为 `null` 时重置为默认组，修改即时生效；可选组名取自 `GET /model-providers/groups`（不含保留组 `default`）。`UserOut.modelGroup` 为 `null` 表示归属默认组。
 - **代指定用户操作（`users:act_as`）**：持有 `users:act_as` 权限的 API Key，在调用以下 13 个写接口时传入目标用户名，即可以该用户的身份操作：新建的数据直接记在该用户名下；操作已有对话（发消息、运行控制、改工作区文件）时须填对话属主：
   - `POST /conversations`（`userName`）
   - `POST /tasks`（`userName`）
@@ -47,7 +47,7 @@
 | `AuthenticationFailed` | `401` | 未登录、会话已过期或 API Key 无效 |
 | `PermissionDenied` | `403` | 看得见该资源，但没有操作权限（如治理者尝试修改他人对话、管理员越权修改用户） |
 | `NotFound` | `404` | 资源不存在，**或者该资源属于他人、对当前用户不可见**（不对外暴露资源是否存在） |
-| `Conflict` | `409` | 与当前状态冲突：如乐观锁版本号过期、状态机不允许当前操作、资源正在被引用无法删除。当对话绑定的 Agent 版本无法装配时，额外附带 `code: "agent_unavailable"`；用户所在的配置组已不在部署配置里时（发消息、媒体生成受理、`final-cut` 翻译等按他定组的接口，见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group)），额外附带 `code: "model_group_unavailable"` |
+| `Conflict` | `409` | 与当前状态冲突：如乐观锁版本号过期、状态机不允许当前操作、资源正在被引用无法删除。当对话绑定的 Agent 版本无法装配时，额外附带 `code: "agent_unavailable"`；用户绑定的配置组已不在当前部署配置中时（发消息、媒体生成受理、`final-cut` 翻译等按用户配置组路由的接口，见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group)），额外附带 `code: "model_group_unavailable"` |
 | `ValidationFailed` | `422` | 请求参数校验不通过（格式为 `<字段路径>: <原因>`，单次返回首个错误）。发布 Agent 编译检查不通过时，额外附带字段级错误列表 `problems: [{ path, message }]` |
 
 - **网关与下游错误**：取消成片导出时若渲染服务不可达，返回 `502`；`final-cut` 文字翻译调用模型失败（含途经的运行时不可达）返回附带 `code` 的 `502`（见[预览域名与工程接口](#final-cut-工程与预览域名)）；其余情况下 Agent 运行时服务不可达或报错时，统一返回 `503`。
@@ -84,14 +84,14 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 - **停止、插队、重新生成与审批**：
   - **撤回单条消息** `POST .../prompts/{prompt_id}:abort`：排队中的直接撤回，正在跑的触发取消（已经结束的返回 `409`）。
   - **停止整段对话** `POST /conversations/{id}:abort`：一次性撤回所有排队消息并取消当前运行（哪怕当前空闲也正常返回 `204`）。**注意**：想停掉整段对话时必须调用这个接口，不要循环调用单条撤回，否则撤到一半时后面的排队消息可能会被自动顶上来开始运行。
-  - **消息插队** `POST .../prompts:steer`：传入排队中的 `prompt_ids`，让它们不必等当前轮结束，直接在模型下一次请求时插进当前轮次一起处理（当前没有运行中的任务时返回 `409`）。
+  - **消息插队** `POST .../prompts:steer`：传入排队中的 `prompt_ids`，让它们不必等当前轮结束，直接在模型下一次请求时插进当前轮次一起处理（当前没有运行中的任务时返回 `409`；存在待审批调用时，插队消息不会覆盖或跳过审批）。
   - **重新生成** `POST .../turns/{turn_id}:regenerate`：仅允许对空闲对话的**最后一轮**（`t{N}`）重新生成（正忙或非最后一轮返回 `409`），支持传入新 `content` 替换原提问。
-  - **提交人工审批** `POST .../interactions/{interaction_id}`：提交同意或拒绝决定（返回 `204`；同一决定重复提交幂等，修改决定返回 `409`，审批已结束返回 `404`）。
+  - **提交人工审批** `POST .../interactions/{interaction_id}`：提交同意或拒绝决定（返回 `204`；审批卡出现后、当前运行尚未暂停前即可提前回应，待运行暂停且同批待审调用全部回应后由服务端自动续跑；同一决定重复提交幂等，修改决定返回 `409`，审批已结束返回 `404`）。
 
 ### 后台工具
 
 像 `breakdown_video`（视频拆解）这类耗时较长的后台异步工具，模型调用后会先拿到一条「已启动」回执并继续往下执行，等拆解真正完成后再把结果送回对话中（金样示例见 [transcript/background-turn.json](transcript/background-turn.json)）：
-- **原工具卡片**：收到回执的那一刻状态就变成 `done`（显示回执文字），后续不再改变；只有当整次运行已经结束却依然没等到拆解结果时，卡片才会变成 `error`（显示已中断）。
+- **原工具卡片**：收到回执的那一刻状态就变成 `done`（显示回执文字），后续不再改变；若后台任务运行期间触发审批暂停，运行会先等待后台任务完成并将结果记入历史后再暂停，不会中断该任务；只有当整次运行中止或异常结束却依然没等到结果时，卡片才会变成 `error`（显示已中断）。
 - **后台任务列表（`tasks`）**：收到回执时会在 `tasks` 中新增一条 `kind: "tool", detached: true, taskId: toolCallId` 的任务；等拆解结果送达后更新为 `completed` 或 `failed`；如果中途被用户手动停止则记为 `killed`。
 - **完成通知块**：当拆解结果送达时，会在当时的最后一个步骤里插入一条 `role: "user"`、带有相同 `taskId` 的通知块（文案为「已{工具标题}」或「{工具标题} 失败」）。
 
@@ -164,8 +164,8 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 | 工程相对路径（`final-cut/` 下） | 职责与跨端读写约束 |
 |---|---|
-| `index.html` | 唯一主时间线（`404` 代表尚无工程）。`<html>` 根 `data-composition-variables` 声明字幕与随语言文字的字符串变量（默认值为原文）；`<head>` 中 `<!-- final-cut:fonts -->…<!-- /final-cut:fonts -->` 之间为自动重算的字体声明块；`#film`（`data-composition-id="film"`，带 `data-no-timeline`）承载全部时间线片段及 `data-voice-modes` |
-| `compositions/captions.html` | 字幕场景文件（`<template>` 包裹 `data-composition-id="captions"` 根 `<div>`，带 `data-no-timeline`）。每句字幕为一个带时间的元素，通过 `data-var-text` 读取主文件根变量；**严禁**在场景内声明 `data-composition-variables` 或在字幕宿主上设置 `data-variable-values`（否则阻断根变量透传，拒绝导出） |
+| `index.html` | 唯一主时间线（`404` 代表尚无工程）。`<html>` 根 `data-composition-variables` 声明字幕与随语言文字的字符串变量（默认值为原文）；`<head>` 中 `<!-- final-cut:fonts -->…<!-- /final-cut:fonts -->` 之间为自动重算的字体声明块；`#film`（`data-composition-id="film"`，带 `data-no-timeline`）承载全部时间线片段、`data-voice-modes` 与画布尺寸唯一事实源 `data-width` / `data-height`（序列化时据此重算 `<head>` 中的 `<meta name="viewport">` 与全画布布局宽高规则；编辑器修改的画布底色写入 `#film` 行内 `background-color` 以覆盖 `<head>` 默认底色） |
+| `compositions/captions.html` | 字幕场景文件（`<template>` 包裹 `data-composition-id="captions"` 根 `<div>`，带 `data-no-timeline`）。每句字幕为一个带时间的元素，通过 `data-var-text` 读取主文件根变量；变更画布尺寸时同步更新场景根元素 `data-width` / `data-height` 并按新画布宽度重算统一 `.caption` 规则的默认字号、描边与投影（不影响单句行内自定义字号）。**严禁**在场景内声明 `data-composition-variables` 或在字幕宿主上设置 `data-variable-values`（否则阻断根变量透传，拒绝导出） |
 | `compositions/…` | 贴片与场景按组件库目录条目 `files` 清单从 `/hyperframes/<版本>/<路径>` 拷入的专有文本文件（已存在即 `409` 跳过），拷入后归该工程独立持有 |
 | `locales/<locale>.json` | 附加语言值表（仅支持 `zh / en / de / es / fr`），内容为 `{ "<变量id>": "<译文>" }` JSON 对象（非 JSON 对象则拒绝打开与导出）；仅记录已翻译项，缺省项回退主文件根变量默认值 |
 | `beats/<音频路径>.json` | 配乐节拍缓存文件（路径按 `beatFilePathForSrc` 去除查询参数生成，在引擎节拍格式基础上附加 `downbeats`、`seconds`、`analysis` 算法版本）；仅供编辑器读取，预览与渲染服务忽略 |
@@ -189,7 +189,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ### 成片导出
 
 业务规则见 [CONTEXT.md「成片导出」](../docs/CONTEXT.md#final-cut成片与成片导出)。以下三个接口仅限对话创建者本人调用（未配置渲染服务时统一返回 `422`）：
-- **发起导出** `POST /conversations/{id}/whole-film/exports`：可选请求体 `{ locale, resolution }`（`locale` 仅支持 `zh / en / de / es / fr`，缺省或 `null` 表示导出原文；`resolution` 仅支持 `480p / 720p / 1080p`，缺省或 `null` 表示按画面尺寸导出；其余值返回 `422`）。工作区缺少 `final-cut/index.html` 或目标外语缺少 `final-cut/locales/<locale>.json` 时返回 `422`；后端不判断画面能否按 `resolution` 导出，由渲染服务判断，导不出时记 `resolution-unsupported` 失败（`message` 是给用户看的一句话）。受理后创建 `whole_film` 生成任务排入渲染队列，返回 `202 { exportId }`，并在记录中保存 `locale`、`resolution` 及主文件素材血缘：`<video>` 按输出地址匹配生成记录（多条命中取最早创建者，记为 `videos: [{ jobId, url }]`）；`<audio>` 依次匹配本对话（含分叉继承）生成记录、本对话（含分叉继承）上传、参考音频库未移除记录（先命中者为准，记为 `audios: [{ sourceKind: "generation" | "upload" | "reference", sourceId, url }]`），未匹配地址不记录且不阻断导出。队列执行时才读取工作区实时 `final-cut/` 全目录提交渲染服务（此时若主文件已删则记 `FINAL_CUT_EMPTY` 失败；值表缺失、格式非法或变量类型不匹配则由渲染服务拒收并记 `RENDER_REJECTED` 失败）。
+- **发起导出** `POST /conversations/{id}/whole-film/exports`：可选请求体 `{ locale, resolution }`（`locale` 仅支持 `zh / en / de / es / fr`，缺省或 `null` 表示导出原文；`resolution` 仅支持 `480p / 720p / 1080p`，缺省或 `null` 表示按画布尺寸导出；其余值返回 `422`）。工作区缺少 `final-cut/index.html` 或目标外语缺少 `final-cut/locales/<locale>.json` 时返回 `422`；后端不校验画布是否兼容目标 `resolution`，由渲染服务判定，不兼容时任务记为 `resolution-unsupported` 失败（`error.message` 为面向用户的中文说明）。受理后创建 `whole_film` 生成任务排入渲染队列，返回 `202 { exportId }`，并在记录中保存 `locale`、`resolution` 及主文件素材血缘：`<video>` 按输出地址匹配生成记录（多条命中取最早创建者，记为 `videos: [{ jobId, url }]`）；`<audio>` 依次匹配本对话（含分叉继承）生成记录、本对话（含分叉继承）上传、参考音频库未移除记录（先命中者为准，记为 `audios: [{ sourceKind: "generation" | "upload" | "reference", sourceId, url }]`），未匹配地址不记录且不阻断导出。队列执行时才读取工作区实时 `final-cut/` 全目录提交渲染服务（此时若主文件已删则记 `FINAL_CUT_EMPTY` 失败；值表缺失、格式非法或变量类型不匹配则由渲染服务拒收并记 `RENDER_REJECTED` 失败）。
 - **查询最新导出进度** `GET .../whole-film/exports/latest`：返回最新一次导出状态 `{ export: { id, locale, resolution, status, progress, queuePosition, error, downloadUrl } }`（未导出过则 `export` 为 `null`；`status` 取值为 `queued | rendering | uploading | done | failed | cancelled`）。
 - **取消导出** `DELETE .../whole-film/exports/{exportId}`：取消排队或渲染中的导出（返回 `204`；正处于向渲染服务提交瞬间返回 `409`；渲染服务不可达返回 `502`）。
 
@@ -357,7 +357,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 管理后台模型供应商、密钥与默认模型接口（路径 `/model-providers` 与 `/default-models`，概念见 [CONTEXT.md「供应商」](../docs/CONTEXT.md#供应商model-provider)）：
 - **敏感字段打码与按需更新**：声明标记为 `secret` 的字段在所有响应中只返回打码值（`••••` 加末 4 位，不足 8 位仅 `••••`）。`PATCH .../credentials/{id}` 未传字段保留原值（切勿将打码串原样传回）。
 - **连通性测试（不落库，失败亦返回 HTTP `200`，通过 `{ ok, elapsedMs, reason }` 判断）**：`POST .../credentials/test` 对该供应商首个已启用 `llm` 模型发最小请求（无启用 `llm` 模型返回 `422`）；`POST .../models/test` 测试指定 `llm` 模型。
-- **密钥的配置组**：密钥携带 `modelGroup`（`null` 表示不归组，概念见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group)）。`GET /model-providers/groups` 按部署配置顺序返回可选组名 `{ groups }`。`PATCH .../credentials/{id}` 不传 `modelGroup` 保持不变，传 `null` 清空，传组名改组；组名不在部署配置内或同一供应商下该组已有其他密钥均返回 `422`。
+- **密钥的配置组**：密钥携带 `modelGroup`（`null` 表示不归组，概念见 [CONTEXT.md「配置组」](../docs/CONTEXT.md#配置组model-group)）。`GET /model-providers/groups` 按部署配置顺序返回可选组名 `{ groups }`（不含保留组 `default`）。`PATCH .../credentials/{id}` 不传 `modelGroup` 保持不变，传 `null` 清空，传组名改组；组名不在部署配置内或同一供应商下该组已有其他密钥均返回 `422`。
 - **删除与停用保护（冲突返回 `409`）**：默认密钥须先切换默认后才能删除；全局默认模型（`PUT /default-models/{type}`）及正被任一 Agent 草稿或当前版本引用的供应商、模型、密钥均禁止停用或删除。
 
 ## 19. Agent 配置 (Agents)

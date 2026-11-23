@@ -11,7 +11,7 @@ export const useArtifactSearch = (): string | undefined => {
   return search[ARTIFACT_SEARCH_KEY]
 }
 
-/** 在地址里选中产物 `artifactId`；给 undefined 时去掉选中，工作台回到默认的那一个。 */
+/** 在 URL 查询参数中选中产物 `artifactId`；传入 `undefined` 时清除参数，工作台恢复默认产物。 */
 export const useOpenArtifact = () => {
   const navigate = useNavigate()
   return (artifactId: string | undefined) =>

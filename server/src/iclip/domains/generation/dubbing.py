@@ -62,11 +62,11 @@ class SpeechSynthesizer(Protocol):
     async def synthesize(
         self, text: str, *, reference: bytes, locale: TargetLocale | None, api_key: str
     ) -> bytes:
-        """用 ``reference`` 的声音把 ``text`` 念出来（给了 ``locale`` 时用这种语言念），返回一段音频。
+        """以 ``reference`` 音色将 ``text`` 合成为语音（指定 ``locale`` 时按对应语种朗读），返回音频字节流。
 
-        ``reference`` 是不超过 10 秒的 WAV（单声道、16 位 PCM、48 kHz）。``api_key`` 是这条记录所在
-        配置组的配音 key。返回的音频格式不限，ffmpeg 解得开就行；多长都可以，变速、截断由调用方按这句的
-        位置做。合成失败抛 ``ProviderError``，这条记录随之失败、不自动重来。
+        ``reference`` 为不超过 10 秒的 WAV 音频（单声道、16 位 PCM、48 kHz）；``api_key`` 为当前记录所属
+        配置组的配音密钥。返回音频格式须可被 ffmpeg 解码，时长不限，变速与截断由调用方按台词时隙处理。
+        合成失败时抛出 ``ProviderError``，任务标记为失败且不自动重试。
         """
         ...
 
@@ -175,7 +175,7 @@ class DubbingProvider:
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
         request = request_of(job, (DubbingRequest, SpeechRequest), provider=PROVIDER_NAME)
-        # 先定 key 再下载素材：组配错了不白下整条视频。
+        # 先校验配置组与密钥再下载素材，避免配置错误时无效拉取完整视频。
         group = self._model_groups.of(job)
         api_key = group_key(group, group.speech_api_key, what="配音")
         with TemporaryDirectory(prefix="iclip-dubbing-") as tmp:
@@ -204,7 +204,9 @@ class DubbingProvider:
             )
         except ObjectStoreUnavailable as exc:
             raise ProviderError(
-                f"配音已合成但存不进桶: {exc}", code="OUTPUT_STORE_FAILED", retryable=False
+                f"配音已合成，但上传至对象存储失败: {exc}",
+                code="OUTPUT_STORE_FAILED",
+                retryable=False,
             ) from exc
         dubbed = layout.dubbed
         _logger.info(
@@ -331,7 +333,9 @@ class DubbingProvider:
                 await download(client, self._fetch_url(url), dest, max_bytes=max_bytes)
         except MediaError as exc:
             raise ProviderError(
-                f"取不到配音要用的素材: {exc}", code="MEDIA_SOURCE_UNREACHABLE", retryable=False
+                f"无法下载配音所需的媒体素材: {exc}",
+                code="MEDIA_SOURCE_UNREACHABLE",
+                retryable=False,
             ) from exc
 
     async def _synthesized(
@@ -353,7 +357,7 @@ class DubbingProvider:
             return await decode_audio(raw, dest=dest)
         except MediaError as exc:
             raise ProviderError(
-                f"第 {index + 1} 句合成出来的音频解不开: {exc}",
+                f"第 {index + 1} 句合成音频解码失败: {exc}",
                 code="MEDIA_PROCESS_FAILED",
                 retryable=False,
             ) from exc

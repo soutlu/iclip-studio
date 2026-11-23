@@ -223,7 +223,6 @@ export function CanvasOverlay({
   /** 缩放时最近一次拖动的答复记进 `draftRef` 以后才完。 */
   const pinRef = useRef<Promise<void>>(Promise.resolve())
   const lastPickRef = useRef<CanvasPick | null>(null)
-  /** 在画面上选中 `next`。 */
   const select = (next: ReadonlySet<string>) => {
     if (next !== selected) onSelect(next)
   }

@@ -167,7 +167,7 @@ class VideoShotTimelineItemIn(SnakeModel):
 
 
 class VideoShotIn(SnakeModel):
-    """结构化的镜头组：全局设定加逐镜时间线。发给模型的正文由服务端按 common.shot_prompt 的规则拼。"""
+    """结构化镜头组：包含全局设定与逐镜时间线。发往模型的提示词正文由服务端按 ``iclip_video.shot_prompt`` 规则拼装。"""
 
     global_settings: Annotated[str, Field(max_length=MAX_PROMPT_CHARS)]
     timeline: Annotated[list[VideoShotTimelineItemIn], Field(min_length=1)]
@@ -416,8 +416,8 @@ class SubtitleWord(CamelModel):
 
 
 class SubtitleSentence(CamelModel):
-    """字幕里的一句：在视频里的起止（毫秒）、文字、说话人与逐词时间。落库是 snake_case 的键，对外
-    camelCase；早先的记录没有逐词时间，读出来是空。"""
+    """单条字幕记录：包含在视频中的起止时间（毫秒）、文本、说话人标识与逐词时间戳。
+    落库使用 snake_case 键名，对外序列化为 camelCase；缺少逐词时间戳时默认为空元组。"""
 
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: Annotated[int, Field(ge=0)]
@@ -446,7 +446,7 @@ class DubbingLine(CamelModel):
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: Annotated[int, Field(ge=0)]
     text: Annotated[str, Field(min_length=1)]
-    # 只配其中几句时，后面还有别的句子（别的音色配的、这次不配的）要占位置；早先存下的请求没有它。
+    # 局部重配场景下用于限制本句时隙终点，避免覆盖后续其他音色或未重配台词；缺省为 None。
     slot_end_ms: Annotated[
         int | None,
         Field(
@@ -483,7 +483,7 @@ class DubbingOriginalReference(CamelModel):
     """参考音频取素材片自己的原声：服务端从被说话时段覆盖得最多的一段里截。"""
 
     kind: Literal["original"]
-    # 早先存下的请求没有它；没写时按 lines 算说话时段。
+    # 缺省为 None；未提供时按 lines 计算说话时段。
     spans: Annotated[
         list[DubbingSpeechSpan] | None,
         Field(
@@ -699,10 +699,10 @@ class WholeFilmAudioSource(CamelModel):
 
 
 class WholeFilmRequest(CamelModel):
-    """一条成片导出记录的请求：发起导出时 final-cut 主文件里对上了来源的素材（``<video>`` 对生成记录，
-    ``<audio>`` 依次对本对话的生成记录、本对话的上传、参考音频库），导出哪种语言的版本（``locale``，
-    None 是原文）和导出分辨率档位（``resolution``，None 按画面尺寸导出；之前的记录没有这个字段，读出来是 None）。
-    工程本身不存在这里，交给渲染服务时才从工作区读。"""
+    """成片导出记录的请求快照：记录发起导出时 final-cut 主文件中已匹配来源的素材（``<video>`` 匹配生成记录，
+    ``<audio>`` 依次匹配本对话生成记录、本对话上传记录与参考音频库）、目标导出语言（``locale``，``None``
+    表示原文）及导出分辨率档位（``resolution``，``None`` 表示按画面尺寸导出）。
+    工程文件本身不落入此处，而在提交至渲染服务时从对话工作区实时读取。"""
 
     kind: ClassVar[GenerationKind] = KIND_WHOLE_FILM
     operation: ClassVar[GenerationOperation] = OPERATION_RENDER

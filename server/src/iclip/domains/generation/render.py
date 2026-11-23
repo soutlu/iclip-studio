@@ -100,14 +100,14 @@ class RenderClient:
         )
 
     async def submit(self, payload: Mapping[str, Any]) -> None:
-        """交一次导出；渲染服务不收（400）抛 ``RenderRejected``。"""
+        """提交一次导出任务；渲染服务拒绝请求（400）时抛出 ``RenderRejected``。"""
 
         response = await self._send("POST", "/exports", json=payload)
         if response.status_code == 202:
             return
         if response.status_code == 400:
             problem = _parse(RenderProblem, response)
-            _logger.info("渲染服务不收这次导出", code=problem.code, message=problem.message)
+            _logger.info("渲染服务拒绝本次导出请求", code=problem.code, message=problem.message)
             raise RenderRejected(problem.code, problem.message)
         raise _unexpected(response)
 
@@ -134,8 +134,8 @@ class RenderClient:
         try:
             return await self._client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
-            _logger.warning("渲染服务连不上", method=method, path=path, error=str(exc))
-            raise RenderUnavailable("渲染服务连不上，稍后再试") from exc
+            _logger.warning("渲染服务连接失败", method=method, path=path, error=str(exc))
+            raise RenderUnavailable("渲染服务暂不可用，请稍后重试") from exc
 
 
 def _parse[ModelT: BaseModel](model: type[ModelT], response: httpx.Response) -> ModelT:
@@ -143,14 +143,14 @@ def _parse[ModelT: BaseModel](model: type[ModelT], response: httpx.Response) -> 
         return model.model_validate_json(response.content)
     except ValidationError as exc:
         _logger.warning(
-            "渲染服务的答复看不懂", status=response.status_code, body=response.text[:500]
+            "渲染服务响应格式无效", status=response.status_code, body=response.text[:500]
         )
-        raise RenderUnavailable("渲染服务的答复看不懂") from exc
+        raise RenderUnavailable("渲染服务响应格式无效") from exc
 
 
 def _unexpected(response: httpx.Response) -> RenderUnavailable:
     _logger.warning("渲染服务答复异常", status=response.status_code, body=response.text[:500])
-    return RenderUnavailable(f"渲染服务出错了（{response.status_code}），稍后再试")
+    return RenderUnavailable(f"渲染服务返回异常状态（{response.status_code}），请稍后重试")
 
 
 @dataclass(frozen=True, slots=True)
@@ -174,9 +174,9 @@ class RenderProvider:
         return PROVIDER_NAME
 
     async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        """把这段对话 final-cut 工程此刻的样子交给渲染服务：全部文件、主文件里每个素材地址的下载
-        地址、导出哪种语言（``locale``，原文是 null）、导出分辨率档位（``resolution``，按画面尺寸导出是
-        null）和成片的上传签名。"""
+        """将当前对话的 final-cut 工程快照提交至渲染服务，包含全部工程文件、主文件各素材的下载地址、
+        目标语言（``locale``，原文为 ``null``）、导出分辨率档位（``resolution``，按画面尺寸导出为
+        ``null``）及成片上传签名。"""
 
         request = request_of(job, WholeFilmRequest, provider=PROVIDER_NAME)
         if job.conversation_id is None:
@@ -227,7 +227,7 @@ class RenderProvider:
                 outcome="failed",
                 provider_status="lost",
                 error_code="RENDER_LOST",
-                error_message="渲染服务重启过，这次导出丢了，请重新导出",
+                error_message="渲染服务已重启，本次导出任务丢失，请重新发起导出",
             )
         if found.status in RENDER_STAGES:
             return ProviderProgress(outcome="running", provider_status=found.status)

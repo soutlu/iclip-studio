@@ -4,7 +4,7 @@ import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip
 type BlockedReasonProps = {
   reason: string | undefined
   side?: 'top' | 'bottom' | 'left' | 'right'
-  /** 说明挂到哪；不给时挂在页面上（全屏时要挂到全屏的那块元素里才看得见）。 */
+  /** Tooltip 挂载容器；未传入时默认挂在文档根节点（全屏状态下需指定全屏元素方可正常显示）。 */
   container?: HTMLElement | null
   children: ReactElement
 }

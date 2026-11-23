@@ -11,7 +11,7 @@ import { usePlayheadClock, type PlayheadClock } from './playhead-clock'
 import type { PlaybackSettings } from './preview-player'
 
 type PreviewTransportProps = {
-  /** 播放头的实时时刻：进度条和时间读数直接订阅它，播放时每帧走，不带着整个播放条重画。 */
+  /** 播放头实时时钟源：进度条与时间读数独立订阅，实现播放期间逐帧更新而不触发整个播放条重绘。 */
   clock: PlayheadClock
   totalMs: number
   buffered: readonly TimeSpan[]
@@ -26,18 +26,18 @@ type PreviewTransportProps = {
   fullscreen: boolean
   fullscreenBlocked: string | undefined
   onFullscreen: () => void
-  /** 提示、菜单和面板挂到哪个元素里；全屏时是全屏的元素，不然是 `null`（挂到 body）。 */
+  /** 提示、菜单与面板的挂载容器；全屏时为全屏宿主元素，非全屏为 `null`（挂载至 `document.body`）。 */
   layer: HTMLElement | null
 }
 
-// 方向键每次走这么多，按住 Shift 是它的十倍；和编辑器里不在进度条上时的方向键一致
+// 方向键默认单步时长，按住 Shift 为 10 倍，与编辑器全局键盘步进保持一致
 const STEP_SECONDS = 0.1
 
 const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2]
 
 const rateLabel = (rate: number) => `${rate}×`
 
-// 逐条对应编辑器里真有的按键：改了按键处理要同步改这里
+// 与编辑器实际注册的快捷键逐条对应，修改快捷键逻辑时须同步更新此列表
 const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['空格'], action: '播放或暂停' },
   { keys: ['←', '→'], action: '播放头前移或后移 0.1 秒' },
@@ -59,7 +59,7 @@ const SHORTCUTS: readonly { keys: readonly string[]; action: string }[] = [
   { keys: ['F'], action: '全屏或退出全屏' },
 ]
 
-/** 预览下面的播放条：进度条一行；下面左边是播放键和时间，右边是试听和看的设置、快捷键。 */
+/** 预览区底部播放控制条：上方为进度条，下方左侧为播放/暂停键与时间读数，右侧为音量、倍速、循环、全屏与快捷键入口。 */
 export function PreviewTransport({
   clock,
   totalMs,
@@ -156,7 +156,7 @@ export function PreviewTransport({
 
 type ClockProps = { clock: PlayheadClock; totalMs: number }
 
-/** 进度条：订阅播放头的时钟，播放时每帧挪。 */
+/** 播放进度条：订阅播放头实时时钟，播放期间逐帧推进。 */
 function SeekBar({
   clock,
   totalMs,
@@ -201,7 +201,7 @@ function SeekBar({
   )
 }
 
-/** 播放键旁边的时间读数：订阅播放头的时钟，播放时每帧走。 */
+/** 播放时间读数：订阅播放头实时时钟，播放期间逐帧刷新。 */
 function ClockReading({ clock, totalMs }: ClockProps) {
   const time = Math.min(usePlayheadClock(clock), totalMs) / 1000
   return (
@@ -230,7 +230,7 @@ function RateMenu({
       }}
       open={open}
     >
-      {/* 点开后指针还停在按钮上，提示会重新出现、压在向上弹出的菜单底下 */}
+      {/* 菜单展开时若指针仍停留在按钮上，抑制 Tooltip 避免压在向上弹出的菜单下方 */}
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <MenuTrigger asChild>
           <TooltipTrigger asChild>

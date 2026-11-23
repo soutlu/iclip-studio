@@ -73,7 +73,7 @@ export function ReaderPage({
   const select = (id: string, number?: number) =>
     onSelect(id, number ?? (id === content.id ? frame : undefined))
 
-  // 舞台换图与文案加图各自上传，合起来才是这一组「正在上传」。
+  // 舞台替换帧与文案加图分别维护上传态，取并集作为当前镜头组的整体上传状态。
   const [uploading, setUploading] = useState<UploadingParts>({ frame: false, script: false })
   const markUploading = (part: keyof UploadingParts) => (busy: boolean) =>
     setUploading((current) => (current[part] === busy ? current : { ...current, [part]: busy }))
@@ -172,7 +172,7 @@ type ReaderStageProps = {
   onUploadingChange: (uploading: boolean) => void
 }
 
-/** 舞台一半：拖放或选文件替换当前帧，上传状态随组重挂而重置。 */
+/** 舞台区域：支持拖放或选择文件替换当前帧，上传状态随镜头组重挂重置。 */
 function ReaderStage({
   aspectRatio,
   contentId,
@@ -228,7 +228,7 @@ type ReaderScriptProps = {
   onUploadingChange: (uploading: boolean) => void
 }
 
-/** 脚本一半：文案编辑器与加图，上传状态随组重挂而重置。 */
+/** 脚本区域：承载文案编辑与参考图添加，上传状态随镜头组重挂重置。 */
 function ReaderScript({
   aspectRatio,
   contentId,

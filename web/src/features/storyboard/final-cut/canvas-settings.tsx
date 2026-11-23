@@ -17,10 +17,10 @@ import type { Canvas } from './composition/film'
 import { Tool } from './editor-toolbar'
 import { exportOutput } from './export-tier'
 
-/** 构图网格：关闭、九宫格、十字。 */
+/** 构图网格模式：关闭、九宫格、十字。 */
 type FramingGrid = 'off' | 'thirds' | 'cross'
 
-/** 画面上的参考线：只是这次编辑时看的，不写进工程、不进导出。 */
+/** 画面参考线配置：仅在编辑态展示，不写入工程文件，也不参与成片导出。 */
 export type Framing = { grid: FramingGrid; safeArea: boolean }
 
 const GRIDS: readonly { grid: FramingGrid; label: string }[] = [
@@ -29,11 +29,11 @@ const GRIDS: readonly { grid: FramingGrid; label: string }[] = [
   { grid: 'cross', label: '十字' },
 ]
 
-// design-allow -- 画布底色是作品内容，写进主文件、导出成片
+// design-allow -- 画布底色属于作品内容，写入工程主文件并参与成片导出
 const [BLACK, SLATE, LINEN, WHITE] = ['#000000', '#4b535c', '#eae2d4', '#ffffff'] as const
 
 /**
- * 「画布底色」能选的颜色。`keyword` 是同一种颜色在主文件里的另一种写法：按模版建的工程 `<head>` 里写的是 black。
+ * 可选画布底色。`keyword` 为主文件中的等价 CSS 关键字写法（按默认模板创建的工程在 `<head>` 中写作 `black`）。
  */
 const BACKGROUNDS = [
   { name: '纯黑', color: BLACK, keyword: 'black' },
@@ -49,11 +49,11 @@ const backgroundNamed = (value: string | null) => {
   )
 }
 
-/** 画面每边能写的像素数。 */
+/** 画面单边允许的像素范围。 */
 const SIDE_RANGE = { min: 240, max: 4096 } as const
-const SIDE_RANGE_TEXT = `宽高要在 ${SIDE_RANGE.min}–${SIDE_RANGE.max} 之间`
+const SIDE_RANGE_TEXT = `宽高须在 ${SIDE_RANGE.min}–${SIDE_RANGE.max} 之间`
 
-/** 框里写的边长：整数，奇数减 1（视频编码要偶数宽高）；不是整数、不在范围里时是 null。 */
+/** 解析输入的边长像素值：须为范围内整数，奇数向下取偶（适配视频编码偶数宽高要求）；非法时返回 `null`。 */
 const sideOf = (text: string): number | null => {
   const typed = text.trim()
   if (!/^\d+$/.test(typed)) return null
@@ -63,7 +63,7 @@ const sideOf = (text: string): number | null => {
 
 type Side = 'width' | 'height'
 
-/** 画面比例的小框，放在固定宽的格里：胶囊和六种比例里，后面的字都从同一条竖线起排。 */
+/** 固定宽度的画面比例缩略框，确保胶囊与六种预设比例后的文字左缘对齐。 */
 const RatioGlyph = ({ canvas: { width, height } }: { canvas: Canvas }) => (
   <span className="wf-ratio-glyph">
     <AspectGlyph longSide={12} ratio={`${width}:${height}`} />
@@ -74,28 +74,28 @@ const sizeText = ({ width, height }: Canvas) => `${width}×${height}`
 
 type CanvasSettingsProps = {
   canvas: Canvas
-  /** 把画面尺寸改成 `canvas`，算一步撤销；和现在一样时不算。 */
+  /** 修改画面尺寸并记为一步撤销；与当前尺寸相同时不记录。 */
   onCanvas: (canvas: Canvas) => void
-  /** 亮着的导出分辨率档位（见 `exportTierOf`）；都不亮时是 undefined。 */
+  /** 当前激活的导出分辨率档位（见 `exportTierOf`）；无匹配档位时为 `undefined`。 */
   tier: ExportTier | undefined
-  /** 选导出分辨率档位：不改画面尺寸、不进撤销。 */
+  /** 选择导出分辨率档位（不修改画面尺寸，不计入撤销栈）。 */
   onTier: (tier: ExportTier) => void
-  /** 画面底色；读不出来时是 null（哪个颜色都不按下）。 */
+  /** 当前画布底色；无法解析时为 `null`（不选中任何色块）。 */
   background: string | null
-  /** 把画面底色改成 `color`，算一步撤销。 */
+  /** 修改画布底色并记为一步撤销。 */
   onBackground: (color: string) => void
   framing: Framing
   onFraming: (framing: Framing) => void
   /**
-   * 浮层和提示挂到哪：编辑器根上（浮层里按的键不当快捷键、Esc 只关浮层，见 `isEditorKeyTarget`），全屏时是舞台。
+   * 浮层与提示的挂载容器：默认挂至编辑器根节点（避免浮层内按键触发全局快捷键、确保 Esc 仅关闭浮层，见 `isEditorKeyTarget`），全屏模式下挂至舞台节点。
    */
   layer: HTMLElement | null
 }
 
 /**
- * 预览舞台右上角的一枚胶囊：左边是画面尺寸（比例小框、简称、· 导出档位、⌄），点开是画面设置浮层；右边是参考线的
- * 快捷开关，有参考线开着时全关，全关着时打开九宫格和安全区。没有档位亮着时简称后面写宽×高（简称已经是宽×高时不重复）。
- * 平时只露出参考线开关，悬停、键盘聚焦或浮层开着时画面尺寸才展开（只靠样式，见 final-cut.css 的 wf-stage-hud）。
+ * 预览舞台右上角的画面设置胶囊：左侧展示画面尺寸（比例缩略框、简称、导出档位与展开箭头）并触发设置浮层；
+ * 右侧为参考线快捷开关（已开启任一参考线时一键全关，全关时开启九宫格与安全区）。无激活导出档位时在简称后补充 `宽×高`（简称本身已是 `宽×高` 时不重复）。
+ * 常态仅露参考线开关，悬停、键盘聚焦或浮层展开时通过样式展开尺寸按钮（见 final-cut.css 的 `.wf-stage-hud`）。
  */
 export function CanvasSettings({ framing, onFraming, layer, ...settings }: CanvasSettingsProps) {
   const { canvas, tier } = settings
@@ -141,7 +141,7 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
           className="wf-menu wf-canvas-settings"
           collisionPadding={8}
           container={layer}
-          // 数字框里的 Esc 只放弃刚输入的，浮层留着
+          // 尺寸输入框内按 Esc 仅放弃当前输入，不关闭设置浮层
           onEscapeKeyDown={(event) => {
             if (event.target instanceof HTMLInputElement) event.preventDefault()
           }}
@@ -158,7 +158,7 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
           onFraming(guided ? { grid: 'off', safeArea: false } : { grid: 'thirds', safeArea: true })
         }
         pressed={guided}
-        tip={guided ? '关闭参考线' : '打开九宫格和安全区'}
+        tip={guided ? '关闭参考线' : '开启九宫格与安全区'}
         tipContainer={layer}
       />
     </div>
@@ -166,9 +166,9 @@ export function CanvasSettings({ framing, onFraming, layer, ...settings }: Canva
 }
 
 /**
- * 画面设置浮层：六种比例（宽高正好是哪一种时它按下）、导出分辨率、宽高数字框和互换宽高、画布底色、构图网格、
- * 短视频安全区。数字框回车或失焦生效，奇数减 1，不是整数、不在范围里时框下面一句提示、框回到原来的值。改尺寸、
- * 改底色各算一步撤销。这个画面导不出的档位置灰，悬停或点击说明一句。
+ * 画面设置浮层：包含六种预设比例、导出分辨率、宽高输入框与互换按钮、画布底色、构图网格及短视频安全区。
+ * 宽高输入回车或失焦提交，奇数自动减 1，非法输入时在下方提示并恢复原值；修改尺寸与底色各记一步撤销。
+ * 当前画幅不支持的导出档位置灰，悬停或点击展示原因说明。
  */
 function SettingsPanel({
   canvas,
@@ -181,7 +181,7 @@ function SettingsPanel({
   onFraming,
   layer,
 }: CanvasSettingsProps) {
-  // 刚才没写对的那一边：提示一直留到下一次改成功
+  // 记录最近一次校验失败的边，错误提示保持至下次修改成功
   const [invalid, setInvalid] = useState<Side | null>(null)
   const errorId = useId()
   const safeId = useId()
@@ -285,7 +285,6 @@ function SettingsPanel({
               onClick={() => {
                 if (each !== shownBackground) onBackground(each.color)
               }}
-              // 色点的颜色就是它代表的底色
               style={{ background: each.color }}
               type="button"
             />
@@ -324,8 +323,7 @@ function SettingsPanel({
 }
 
 /**
- * 宽或高的数字框：没在输入时写着 `value`。回车或失焦把输入的字交给 `onCommit`，Esc 放弃；交完框里回到 `value`
- * （改成功时就是新的值）。
+ * 宽/高数值输入框：非编辑态展示 `value`；回车或失焦将草稿提交给 `onCommit`，按 Esc 放弃编辑并还原为 `value`。
  */
 function SideField({
   label,
@@ -341,7 +339,7 @@ function SideField({
   onCommit: (text: string) => void
 }) {
   const [draft, setDraft] = useState<string | null>(null)
-  // 按 Esc 时先放弃再失焦，失焦的处理读这里，不等重新渲染
+  // 按 Esc 时先清空草稿再触发失焦，onBlur 直接读取该 ref，避免等待重新渲染
   const draftRef = useRef<string | null>(null)
   const edit = (next: string | null) => {
     draftRef.current = next
@@ -376,10 +374,10 @@ function SideField({
   )
 }
 
-// 宽 / 高不超过这个比例时算竖的或方的画面（安全区按竖屏短视频的样子画）
+// 宽高比不超过此阈值视为竖屏或方屏，按竖屏短视频布局绘制安全区
 const UPRIGHT_MAX_RATIO = 1.05
 
-/** 构图网格每个方向上的线画在哪（位置见 final-cut.css 的 wf-framing-line）。 */
+/** 各构图网格模式在横纵方向上的参考线位置标识（样式定位见 final-cut.css 的 `.wf-framing-line`）。 */
 const GRID_LINES: Record<FramingGrid, readonly string[]> = {
   off: [],
   thirds: ['third', 'two-thirds'],
@@ -387,8 +385,8 @@ const GRID_LINES: Record<FramingGrid, readonly string[]> = {
 }
 
 /**
- * 盖在预览画面上的参考线（和画面一样大，见 `PreviewPlayer` 的 `overlay`）：构图网格的线，和短视频平台会被界面挡住
- * 的地方。竖的或方的画面是右侧互动区和底部信息区，横的是底部播控区。只画在编辑器里，不接指针。
+ * 预览画面叠层参考线（尺寸与画面一致，见 `PreviewPlayer` 的 `overlay`）：绘制构图网格与短视频平台遮挡安全区。
+ * 竖屏及方屏标注右侧互动区与底部信息遮挡区，横屏标注底部播控遮挡区；仅作编辑态视觉辅助，不拦截指针事件。
  */
 export function FramingGuides({ canvas, framing }: { canvas: Canvas; framing: Framing }) {
   if (framing.grid === 'off' && !framing.safeArea) return null

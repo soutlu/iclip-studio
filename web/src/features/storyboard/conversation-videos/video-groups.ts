@@ -55,6 +55,6 @@ export const groupConversationVideos = (
   ]
 }
 
-/** 第 `ordinal` 版的全名：原片写「V1 原片」，合成只写版本号。 */
+/** 第 `ordinal` 版的完整名称：原片写作「V<ordinal> 原片」，合成仅保留版本号。 */
 export const versionNameOf = (video: GenerationJob, ordinal: number): string =>
   isTake(video) ? `${versionLabel(ordinal)} ${ORIGINAL_LABEL}` : versionLabel(ordinal)

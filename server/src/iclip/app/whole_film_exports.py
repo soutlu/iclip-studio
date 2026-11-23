@@ -50,13 +50,13 @@ from iclip.platform.runtime_api.file_store.namespace import namespace_for
 
 _logger = structlog.stdlib.get_logger(__name__)
 
-_NOT_THIS_EXPORT: Final = "没有这次导出"
+_NOT_THIS_EXPORT: Final = "导出记录不存在"
 
 _PROJECT_PREFIX: Final = f"{PROJECT_DIR}/"
 
 
 def final_cut_reader(store: WorkspaceFiles) -> ReadProject:
-    """交给渲染服务时读工程：列出工作区 ``final-cut/`` 下的全部文件逐个读出，路径去掉这个前缀。"""
+    """提交至渲染服务前读取工程：遍历并读取工作区 ``final-cut/`` 下的全部文件，返回相对工程根目录的路径。"""
 
     async def read_project(owner: uuid.UUID, conversation_id: uuid.UUID) -> Sequence[ProjectFile]:
         namespace = namespace_for(owner, str(conversation_id))
@@ -66,7 +66,7 @@ def final_cut_reader(store: WorkspaceFiles) -> ReadProject:
                 if not entry.path.startswith(_PROJECT_PREFIX):
                     continue
                 stored = await store.read(namespace, entry.path)
-                # 列出之后又删掉的文件不算在这一刻的工程里
+                # 列举后已被删除的文件不纳入当前工程快照
                 if stored is not None:
                     files.append(
                         ProjectFile(
@@ -74,7 +74,7 @@ def final_cut_reader(store: WorkspaceFiles) -> ReadProject:
                         )
                     )
         except RuntimeUnavailable as exc:
-            raise ProjectUnavailable("读不到对话工作区里的 final-cut，稍后再试") from exc
+            raise ProjectUnavailable("无法读取对话工作区中的 final-cut 工程，请稍后重试") from exc
         return files
 
     return read_project
@@ -107,10 +107,10 @@ class WholeFilmExportAdapter:
         locale: TargetLocale | None,
         resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """记一条成片记录排队，导出哪种语言（``locale``，None 是原文）和分辨率档位（``resolution``，None
-        按画面尺寸导出）也记进去。主文件里的素材按地址对来源，对不上的不记：``<video>`` 对生成记录；
-        ``<audio>`` 依次对本对话（含分叉继承）的生成记录、本对话（含分叉继承）的上传、参考音频库，先对上
-        的算。"""
+        """创建成片导出记录并入队，同步记录目标语言（``locale``，``None`` 表示原文）与导出分辨率档位
+        （``resolution``，``None`` 表示按画面尺寸导出）。主文件中的素材按地址匹配来源，未命中者忽略：
+        ``<video>`` 匹配生成记录；``<audio>`` 依次匹配本对话（含分叉继承）的生成记录、本对话（含分叉
+        继承）的上传记录及参考音频库，命中即止。"""
 
         addresses = media_addresses(main_file)
         records = await self._generations.earliest_by_outputs(
@@ -187,7 +187,7 @@ class WholeFilmExportAdapter:
     async def _export_of(self, job: GenerationJob) -> WholeFilmExport:
         request = job.request
         if not isinstance(request, WholeFilmRequest):
-            raise RuntimeError(f"成片记录 {job.id} 没有成片导出的请求")
+            raise RuntimeError(f"成片导出记录 {job.id} 缺少有效的 WholeFilmRequest 请求体")
         status: WholeFilmExportStatus = "queued"
         progress: float | None = None
         queue_position: int | None = None
@@ -203,7 +203,7 @@ class WholeFilmExportAdapter:
             status = "done"
         elif job.status == STATUS_FAILED:
             if job.error_code is None or job.error_message is None:
-                raise RuntimeError(f"成片记录 {job.id} 失败了却没有错误码与原因")
+                raise RuntimeError(f"成片导出记录 {job.id} 状态为失败，但缺少错误码或错误说明")
             if job.error_code == CANCELLED:
                 status = "cancelled"
             else:
@@ -224,10 +224,10 @@ class WholeFilmExportAdapter:
         try:
             found = await self._render.get(job.id)
         except RenderUnavailable:
-            _logger.warning("读导出进度时渲染服务连不上", job_id=job.id)
+            _logger.warning("查询导出进度时渲染服务不可达", job_id=job.id)
             return None
         if found is None:
-            _logger.warning("渲染服务里查不到这次导出", job_id=job.id)
+            _logger.warning("渲染服务中未找到该导出任务", job_id=job.id)
         return found
 
 

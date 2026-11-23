@@ -26,13 +26,13 @@ type ChooserProps = {
 }
 
 /**
- * 没选中任何页签时工作台正中的卡片：能打开的产物一行一个（还没有的灰着、写原因），分隔线下是能新建的类型。
+ * 未选中任何页签时居中展示的工作台产物选择卡：上方逐行列出可打开的产物（尚未生成者置灰并附说明），分隔线下方列出可新建的产物类型。
  */
 export function Chooser({ rows, creatable, creating, onPick, onCreate }: ChooserProps) {
   return (
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 pb-6">
       <nav
-        aria-label="能打开的产物"
+        aria-label="可打开的产物"
         className="flex w-full max-w-86 flex-col gap-0.75 rounded-panel bg-surface p-1.75 shadow-[var(--shadow-panel),var(--shadow-specular)]"
       >
         <ul className="flex flex-col gap-0.75">

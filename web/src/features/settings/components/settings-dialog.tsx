@@ -11,7 +11,7 @@ type SettingsDialogProps = {
   onOpenChange: (open: boolean) => void
 }
 
-/** 「设置」弹窗：托盘底上一个头部和「用户」分区，高度固定，成员在白卡里滚动。目前只有「用户」一个分区。 */
+/** 「设置」弹窗：固定高度托盘容器，包含头部与「用户」分区，成员列表在白色卡片内纵向滚动（当前仅设「用户」分区）。 */
 export function SettingsDialog({ onOpenChange, open }: SettingsDialogProps) {
   const sectionLabelId = useId()
   return (
@@ -47,7 +47,7 @@ export function SettingsDialog({ onOpenChange, open }: SettingsDialogProps) {
               为成员设置角色和配置组，修改后立即生效
             </p>
           </div>
-          {/* 共用弹窗没有导出 Radix 的 Close；弹窗受控，直接收起 */}
+          {/* 公共 Dialog 未导出 Radix Close 原语；此处为受控弹窗，直接调用回调关闭 */}
           <IconButton
             className={cn(
               RAISE_ON_HOVER_CLASS,

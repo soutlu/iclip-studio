@@ -54,18 +54,18 @@ class FakeHyperframesPlayer extends HTMLElement {
   readonly iframeElement = document.createElement('iframe')
   readonly _media = new FakeParentMedia()
   currentTime = 0
-  // 足够长、放不到结尾；要测放到结尾的用例自己改短
+  // 默认设置足够长时长避免误触发播完；需测试播完边界的用例可自行改短
   duration = 3600
   paused = true
   painted = false
   playbackRate = 1
   muted = false
   loop = false
-  /** 收到 srcdoc 那一刻的 `runtime-src`：真播放器这时按它把运行库写进预览页。 */
+  /** 记录接收到 `srcdoc` 瞬间读取到的 `runtime-src` 属性值，模拟真实播放器注入运行库脚本的时机。 */
   loadedRuntimeSrc: string | null = null
   /**
-   * 页面里运行库时钟的时刻（秒）：真播放器在放时它每帧都在走，这里由用例改它来模拟；跳转时跟着挪。
-   * 页面加载好时才挂到页面的全局上（和运行库一样），用例删掉那个全局就是读不到时钟。
+   * 播放器内部运行库时钟时刻（秒）：真实播放器播放时逐帧递增，此处由测试用例手动改写模拟，调用 `seek` 时同步更新。
+   * 仅在文档加载就绪后挂载至 iframe 全局对象（与运行库行为一致）；用例删除该全局属性可模拟时钟缺失场景。
    */
   runtimeTime = 0
 
@@ -90,7 +90,7 @@ class FakeHyperframesPlayer extends HTMLElement {
     })
   }
 
-  /** 把 final-cut 的 `<body>` 原样放进 iframe（补丁按 `data-hf-id` 找得到元素），视频的加载状态由用例控制。 */
+  /** 将 final-cut 的 `<body>` 节点导入 iframe（供增量补丁按 `data-hf-id` 定位），视频加载状态由模块级测试集合控制。 */
   #showFilm(srcdoc: string) {
     const page = this.iframeElement.contentDocument
     if (page === null) return

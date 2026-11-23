@@ -25,7 +25,7 @@ type CueUserMenuProps = {
   align?: CueUserMenuAlign
   className?: string
   compact?: boolean
-  /** 点「设置」时调用；「设置」只对 `canManageMembers` 的账号显示。 */
+  /** 点击「设置」菜单项时触发；该入口仅对满足 `canManageMembers` 的账号可见。 */
   onOpenSettings: () => void
 }
 

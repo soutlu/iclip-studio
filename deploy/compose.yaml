@@ -1,13 +1,13 @@
-# 单机部署：后端 → nginx 前端，另有只在内网可达的运行时服务与成片渲染服务。数据库迁移由操作者手动执行，部署和服务
-# 启动不执行迁移。Postgres 用服务器现有实例，本项目独占一个数据库，后端与运行时服务连同一个库。
-# 变量与凭证来自同目录的 .env，server 容器整份加载它；运行时服务只拿下面 environment 列出的几项。env 文件不进仓库。
-# 本文件用到的变量：ACR_REGISTRY 镜像仓库地址（如 registry.<region>.aliyuncs.com）、
-# ACR_NAMESPACE 仓库里的命名空间、IMAGE_TAG 后端、前端与渲染服务的镜像版本、RUNTIME_IMAGE_TAG 运行时服务的镜像版本
-# （都缺省 latest，两边分开记、可以分开升级，步骤见 docs/deploy.md「升级」）、WEB_PORT 对外端口（缺省 80，改了
-# config.yaml 里 sso.redirect_url 的端口要跟着改）、RENDER_ALLOWED_MEDIA_HOSTS 渲染服务允许取素材的主机，以及运行时服务那几项（见 runtime 段）。后端的密钥变量见 server/src/iclip/config/models.py。
-# 运行配置不进镜像也不进仓库：同目录的 configs/ 只读挂进后端（config.yaml）与运行时服务（runtime.yaml，样例是
-# deploy/runtime.example.yaml），改了要 restart 对应的服务。模型、agent 与技能存在数据库里，在配置页里改。组件库也不进镜像：同目录的 components/（catalog.json、
-# <版本号>/ 与各版本共用的 vendor/）只读挂给 web 与 render，发布新组件库不用重启，步骤见 docs/deploy.md「发布组件库」。
+# 单机部署编排：server（视频后端）、web（前端与 Nginx 反代）及仅内网可达的 runtime（Agent 运行时）与 render（成片渲染）。
+# 数据库迁移须手动执行，容器启动不会自动建表；后端与运行时共用同一 PostgreSQL 实例的不同 Schema。
+# 变量与凭证取自同目录 .env（不入库）：server 全量加载，runtime 仅透传下方 environment 所列变量。
+# 本文件涉及变量：ACR_REGISTRY（镜像仓库地址，如 registry.<region>.aliyuncs.com）、ACR_NAMESPACE（命名空间）、
+# IMAGE_TAG（后端/前端/渲染镜像版本，缺省 latest）、RUNTIME_IMAGE_TAG（运行时镜像版本，缺省 latest；两边分开记录与升级，
+# 见 docs/deploy.md「升级」）、WEB_PORT（对外端口，缺省 80；修改时须同步更新 config.yaml 的 sso.redirect_url 端口）、
+# RENDER_ALLOWED_MEDIA_HOSTS（渲染服务素材域名白名单）及运行时鉴权变量；后端密钥清单见 server/src/iclip/config/models.py。
+# 运行配置与组件库均不入镜像：同目录 configs/ 只读挂载至后端（config.yaml）与运行时（runtime.yaml，样例见
+# deploy/runtime.example.yaml），修改后须 restart 对应服务；模型、Agent 与技能存库并在后台管理页维护。
+# 同目录 components/（catalog.json、<版本号>/ 与共享 vendor/）只读挂载至 web 与 render，更新组件库无需重启（见 docs/deploy.md「发布组件库」）。
 
 services:
   server:
@@ -18,9 +18,9 @@ services:
       - ./configs:/app/configs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # 本地视频加工（合成、拆解抽帧、分镜取帧）启动时探测，有 NVIDIA 显卡就用它编解码，没有用软件。
-    # 宿主机要装 NVIDIA 驱动与 NVIDIA Container Toolkit，申请不到显卡容器起不来；没有显卡的机器删掉
-    # 这一段。capabilities 里的 video 让容器里有 libnvidia-encode / libnvcuvid，少了它 NVENC 起不来。
+    # 本地视频处理（合成、拆解抽帧、分镜取帧）在启动期自动探测编码器：可用则启用 NVIDIA 硬件加速，否则回退软件编码。
+    # 宿主机须安装 NVIDIA 驱动与 NVIDIA Container Toolkit，无 GPU 宿主机请移除本段，否则容器无法启动；
+    # capabilities 中的 video 用于挂载 libnvidia-encode / libnvcuvid，缺失时 NVENC 不可用。
     deploy:
       resources:
         reservations:
@@ -35,19 +35,18 @@ services:
       retries: 5
       start_period: 20s
 
-  # Agent 运行时服务：消息与运行、transcript、实时通道的上游、工作区文件、配置页的管理接口。只在 compose
-  # 网络里可达（后端 config.yaml 的 runtime.url: http://runtime:7790），不对外开端口。后端先起：运行时配置了 shot_video 或
-  # video_breakdown 时启动就向后端的内部接口核对插件服务；后端启动时连不上运行时不影响启动，事件流会自己重连。
+  # Agent 运行时服务：承载对话运行、Transcript、实时事件流上游、工作区文件与管理接口，仅在 Compose 内网可达
+  # （对应后端 config.yaml 的 runtime.url: http://runtime:7790），不对外暴露端口。须待后端健康后再启动，以便启动期
+  # 向后端内部接口核对插件服务；后端启动不强依赖运行时，事件流会自动重连。
   runtime:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-runtime:${RUNTIME_IMAGE_TAG:-latest}
     restart: unless-stopped
     command: ["python", "-m", "agent_runtime.main", "--config", "configs/runtime.yaml", "--host", "0.0.0.0", "--port", "7790"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
-      # 模型供应商密钥的加密钥匙，只有运行时解密。
+      # 模型供应商密钥的 Fernet 加密密钥，仅由运行时解密。
       CREDENTIAL_ENCRYPTION_KEYS: ${CREDENTIAL_ENCRYPTION_KEYS}
-      # runtime.yaml 里 apps.video.key_env 与 hooks.token_env、plugins.config.internal_api.token_env 指向的变量，
-      # 与后端用的是同一个值。
+      # 对应 runtime.yaml 中 apps.video.key_env、hooks.token_env 与 plugins.config.internal_api.token_env，须与后端同名变量一致。
       RUNTIME_APP_KEY: ${RUNTIME_APP_KEY}
       RUNTIME_INTERNAL_TOKEN: ${RUNTIME_INTERNAL_TOKEN}
     volumes:
@@ -62,22 +61,22 @@ services:
       retries: 5
       start_period: 20s
 
-  # 成片导出的渲染服务：只在 compose 网络里可达（后端 config.yaml 的 final_cut.render_url: http://render:8080），
-  # 不对外开端口。RENDER_ALLOWED_MEDIA_HOSTS 列出它会取素材的主机，见 docs/deploy.md「成片渲染服务」。
+  # 成片导出渲染服务：仅在 Compose 内网可达（对应后端 config.yaml 的 final_cut.render_url: http://render:8080），
+  # 不对外暴露端口。RENDER_ALLOWED_MEDIA_HOSTS 指定允许下载的素材主机白名单，见 docs/deploy.md「成片渲染服务」。
   render:
     image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/iclip-render:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       # 未设置时渲染服务启动即退出并记录「配置不完整」。
       RENDER_ALLOWED_MEDIA_HOSTS: ${RENDER_ALLOWED_MEDIA_HOSTS:-}
-    # Chrome 渲染用共享内存，Docker 默认的 64 MB 不够。
+    # 无头 Chrome 渲染所需共享内存（大于 Docker 默认 64 MB）。
     shm_size: 2gb
     volumes:
       - render-tmp:/tmp/iclip-render
-      # 组件库，镜像里的 RENDER_REGISTRY_ROOT
+      # 只读挂载共享组件库（对应镜像内 RENDER_REGISTRY_ROOT）
       - ./components:/app/registry:ro
-    # Chrome 用显卡渲染（WebGL）要 graphics，NVENC 编码要 video；启动日志与 /health 报告实际用的是
-    # hardware 还是 software。没有显卡的机器删掉这一段，渲染照常、走软件。
+    # graphics 供 Chrome WebGL 硬件渲染，video 供 NVENC 编码（启动日志与 /health 报告 hardware 或 software）；
+    # 无 GPU 宿主机请移除本段，渲染将自动回退软件模式。
     deploy:
       resources:
         reservations:
@@ -98,12 +97,12 @@ services:
     ports:
       - "${WEB_PORT:-80}:80"
     volumes:
-      # 组件库，站点上的 /hyperframes/
+      # 只读挂载共享组件库（对应站点路径 /hyperframes/）
       - ./components:/usr/share/nginx/html/hyperframes:ro
     depends_on:
       server:
         condition: service_healthy
 
 volumes:
-  # 渲染服务的临时项目目录（素材、逐帧中间文件、成片），导出结束即删。
+  # 渲染临时工作目录（存放素材、中间帧与成片），导出完成后自动清理。
   render-tmp:

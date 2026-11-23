@@ -37,12 +37,12 @@ workbenchRegistry.register({
   type: 'film',
 })
 
-// 只在工作区里有主文件时才有页签（agent 写的或用户在「+」里新建的）；id 是 final-cut，地址 ?artifact=final-cut。
-// final-cut/ 下的其他文件也归它：文件页预览它们时给「打开 final-cut」
+// 仅当工作区存在主文件时显示页签（由 Agent 写入或用户通过「+」新建）；ID 为 final-cut，URL 参数为 ?artifact=final-cut。
+// final-cut/ 下的其余文件亦归属此产物，在文件页预览时提供「打开 final-cut」入口。
 workbenchRegistry.register({
   autoOpen: false,
   component: FinalCutPanel,
-  create: { agentCreatedNotice: 'agent 已创建 final-cut 目录', run: createFinalCut },
+  create: { agentCreatedNotice: 'Agent 已创建 final-cut 工程', run: createFinalCut },
   frameless: true,
   hiddenWhenReadOnly: true,
   icon: 'final-cut-shots',

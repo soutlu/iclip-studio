@@ -184,7 +184,9 @@ def validate_internal_endpoint(value: str) -> str:
     if parts.scheme not in {"http", "https"} or not parts.netloc:
         raise ValueError("object_store.internal_endpoint 必须是 http:// 或 https:// 地址")
     if parts.path or parts.query or parts.fragment:
-        raise ValueError("object_store.internal_endpoint 只写 scheme 与 host，不带路径或查询串")
+        raise ValueError(
+            "object_store.internal_endpoint 仅允许包含 scheme 与 host，不可携带路径、查询参数或片段"
+        )
     return endpoint
 
 

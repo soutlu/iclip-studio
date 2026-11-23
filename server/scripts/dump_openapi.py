@@ -46,13 +46,15 @@ def main(argv: Sequence[str]) -> int:
     if "--check" in argv:
         current = OUTPUT.read_text(encoding="utf-8") if OUTPUT.exists() else ""
         if current != rendered:
-            print(f"[contract] {relative} 与后端当前路由不一致，跑 make contract 重新导出")
+            print(
+                f"[contract] {relative} 与后端当前路由不一致，请执行 make contract（或 make contract-sync）重新导出"
+            )
             return 1
         print(f"[contract] {relative} 与后端一致")
         return 0
 
     OUTPUT.write_text(rendered, encoding="utf-8")
-    print(f"[contract] 已写出 {relative}")
+    print(f"[contract] 已写入 {relative}")
     return 0
 
 

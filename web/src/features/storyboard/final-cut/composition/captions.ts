@@ -102,9 +102,9 @@ const CAPTION_RULE_BODY = new RegExp(
 )
 
 /**
- * 字幕场景文件 `scene` 里统一样式（见 `captionStyle`）的字号、描边、投影换成画面 `canvas` 的默认值（见
- * `captionFontSize`）。默认字号以画面宽度为准，存出时按它重算，画面尺寸改了、撤销了都跟着走；一句单独设过的字号
- * 写在它自己的行内样式上，不受影响。统一样式里没写的项不补，没有这条样式（手写的、写法不一样的场景）时原样返回。
+ * 将字幕场景文件 `scene` 中默认样式规则（见 `captionStyle`）的字号、描边与投影更新为画布 `canvas` 对应的默认值（见 `captionFontSize`）。
+ * 默认字号随画布宽度等比计算，保存时重算以保证修改尺寸与撤销同步生效；单句独立设置的行内字号不受影响。
+ * 原规则中未声明的属性不予补写；未匹配到标准样式规则（如手写自定义场景）时原样返回。
  */
 export function withCaptionDefaults(scene: string, canvas: Canvas): string {
   const size = captionFontSize(canvas)

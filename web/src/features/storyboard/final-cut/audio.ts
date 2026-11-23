@@ -7,8 +7,8 @@ import type { AudioClip, FilmClip } from './composition/film'
 import { isMusicRow, rowBusy, rowsOf, type RowTarget } from './placement'
 
 /**
- * 音频面板里的一条：这段对话生成的音乐，或挂在这段对话上的音频上传。`title` 是列表里的名字，
- * 加进 final-cut 的音频片段也叫这个；上传的总是已就绪，只有生成的会失败、能重新生成。
+ * 音频面板条目：本对话生成的音乐或上传的音频文件。`title` 同时用作列表标题与加入轨道后的音频片段名称；
+ * 上传音频默认已就绪，仅生成任务可能失败并支持重新生成。
  */
 export type ConversationAudio = {
   id: string

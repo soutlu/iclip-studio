@@ -1,24 +1,24 @@
 import type { Canvas } from './film'
 
-/** 导出分辨率能选的档位，从低到高。档位是每次导出的请求参数，不写进工程。 */
+/** 可选导出分辨率档位（由低到高）。档位仅作为单次导出请求参数，不写入工程文件。 */
 export const EXPORT_TIERS = ['480p', '720p', '1080p'] as const
 
 export type ExportTier = (typeof EXPORT_TIERS)[number]
 
-/** 界面和报错里写的档位：`720P`。 */
+/** 界面与报错文案使用的档位展示名（如 `720P`）。 */
 export const tierLabel = (tier: ExportTier) => tier.toUpperCase()
 
-/** 这个画面导不出 `tier` 时给人看的一句话。 */
+/** 当前画幅不支持以 `tier` 档位导出时的提示文案。 */
 export const tierUnsupportedText = (tier: ExportTier) =>
   `当前画面尺寸不支持按 ${tierLabel(tier)} 导出`
 
-/** 画面档：短边正好是 480 / 720 / 1080 时，按画面尺寸导出就是这一档；别的尺寸没有画面档。 */
+/** 画布原生档位：短边恰好为 480 / 720 / 1080 时对应导出档位，其余尺寸返回 `undefined`。 */
 export const canvasTier = ({ width, height }: Canvas): ExportTier | undefined =>
   EXPORT_TIERS.find((tier) => Number.parseInt(tier, 10) === Math.min(width, height))
 
 /**
- * 导出库里判断预设的几个函数，由调用方传进来（编辑器和渲染服务各从自己装的导出库包里取）：这个目录不 import 包，
- * 渲染服务的检查只装它自己的依赖。
+ * 导出库分辨率预设校验接口，由调用方注入（编辑器与渲染服务各自从自身依赖包传入）：
+ * 本目录不直接 import 外部包，以保证渲染服务仅安装自身依赖即可通过检查。
  */
 export interface ResolutionLibrary<Preset extends string> {
   CANVAS_DIMENSIONS: Readonly<Record<Preset, Canvas>>
@@ -32,15 +32,15 @@ export interface ResolutionLibrary<Preset extends string> {
 }
 
 /**
- * 按某一档导出是什么样：`canvas` 就按画面尺寸导出，不用换；`preset` 交给渲染器的预设名和它出片的尺寸；
- * `unsupported` 这个画面导不出这一档。
+ * 指定档位的导出决议：`canvas` 表示直接按画布原尺寸导出；`preset` 返回传给渲染器的预设名与实际成片尺寸；
+ * `unsupported` 表示当前画布尺寸不支持该档位。
  */
 export type TierOutput<Preset extends string> =
   { kind: 'canvas' } | { kind: 'preset'; preset: Preset; size: Canvas } | { kind: 'unsupported' }
 
 /**
- * 画面 `canvas` 按 `tier` 导出是什么样。等于画面档时不用换；否则照导出库的做法找同形状、同一档的预设，并且导出库
- * 判断能导（缩小随意，放大只能整数倍）。只有 16:9、9:16、1:1 三种形状有预设。
+ * 计算画布 `canvas` 按档位 `tier` 导出的决议：匹配画布原生档位时直接按原尺寸导出；
+ * 否则委托导出库查找同画幅比例的对应预设并校验兼容性（允许任意缩小，放大仅限整数倍；目前仅 16:9、9:16、1:1 提供预设）。
  */
 export function tierOutput<Preset extends string>(
   library: ResolutionLibrary<Preset>,

@@ -10,10 +10,10 @@ import { useSetUserModelGroup, useSetUserRole, type ManagedUser } from '../users
 import { FixedCell, InlineSelect } from './inline-select'
 import { MEMBER_GRID_CLASS, TRAY_SURFACE_CLASS } from './settings-surface'
 
-// 菜单里「默认组」项的值；组名以小写字母开头，不会和它撞上
+// 下拉菜单中「默认组」选项的哨兵值（后端配置组名以小写字母开头，不会冲突）
 const DEFAULT_GROUP = ''
 
-// 没有头像图时，首字的底色按用户 id 稳定地落到其中一档；第一档是头像自带的中性灰
+// 无头像图片时，按用户 ID 哈希稳定映射到其中一档首字色调（首档沿用头像默认中性灰）
 const AVATAR_TONES = [
   '',
   'bg-tone-slate/10 text-tone-slate ring-1 ring-tone-slate/15 ring-inset',
@@ -29,14 +29,14 @@ const avatarToneOf = (userId: string) => {
 type UserRowProps = {
   user: ManagedUser
   isSelf: boolean
-  /** 部署配置里的组名，按配置顺序。 */
+  /** 部署配置中定义的配置组名称列表（按配置顺序）。 */
   groups: readonly string[]
 }
 
 export function UserRow({ groups, isSelf, user }: UserRowProps) {
   const name = user.displayName || user.username || user.email
   const departments = user.departments.map((department) => department.name).join('、')
-  // 名字本身就是邮箱时不再重复一遍
+  // 显示名称与邮箱相同时不再重复展示邮箱
   const email = name.toLowerCase() === user.email.toLowerCase() ? '' : user.email
   const detail = [departments, email].filter(Boolean).join(' · ')
   const hasPhoto = user.avatarUrl.trim() !== ''
@@ -70,7 +70,7 @@ export function UserRow({ groups, isSelf, user }: UserRowProps) {
           {detail ? <p className="truncate text-body-sm text-on-surface-faint">{detail}</p> : null}
         </div>
       </div>
-      {/* 窄屏折到第二行时缩进头像宽加间距，和名字左对齐 */}
+      {/* 窄屏折至第二行时缩进头像宽度与间距之和（48px），与上方姓名左缘对齐 */}
       <div className="min-w-0 max-sm:pl-12">
         <RolePicker isSelf={isSelf} name={name} user={user} />
       </div>
@@ -87,7 +87,7 @@ function RoleDot({ role }: { role: RoleOption }) {
 
 function RolePicker({ isSelf, name, user }: { isSelf: boolean; name: string; user: ManagedUser }) {
   const mutation = useSetUserRole()
-  // 保存期间先显示刚选的；失败后 isPending 落下，自然回到保存前的角色
+  // 保存请求进行中乐观展示所选角色；失败后 isPending 复位，自动回退至已保存值
   const value = mutation.isPending ? mutation.variables.role : (highestRole(user.roles) ?? '')
   const role = ROLE_OPTIONS.find((option) => option.value === value)
   const shown = role?.label ?? '未分配角色'
@@ -134,7 +134,7 @@ function RolePicker({ isSelf, name, user }: { isSelf: boolean; name: string; use
   )
 }
 
-/** 角色菜单的一项：角色名一行、说明一行；无障碍名称只念角色名，说明挂在描述上。 */
+/** 角色单选菜单项：分两行展示角色名称与权限说明；无障碍名称仅包含角色名，说明通过 `aria-describedby` 关联。 */
 function RoleItem({ role }: { role: RoleOption }) {
   const descriptionId = useId()
   return (
@@ -169,7 +169,7 @@ function GroupPicker({
   const mutation = useSetUserModelGroup()
   const saved = user.modelGroup
   const shown = mutation.isPending ? mutation.variables.modelGroup : saved
-  // 存的组已不在部署配置里：照样显示出来并警示，菜单里只给现有的组，好把他挪走
+  // 已保存的配置组不在当前部署配置中：保留展示并标示警示态，菜单仅列出现有配置组以引导切换
   const stale = shown !== null && !groups.includes(shown)
 
   if (groups.length === 0 && !stale) {
@@ -195,9 +195,9 @@ function GroupPicker({
         stale ? (
           <>
             <MenuSeparator />
-            {/* 折行只落在标点处，不把「请切换」拆开；组名太长时仍可在组名里断开 */}
+            {/* 优先在标点处折行，避免拆分「请切换」；配置组名称过长时仍允许词内断行 */}
             <p className="px-2 py-1.5 text-label break-words break-keep text-warning">
-              原组「{shown}」已失效，请切换
+              原配置组「{shown}」已失效；请切换
             </p>
           </>
         ) : null
