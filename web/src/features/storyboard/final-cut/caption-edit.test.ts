@@ -16,6 +16,7 @@ import {
 } from './caption-edit'
 import { splitAt } from './clip-edit'
 import type { FilmClip, VideoClip } from './composition/film'
+import { spanPieces } from './materials'
 
 const caption = (id: string, start: number, duration: number) => ({ id, start, duration })
 
@@ -85,32 +86,77 @@ describe('字幕的先后', () => {
 const said = (startMs: number, endMs: number, text = '一句话') => ({ startMs, endMs, text })
 
 describe('识别出来的句子换算成 final-cut 里的字幕', () => {
-  it('只取片段用掉的那段素材里的句子，从入点算起，头尾超出片段的截掉，截完不到 0.1 秒、字是空的不要', () => {
+  it('取片段用掉的那段素材里开头的句子，从入点算起；开头被裁掉的截到片段开头，结尾不截；不到 0.1 秒、字是空的不要', () => {
     // 片段从 final-cut 的 1 秒起、长 3 秒，用掉素材的 2–5 秒
     const clip = video({ id: 'v1', start: 1_000, mediaStart: 2_000, duration: 3_000 })
     expect(
-      sentenceCaptions(clip, [
-        said(1_000, 1_500, '入点之前'),
-        said(1_800, 2_600, '跨着入点'),
-        said(3_000, 4_000, ' 中间 '),
-        said(4_900, 6_000, '截完正好 0.1 秒'),
-        said(4_950, 6_000, '截完不到 0.1 秒'),
-        said(3_000, 3_500, '  '),
-      ]),
+      sentenceCaptions(
+        clip,
+        [
+          said(1_000, 1_500, '入点之前'),
+          said(1_800, 2_600, '跨着入点'),
+          said(3_000, 4_000, ' 中间 '),
+          said(4_500, 6_000, '跨着出点'),
+          said(5_000, 5_500, '出点之后'),
+          said(3_000, 3_050, '不到 0.1 秒'),
+          said(3_000, 3_500, '  '),
+        ],
+        [clip],
+      ),
     ).toEqual([
       { start: 1_000, duration: 600, text: '跨着入点', owner: 'v1' },
       { start: 2_000, duration: 1_000, text: '中间', owner: 'v1' },
-      { start: 3_900, duration: 100, text: '截完正好 0.1 秒', owner: 'v1' },
+      { start: 3_500, duration: 1_500, text: '跨着出点', owner: 'v1' },
     ])
   })
 
   it('速度不是 1：素材里的时间除以速度', () => {
     // 2 倍速：final-cut 里 2 秒用掉素材的 1–5 秒
     const clip = video({ id: 'v1', start: 0, mediaStart: 1_000, duration: 2_000, playbackRate: 2 })
-    expect(sentenceCaptions(clip, [said(2_000, 3_000), said(4_000, 6_000)])).toEqual([
+    expect(sentenceCaptions(clip, [said(2_000, 3_000), said(4_000, 6_000)], [clip])).toEqual([
       { start: 500, duration: 500, text: '一句话', owner: 'v1' },
-      { start: 1_500, duration: 500, text: '一句话', owner: 'v1' },
+      { start: 1_500, duration: 1_000, text: '一句话', owner: 'v1' },
     ])
+  })
+
+  it('一句话跨过两个相接的片段：只在前一个片段名下写一条整句，时间是整句的；后一个片段不写这句', () => {
+    // 素材 0.5–3.8 秒加进轨道、在 2.3 秒的镜头切口处拆成相接的两个片段：0–1.8 秒、1.8–3.3 秒
+    const [first, second] = spanPieces({ startMs: 500, endMs: 3_800 }, [
+      { startMs: 0, endMs: 2_300 },
+      { startMs: 2_300, endMs: 6_000 },
+    ])
+    if (first === undefined || second === undefined) throw new Error('应该拆成两段')
+    const clips = [
+      video({ id: 'v1', start: 0, ...first }),
+      video({ id: 'v2', start: first.duration, ...second }),
+    ]
+    const sentences = [
+      said(1_000, 2_000, '前一句'),
+      said(2_000, 3_000, '跨过接缝的一句'),
+      said(3_000, 3_600, '后一句'),
+    ]
+    expect(recognizedCaptions(clips, new Map(clips.map((clip) => [clip.id, sentences])))).toEqual({
+      captions: [
+        { start: 500, duration: 1_000, text: '前一句', owner: 'v1' },
+        { start: 1_500, duration: 1_000, text: '跨过接缝的一句', owner: 'v1' },
+        { start: 2_500, duration: 600, text: '后一句', owner: 'v2' },
+      ],
+      skipped: 0,
+      silent: [],
+    })
+  })
+
+  it('句子开头哪个片段都没播出（被裁掉了）：由时间线上第一个播出这句一部分的片段写，从片段开头起，结尾照句子', () => {
+    // 素材 0.5–1.5 秒和 2.5–3.8 秒排在一起（中间那段删了），2.5–3.8 秒在 5 秒处又用了一次
+    const clips = [
+      video({ id: 'v1', start: 0, mediaStart: 500, duration: 1_000 }),
+      video({ id: 'v3', start: 1_000, mediaStart: 2_500, duration: 1_300 }),
+      video({ id: 'v4', start: 5_000, mediaStart: 2_500, duration: 1_300 }),
+    ]
+    const sentences = [said(2_000, 3_000, '开头被裁掉的一句')]
+    expect(
+      recognizedCaptions(clips, new Map(clips.map((clip) => [clip.id, sentences]))).captions,
+    ).toEqual([{ start: 1_000, duration: 500, text: '开头被裁掉的一句', owner: 'v3' }])
   })
 })
 

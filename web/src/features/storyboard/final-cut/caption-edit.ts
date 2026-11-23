@@ -279,17 +279,43 @@ export type Sentence = Pick<SubtitleSentence, 'startMs' | 'endMs' | 'text'>
 /** 待加入轨道的单句字幕：起止时间（毫秒）、文本及归属的视频片段 ID（手动添加时为 `null`）。 */
 export type NewCaption = Span & { text: string; owner: string | null }
 
+/** 视频片段用掉的那段素材（从入点起、长 时长 × 速度）里有没有素材时间 `ms`。 */
+const playsAt = (video: VideoClip, ms: number) =>
+  video.mediaStart <= ms && ms < video.mediaStart + video.duration * video.playbackRate
+
+/** 视频片段用掉的那段素材和句子在素材里的起止有没有重叠。 */
+const playsPart = (video: VideoClip, sentence: Sentence) =>
+  video.mediaStart < sentence.endMs &&
+  sentence.startMs < video.mediaStart + video.duration * video.playbackRate
+
 /**
- * 视频片段 `video` 用掉的那段素材（从入点起、长 时长 × 速度）里的句子换算成 final-cut 里的字幕：
- * 时间是 `片段开始 + (句子时间 − 入点) ÷ 速度`，头尾超出片段的截到片段里，截完不到最短长度的、字是空的不要。
+ * 视频片段 `video` 名下要加的字幕，一句一条、字是整句：一句话只由播出它开头的片段写（句子开头在片段用掉的那段
+ * 素材里），这样一句话跨过两个相接的片段时只在前一个片段名下写一条整句；开头哪个有声的片段都没播出（被裁掉了）
+ * 时，由时间线上第一个播出这句一部分的有声片段写。`clips` 是 final-cut 里的全部片段，用来找同一条素材的有声片段。
+ * 时间是 `片段开始 + (句子时间 − 入点) ÷ 速度`：开头被裁掉的截到片段开头，结尾不截，照句子的结尾，所以跨过接缝的
+ * 一句占到它说完为止。不到最短长度的、字是空的不要。
  */
-export function sentenceCaptions(video: VideoClip, sentences: readonly Sentence[]): NewCaption[] {
+export function sentenceCaptions(
+  video: VideoClip,
+  sentences: readonly Sentence[],
+  clips: readonly FilmClip[],
+): NewCaption[] {
+  const heard = clips
+    .filter(
+      (clip): clip is VideoClip =>
+        clip.kind === 'video' && clip.src === video.src && audible(clip, clips),
+    )
+    .toSorted((left, right) => left.start - right.start)
   const at = (ms: number) => video.start + (ms - video.mediaStart) / video.playbackRate
   return sentences.flatMap((sentence) => {
+    const writes =
+      playsAt(video, sentence.startMs) ||
+      (!heard.some((clip) => playsAt(clip, sentence.startMs)) &&
+        heard.find((clip) => playsPart(clip, sentence))?.id === video.id)
     const text = sentence.text.trim()
     const start = Math.round(Math.max(video.start, at(sentence.startMs)))
-    const end = Math.round(Math.min(endOf(video), at(sentence.endMs)))
-    return text === '' || end - start < MIN_CLIP_MS
+    const end = Math.round(at(sentence.endMs))
+    return !writes || text === '' || end - start < MIN_CLIP_MS
       ? []
       : [{ start, duration: end - start, text, owner: video.id }]
   })
@@ -330,8 +356,8 @@ export function placeCaptions(
 
 /**
  * 将语音识别结果（视频片段 ID → 对应素材识别出的句子列表）换算为待加入轨道的字幕：
- * 先按各片段裁切区间过滤并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
- * `silent` 记录未能换算出任何有效字幕的片段 ID。
+ * 先按各片段取它名下的句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
+ * `silent` 记录用掉的那段素材里没有一句话的片段 ID；有话、只是句子都写在前一个片段名下的不算。
  */
 export function recognizedCaptions(
   clips: readonly FilmClip[],
@@ -341,9 +367,8 @@ export function recognizedCaptions(
   const wanted = clips.flatMap((clip) => {
     const sentences = sentencesOf.get(clip.id)
     if (clip.kind !== 'video' || sentences === undefined) return []
-    const captions = sentenceCaptions(clip, sentences)
-    if (captions.length === 0) silent.push(clip.id)
-    return captions
+    if (!sentences.some((sentence) => playsPart(clip, sentence))) silent.push(clip.id)
+    return sentenceCaptions(clip, sentences, clips)
   })
   const { placed, skipped } = placeCaptions(clips.filter(isCaption), wanted)
   return { captions: placed, skipped, silent }

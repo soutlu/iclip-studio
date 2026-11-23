@@ -337,8 +337,9 @@ export type DubbedTrack = { url: string; durationMs: number | null; lines: reado
 /**
  * 一条素材片的配音（`request` 是发起时的各句，`track` 是配好的音轨）按 `clips`（这一刻的片段）建成配音片段：
  * 每句一个，和它配的那句字幕对齐（从字幕的开始放），从音轨里这句的开始放起，速度跟着字幕所属的视频片段；
- * 长度照配音的规则占到这句的 `slotEndMs`（没有时到音轨结尾），再按速度换算，不超出那个视频片段的结尾。字幕或它的
- * 视频片段已经不在、放不下最短长度的句子不建。截了尾的句子标出来。
+ * 长度照配音的规则占到这句的 `slotEndMs`（没有时到音轨结尾），再按速度换算，不超出那个视频片段的结尾和这句字幕的
+ * 结尾里晚的那个（识别出来的一句跨过接缝时字幕比它的片段长，配音要能配完这句）。字幕或它的视频片段已经不在、
+ * 放不下最短长度的句子不建。截了尾的句子标出来。
  */
 export function dubClips(
   clips: readonly FilmClip[],
@@ -354,7 +355,7 @@ export function dubClips(
     const slotEnd = line.slotEndMs ?? track.durationMs ?? line.endMs
     const duration = Math.min(
       Math.round((slotEnd - line.startMs) / video.playbackRate),
-      video.start + video.duration - caption.start,
+      Math.max(video.start + video.duration, caption.start + caption.duration) - caption.start,
     )
     if (duration < MIN_CLIP_MS) return []
     return [
