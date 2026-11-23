@@ -4713,8 +4713,13 @@
       },
       "FilmVideoGenerationIn": {
         "additionalProperties": false,
-        "description": "给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。",
+        "description": "给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。``draft`` 为真时\n出样片（发给上游 ``provider_options.draft: true``），清晰度仍按传来的发。",
         "properties": {
+          "draft": {
+            "default": false,
+            "title": "Draft",
+            "type": "boolean"
+          },
           "filmVersion": {
             "title": "Filmversion",
             "type": "integer"
@@ -14224,6 +14229,47 @@
         "title": "VideoContent",
         "type": "object"
       },
+      "VideoDraftCompletionIn": {
+        "additionalProperties": false,
+        "description": "把一条做好的样片转成 1080p 的受理输入。\n\n``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的\n``user_name`` 始终是样片上的那个。",
+        "properties": {
+          "conversationId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversationid"
+          },
+          "draftJobId": {
+            "format": "uuid",
+            "title": "Draftjobid",
+            "type": "string"
+          },
+          "userName": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Username"
+          }
+        },
+        "required": [
+          "draftJobId"
+        ],
+        "title": "VideoDraftCompletionIn",
+        "type": "object"
+      },
       "VideoEditIn": {
         "additionalProperties": false,
         "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。\n\n转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的\n片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoEditRequest``：来源与原作落列，区间记在请求快照里。",
@@ -14642,7 +14688,7 @@
       },
       "VideoModelsOut": {
         "additionalProperties": false,
-        "description": "配置允许的视频模型，以及片段入口已接入的模型能力。",
+        "description": "配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，\n样片没开通时为空。",
         "properties": {
           "clipModels": {
             "items": {
@@ -14655,6 +14701,13 @@
             "title": "Default",
             "type": "string"
           },
+          "draftModels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Draftmodels",
+            "type": "array"
+          },
           "items": {
             "items": {
               "type": "string"
@@ -14666,7 +14719,8 @@
         "required": [
           "default",
           "items",
-          "clipModels"
+          "clipModels",
+          "draftModels"
         ],
         "title": "VideoModelsOut",
         "type": "object"
@@ -18446,7 +18500,7 @@
     },
     "/conversations/{conversation_id}/film/video-generations": {
       "post": {
-        "description": "给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。",
+        "description": "给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。``draft`` 为真时出样片，做好后用\n``POST /generations/video-draft-completions`` 转 1080p。",
         "operationId": "generate_conversation_film_video_conversations__conversation_id__film_video_generations_post",
         "parameters": [
           {
@@ -20786,7 +20840,7 @@
     },
     "/generations/video": {
       "post": {
-        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。",
+        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。\n\n出样片就是带 ``provider_options.draft: true`` 的出片，原样发上游；做好后用\n``POST /generations/video-draft-completions`` 转 1080p。",
         "operationId": "submit_video_generations_video_post",
         "requestBody": {
           "content": {
@@ -20884,6 +20938,57 @@
           }
         ],
         "summary": "Submit Video Composite"
+      }
+    },
+    "/generations/video-draft-completions": {
+      "post": {
+        "description": "把一条做好的样片（带 ``provider_options.draft: true`` 出的片）转成 1080p，另起一条普通出片\n（种类 ``video``、操作 ``generate``，没有来源与原作）。镜号、需求单与 ``metadata`` 随样片，\n对话取 ``conversationId``；请求快照是样片的请求换成 1080p、去掉 ``provider_options``，并在\n``draft_job_id`` 记下样片。\n\n``draftJobId`` 要是这段对话自己的或继承来的一条已完成、有上游任务号的样片，否则 422；样片转\n1080p 没开通 422。同一条样片在这段对话里已有没失败的转出记录时直接给那一条，不新建。\n``userName`` 的规则同出片，只用来替人办事；发给上游的 ``user_name`` 始终是样片上的，因为上游要求\n转 1080p 与样片同一个 ``user_name``。",
+        "operationId": "submit_video_draft_completion_generations_video_draft_completions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoDraftCompletionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Video Draft Completion"
       }
     },
     "/generations/video-edits": {
@@ -20990,7 +21095,7 @@
     },
     "/generations/video-models": {
       "get": {
-        "description": "返回允许的视频模型与默认模型；clipModels 另外声明片段图生、编辑的支持和时长范围。",
+        "description": "返回允许的视频模型与默认模型；clipModels 另外声明片段图生、编辑的支持和时长范围；\ndraftModels 列出能出样片的模型，样片没开通时为空。",
         "operationId": "list_video_models_generations_video_models_get",
         "responses": {
           "200": {

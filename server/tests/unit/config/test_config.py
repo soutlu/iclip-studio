@@ -288,6 +288,7 @@ FULL = (
     + MEDIA.replace(
         "allowed_models: [seedance, seedance-other]",
         """allowed_models: [seedance, seedance-other]
+    draft_complete_url: https://video.example.test/draft/complete
     enhance:
       submit_url: https://video.example.test/enhance
       model: video-enhance
@@ -347,6 +348,7 @@ def test_every_address_and_name_is_read_from_the_config_file(
     )
     assert media.video_enhance is not None
     assert media.video_enhance.submit_url == "https://video.example.test/enhance"
+    assert media.video_draft_complete_url == "https://video.example.test/draft/complete"
     assert [model.api_base for model in media.image_models] == [
         "https://image.example.test/gateway/nano-banana-pro",
         "https://image.example.test/gateway/openai/gpt-image-2.5-flare-developer",
@@ -484,6 +486,25 @@ def test_enhance_is_off_without_its_section(
     media = resolve_settings(config).media_generation
 
     assert media is not None and media.video_enhance is None
+
+
+def test_drafts_are_off_without_their_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = load_runtime_config(write(tmp_path, MEDIA_ON + DEFAULT))
+    _media_env(monkeypatch)
+    media = resolve_settings(config).media_generation
+
+    assert media is not None and media.video_draft_complete_url is None
+
+
+def test_a_blank_draft_address_is_refused(tmp_path: Path) -> None:
+    blank = MEDIA_ON.replace(
+        "allowed_models: [seedance, seedance-other]",
+        "allowed_models: [seedance, seedance-other]\n    draft_complete_url: '  '",
+    )
+    with pytest.raises(ValidationError, match="draft_complete_url"):
+        load_runtime_config(write(tmp_path, blank))
 
 
 @pytest.mark.parametrize(

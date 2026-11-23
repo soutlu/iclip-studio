@@ -83,7 +83,13 @@ MAX_COMPOSE_SEGMENTS: Final = 100
 
 COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "shot_index"})
 
-RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
+DRAFT_OPTION: Final = "draft"
+DRAFT_JOB_FIELD: Final = "draft_job_id"
+DRAFT_TASK_FIELD: Final = "draft_task_id"
+
+RECORD_ONLY_FIELDS: Final = frozenset(
+    {"source_url", "range_start_ms", "range_end_ms", DRAFT_TASK_FIELD}
+)
 
 NOT_FORWARDED_FIELDS: Final = (
     COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot", "reference_ids"})
@@ -277,6 +283,11 @@ class VideoTrialRequest(VideoGenerationIn):
 class VideoEditRequest(VideoGenerationIn):
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
+
+
+class VideoDraftCompletionRequest(VideoGenerationIn):
+    draft_job_id: uuid.UUID
+    draft_task_id: Annotated[str, Field(min_length=1, max_length=200)]
 
 
 class ImageGenerationIn(CamelModel):
@@ -723,6 +734,17 @@ class VideoEnhanceIn(CamelModel):
     user_name: UserName | None = None
 
 
+class VideoDraftCompletionIn(CamelModel):
+    """把一条做好的样片转成 1080p 的受理输入。
+
+    ``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的
+    ``user_name`` 始终是样片上的那个。"""
+
+    draft_job_id: uuid.UUID
+    conversation_id: uuid.UUID | None = None
+    user_name: UserName | None = None
+
+
 class VideoEnhanceRequest(SnakeModel):
     kind: ClassVar[GenerationKind] = KIND_VIDEO
     operation: ClassVar[GenerationOperation] = OPERATION_ENHANCE
@@ -902,11 +924,13 @@ class VideoClipModelOut(CamelModel):
 
 
 class VideoModelsOut(CamelModel):
-    """配置允许的视频模型，以及片段入口已接入的模型能力。"""
+    """配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，
+    样片没开通时为空。"""
 
     default: str
     items: list[str]
     clip_models: list[VideoClipModelOut]
+    draft_models: list[str]
 
 
 class ImageModelOut(CamelModel):
@@ -952,6 +976,9 @@ __all__ = [
     "CLIP_PROCESSING",
     "CLIP_UPLOADING",
     "COLUMN_FIELDS",
+    "DRAFT_JOB_FIELD",
+    "DRAFT_OPTION",
+    "DRAFT_TASK_FIELD",
     "IMAGE_MAX_REFERENCES",
     "KIND_AUDIO",
     "KIND_DUBBING",
@@ -1027,6 +1054,8 @@ __all__ = [
     "VideoClipModelOut",
     "VideoComposeIn",
     "VideoComposeRequest",
+    "VideoDraftCompletionIn",
+    "VideoDraftCompletionRequest",
     "VideoEditIn",
     "VideoEditRequest",
     "VideoEnhanceIn",

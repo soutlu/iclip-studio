@@ -202,6 +202,7 @@ class VideoGenerationSection(ConfigSection):
         Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)], ...
     ] = Field(min_length=1)
     enhance: VideoEnhanceSection | None = None
+    draft_complete_url: NonEmptyText | None = None
 
     @model_validator(mode="after")
     def _default_model_is_allowed(self) -> VideoGenerationSection:
@@ -471,6 +472,7 @@ class ResolvedMediaGeneration:
     video_model: str
     video_allowed_models: tuple[str, ...]
     video_enhance: ResolvedVideoEnhance | None
+    video_draft_complete_url: str | None
     image_models: tuple[ResolvedImageModel, ...]
     image_default_model: str
     image_env: str
@@ -642,6 +644,7 @@ def _resolve_media_generation(
         video_model=section.video.model,
         video_allowed_models=section.video.allowed_models,
         video_enhance=enhance,
+        video_draft_complete_url=section.video.draft_complete_url,
         image_models=tuple(
             ResolvedImageModel(
                 name=name,

@@ -5,7 +5,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 import structlog
 from iclip_video.shot_prompt import format_seconds
@@ -23,6 +23,7 @@ from iclip.domains.generation.models import (
     GenerationOutput,
     InFlightPhase,
     Inheritance,
+    finished_draft_request,
     is_base_master,
     is_finished_edit,
 )
@@ -37,6 +38,8 @@ from iclip.domains.generation.render import CANCELLED, CANCELLED_MESSAGE, Render
 from iclip.domains.generation.render import PROVIDER_NAME as RENDER_PROVIDER_NAME
 from iclip.domains.generation.repository import GenerationRepository, conversation_record
 from iclip.domains.generation.schemas import (
+    DRAFT_JOB_FIELD,
+    DRAFT_TASK_FIELD,
     KIND_IMAGE,
     KIND_VIDEO,
     KIND_WHOLE_FILM,
@@ -45,6 +48,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_GENERATE,
     OPERATION_RENDER,
     OPERATION_TRIAL,
+    READ_BACK_CONTEXT,
     ComposeSegment,
     DubbingIn,
     DubbingLine,
@@ -67,6 +71,8 @@ from iclip.domains.generation.schemas import (
     SubtitleRequest,
     VideoComposeIn,
     VideoComposeRequest,
+    VideoDraftCompletionIn,
+    VideoDraftCompletionRequest,
     VideoEditIn,
     VideoEditRequest,
     VideoEnhanceIn,
@@ -88,6 +94,8 @@ ClearCompletion = Callable[[uuid.UUID, uuid.UUID], Awaitable[None]]
 
 _MAX_FIRST_FRAMES = 2
 _CONCRETE_RATIO = re.compile(r"\d+(\.\d+)?:\d+(\.\d+)?")
+
+DRAFT_COMPLETION_RESOLUTION: Final = "1080p"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,11 +143,13 @@ class GenerationService:
         music: ProviderTarget | None = None,
         render: RenderClient | None = None,
         enhance: VideoEnhanceSpec | None = None,
+        drafts: bool = False,
         model_groups: ModelGroups,
     ) -> None:
         self._repo = repo
         self._model_groups = model_groups
         self._enhance = enhance
+        self._drafts = drafts
         self._render = render
         self._queue = queue
         self._video_provider_name = video_provider_name
@@ -313,6 +323,42 @@ class GenerationService:
             shot_index=base.shot_index,
             root_job_id=base.root_job_id or base.id,
             source_job_id=base.id,
+        )
+
+    async def submit_draft_completion(
+        self, principal: Principal, request: VideoDraftCompletionIn
+    ) -> GenerationJob:
+        if not self._drafts:
+            raise ValidationFailed("样片转 1080p 没有开通，暂时不能转")
+        draft = await self._check_source(principal, request.draft_job_id, request.conversation_id)
+        sample = finished_draft_request(draft)
+        if sample is None:
+            raise ValidationFailed("只有做好的样片能转 1080p，请等样片生成完成后再转")
+        for existing in await self._repo.draft_completions_of(
+            draft.id, conversation_id=request.conversation_id
+        ):
+            if existing.status != STATUS_FAILED:
+                return existing
+        completion = VideoDraftCompletionRequest.model_validate(
+            {
+                **sample.model_dump(),
+                "resolution": DRAFT_COMPLETION_RESOLUTION,
+                "provider_options": None,
+                DRAFT_JOB_FIELD: draft.id,
+                DRAFT_TASK_FIELD: draft.provider_task_id,
+            },
+            context={READ_BACK_CONTEXT: True},
+        )
+        return await self._accept(
+            principal,
+            completion,
+            provider=self._video_provider_name,
+            conversation_id=request.conversation_id,
+            task_id=draft.task_id,
+            metadata=draft.metadata,
+            shot_index=draft.shot_index,
+            model_group=draft.model_group,
+            upstream_model=draft.upstream_model,
         )
 
     async def _check_source(
@@ -788,11 +834,13 @@ class GenerationService:
         return request.model_copy(update={"model": model, "channel": channel}), model
 
     def video_models(self) -> VideoModelsOut:
+        clips = [(model, clip_model(model)) for model in self._video_allowed_models]
         return VideoModelsOut(
             default=self._video_default_model,
             items=list(self._video_allowed_models),
-            clip_models=[
-                clip.spec for model in self._video_allowed_models if (clip := clip_model(model))
+            clip_models=[clip.spec for _, clip in clips if clip is not None],
+            draft_models=[
+                model for model, clip in clips if self._drafts and clip is not None and clip.draft
             ],
         )
 

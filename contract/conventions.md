@@ -26,7 +26,7 @@
   - `POST /conversations/{id}/prompts`（`user_name`）
   - 对话运行控制（`user_name`，原本可以不带请求体的照样可以不带）：`POST /conversations/{id}:abort`、`POST /conversations/{id}/prompts/{promptId}:abort`、`POST /conversations/{id}/prompts:steer`、`POST /conversations/{id}/interactions/{interactionId}`、`POST /conversations/{id}/turns/{turnId}:regenerate`
   - `PUT /conversations/{id}/workspace/file`（`userName`）
-  - `POST /generations/*`（`user_name` 或 `userName`）
+  - `POST /generations/*`（`user_name` 或 `userName`；其中 `POST /generations/video-draft-completions` 的 `userName` 只切换归属，发给上游的 `user_name` 固定取样片记录上的，见 §11）
   - `POST /references/videos/{id}/test-generations`（`userName`）
   - `POST /references/audios`（`userName`）
   - `POST /uploads/{uploadId}/confirm`（`userName`）
@@ -154,7 +154,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
   - **修改文案与增删参考图** `PATCH .../film/text`：校验 `filmVersion`，支持修改设定描述、镜头正文与台词文字（不可增删台词句数或调换顺序，多组共用设定不可插入图片）。在独占镜头文字中通过 `images` 新插入图片（`@Image(M+1)`）时，写文件前仅校验新增图片的可达性与图片类型，再追加进参考图列表并顺延后续机位图编号；删除某元素图全部引用时自动移除并重排编号。
   - **选用或更换图片** `PUT .../film/image`：校验 `filmVersion` 与 `runVersion`，为指定节点选用图片或取消选用（`url: null`）。选用非空 `url` 前校验地址可达且为图片（不可用返回 `422` 并说明位置与原因，不回显地址）。首次选用或取消选用镜头机位图时，后端自动在 `film.icml` 参考图列表和对应镜头开头同步增删 `参考@ImageN，`。
   - **一键修改全片画幅** `PUT .../film/aspect-ratio`：校验 `filmVersion`，统一修改所有视频节点和机位图画幅（人物/场景设定图比例不变）。
-  - **在制作页发起生图或出片** `POST .../film/image-generations` 与 `POST .../film/video-generations`：先校验该节点或视频组参考图列表无缺图（缺图返回 `422` 列出缺失项），再校验本次引用的参考图地址可达且为图片，通过后创建生成任务（返回 `202 { jobId }`，在 `metadata.film_node` 记录节点名）。新生成的图片不会自动替换当前选用图片，需调用 `PUT .../film/image` 写入 `film.icrun`。
+  - **在制作页发起生图或出片** `POST .../film/image-generations` 与 `POST .../film/video-generations`：先校验该节点或视频组参考图列表无缺图（缺图返回 `422` 列出缺失项），再校验本次引用的参考图地址可达且为图片，通过后创建生成任务（返回 `202 { jobId }`，在 `metadata.film_node` 记录节点名）。出片请求带 `draft: true` 时出样片（`provider_options.draft: true`，分辨率仍取请求里的 `resolution`），转 1080p 见 §11。新生成的图片不会自动替换当前选用图片，需调用 `PUT .../film/image` 写入 `film.icrun`。
 
 ### final-cut 工程格式
 
@@ -270,11 +270,12 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ## 11. 媒体生成 (Generations)
 
-系统提供 9 个异步生成提交接口（受理成功均返回 `202`，状态变更推送 `event.generation.changed` 帧）。12 种生成记录全景见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#生成任务generation-job)；参考视频试生成（`video` / `trial`）由 §14 `POST /references/videos/{id}/test-generations` 提交。
+系统提供 10 个异步生成提交接口（受理成功均返回 `202`，状态变更推送 `event.generation.changed` 帧）。12 种生成记录全景见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#生成任务generation-job)；参考视频试生成（`video` / `trial`）由 §14 `POST /references/videos/{id}/test-generations` 提交。
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
-| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
+| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。带 `provider_options.draft: true` 即出样片（原样发给上游，可出样片的模型见 `GET /generations/video-models` 的 `draftModels`）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
+| `POST /generations/video-draft-completions` | `video` / `generate`（样片转出的 1080p） | 传入 `{ draftJobId, conversationId?, userName? }`。样片须是本对话自己的或继承来的已完成出片，带 `provider_options.draft: true` 且有上游任务号，否则 `422`；未开通样片（部署未配 `media_generation.video.draft_complete_url`）返回 `422`。新记录不记来源与原作，镜号、需求单与 `metadata` 随样片，对话取 `conversationId`；请求快照为样片请求改 `resolution: "1080p"`、去掉 `provider_options`，并以 `draft_job_id` 记下样片。发给上游的 `user_name` 固定取样片记录上的（上游要求与样片一致），配置组与上游 `model_id` 也照抄样片。同一样片在同一对话已有未失败的转出记录时直接返回该条，不新建 |
 | `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于已完成素材片（`sourceJobId`）替换 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 ms）。不传参考视频为**图生模式**（1 张首帧、2 张首尾帧、≥3 张参考图）；传入 1 条本人视频上传或未移除在库参考视频地址为**视频编辑模式**（按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 拼装模型参数）。不接收分辨率参数，两种模式均沿用最初出片请求的 `resolution`（未传时同样不传） |
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 与 1～100 段 `segments: [{ sourceJobId, start, end? }]`（须取自该基底本身或基于该基底完成的编辑段），本地 ffmpeg 对齐画幅帧率重编码拼接，期间通过 `clipStage`（`fetching | processing | uploading`）反馈阶段 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率与可选 `channel` 须在 `GET /generations/image-models` 声明范围内。帧图编辑传入 `sourceUrl` 时，在本对话及继承生成图片中匹配关联 `sourceJobId`，未命中（含上传图片）记为外部底图地址 |

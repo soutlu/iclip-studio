@@ -236,6 +236,7 @@ class ConversationFilm(Protocol):
         model: str,
         resolution: str,
         generate_audio: bool,
+        draft: bool,
         film_version: int,
         run_version: int | None,
     ) -> uuid.UUID: ...
@@ -577,6 +578,7 @@ class ConversationService:
         model: str,
         resolution: str,
         generate_audio: bool,
+        draft: bool,
         film_version: int,
         run_version: int | None,
     ) -> uuid.UUID:
@@ -589,6 +591,7 @@ class ConversationService:
             model=model,
             resolution=resolution,
             generate_audio=generate_audio,
+            draft=draft,
             film_version=film_version,
             run_version=run_version,
         )

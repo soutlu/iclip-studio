@@ -15,6 +15,7 @@ from iclip.domains.generation.image_upstream import (
     GatewayImageProvider,
     GatewayImageSettings,
 )
+from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.processing import FfmpegComposeProvider
@@ -35,6 +36,7 @@ from tests.helpers.generation import (
     SHOT_PROMPT,
     MemoryObjectStore,
     compose_request,
+    draft_completion_request,
     image_request,
     make_enhancement,
     make_job,
@@ -42,7 +44,7 @@ from tests.helpers.generation import (
     video_shot,
     whole_film_request,
 )
-from tests.helpers.model_groups import default_only
+from tests.helpers.model_groups import GroupBook, default_only
 
 VIDEO_SETTINGS = VideoProviderSettings(
     submit_url="https://video.test/generate",
@@ -783,3 +785,115 @@ async def test_an_enhancement_without_an_address_fails_for_good_without_calling_
 
     assert (raised.value.code, raised.value.retryable) == ("ENHANCE_NOT_CONFIGURED", False)
     assert called == []
+
+
+DRAFT_COMPLETE_URL = "https://video.test/videos/draft/complete/async"
+DRAFT_SETTINGS = replace(VIDEO_SETTINGS, draft_complete_url=DRAFT_COMPLETE_URL)
+MKT_GROUPS = ModelGroups(
+    ModelGroup(name="default", video_api_key="default-key", video_models={}),
+    (
+        ModelGroup(
+            name="mkt",
+            video_api_key="mkt-key",
+            video_models={"vendor-a-seedance-2-5": "mkt-seedance-2-5"},
+        ),
+    ),
+    group_of=GroupBook(),
+)
+
+
+def grouped_provider(
+    handler: Handler, *, settings: VideoProviderSettings = DRAFT_SETTINGS
+) -> HttpVideoProvider:
+    return HttpVideoProvider(
+        settings, model_groups=MKT_GROUPS, transport=httpx.MockTransport(handler)
+    )
+
+
+def in_mkt(job: GenerationJob) -> GenerationJob:
+    return replace(job, model_group="mkt", upstream_model="mkt-seedance-2-5")
+
+
+def completion_of_a_draft() -> GenerationJob:
+    return in_mkt(
+        make_job(
+            draft_completion_request(
+                uuid.uuid4(),
+                prompt=None,
+                shot=video_shot(),
+                reference_image_urls=SHOT_IMAGE_URLS,
+                generate_audio=True,
+                reference_ids=[uuid.uuid4()],
+                conversation_id=uuid.uuid4(),
+                shot_index=2,
+            )
+        )
+    )
+
+
+async def test_a_draft_completion_sends_exactly_the_three_keys_upstream_accepts() -> None:
+    seen: list[tuple[str, str | None, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(
+            (str(request.url), request.headers.get("x-api-key"), json.loads(request.content))
+        )
+        return httpx.Response(200, json={"task_id": "c-1"})
+
+    submission = await grouped_provider(handler).submit(completion_of_a_draft())
+
+    assert submission.provider_task_id == "c-1"
+    assert seen == [
+        (
+            DRAFT_COMPLETE_URL,
+            "mkt-key",
+            {"draft_task_id": "up-draft-1", "resolution": "1080p", "user_name": "logan"},
+        )
+    ], "上游多一个键（包括该组的 model）就拒；模型由上游沿用样片的"
+
+
+async def test_a_draft_goes_to_the_generation_address_with_its_option_and_group_model() -> None:
+    seen: list[tuple[str, dict[str, object]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((str(request.url), json.loads(request.content)))
+        return httpx.Response(200, json={"task_id": "d-1"})
+
+    draft = in_mkt(make_job(video_request(resolution="480p", provider_options={"draft": True})))
+    await grouped_provider(handler).submit(draft)
+
+    ((url, sent),) = seen
+    assert url == VIDEO_SETTINGS.submit_url
+    assert (sent["model"], sent["resolution"], sent["provider_options"]) == (
+        "mkt-seedance-2-5",
+        "480p",
+        {"draft": True},
+    )
+    assert "draft_job_id" not in sent and "draft_task_id" not in sent
+
+
+async def test_a_draft_completion_without_an_address_fails_for_good_without_calling_out() -> None:
+    called: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        called.append(str(request.url))
+        return httpx.Response(200, json={"task_id": "c-1"})
+
+    provider = grouped_provider(handler, settings=VIDEO_SETTINGS)
+    with pytest.raises(ProviderError) as raised:
+        await provider.submit(completion_of_a_draft())
+
+    assert (raised.value.code, raised.value.retryable) == ("DRAFT_COMPLETE_NOT_CONFIGURED", False)
+    assert called == []
+
+
+async def test_a_draft_completion_is_polled_like_a_take_with_the_drafts_user_name() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"status": "running"})
+
+    await grouped_provider(handler).poll(replace(completion_of_a_draft(), provider_task_id="c-1"))
+
+    assert seen == ["https://video.test/tasks/c-1?user_name=logan"]

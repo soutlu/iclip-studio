@@ -453,12 +453,14 @@ class FilmImageGenerationIn(CamelModel):
 
 
 class FilmVideoGenerationIn(CamelModel):
-    """给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。"""
+    """给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。``draft`` 为真时
+    出样片（发给上游 ``provider_options.draft: true``），清晰度仍按传来的发。"""
 
     video: Annotated[str, Field(min_length=1)]
     model: Annotated[str, Field(min_length=1)]
     resolution: Annotated[str, Field(min_length=1, max_length=50)]
     generate_audio: bool
+    draft: bool = False
     film_version: int
     run_version: int | None
 

@@ -302,6 +302,7 @@ def _generation_module(
             submit_url=settings.video_submit_url,
             status_base_url=settings.video_status_base_url,
             enhance_submit_url=None if enhance is None else enhance.submit_url,
+            draft_complete_url=settings.video_draft_complete_url,
         ),
         video_enhance=None
         if enhance is None

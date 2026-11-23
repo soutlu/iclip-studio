@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Final
 
 from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
@@ -40,16 +40,22 @@ class UpstreamMode:
 class ClipModel:
     spec: VideoClipModelOut
     edit_mode: UpstreamMode = UpstreamMode()
+    draft: bool = False
 
 
+# Seedance 2.5 与 2.5 flash 仅在显式指定原生子任务时按视频编辑执行。
+_SEEDANCE_EDIT: Final = UpstreamMode(provider_options={"omni_reference_task_type": "edit"})
+
+# 按子串先到先得：上游 flash 的模型名里也含 seedance-2-5，须排在 2.5 前面。
 _MODELS = (
     ClipModel(
         VideoClipModelOut(
-            id="seedance-2-0",
-            max_reference_images=9,
-            image=ClipImageDurationOut(min_seconds=4, max_seconds=15, default_seconds=5),
-            edit=None,
+            id="seedance-2-5-flash",
+            max_reference_images=10,
+            image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
+            edit=ClipEditDurationOut(min_seconds=4, max_seconds=30),
         ),
+        edit_mode=_SEEDANCE_EDIT,
     ),
     ClipModel(
         VideoClipModelOut(
@@ -58,8 +64,8 @@ _MODELS = (
             image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
             edit=ClipEditDurationOut(min_seconds=4, max_seconds=30),
         ),
-        # Seedance 2.5 仅在显式指定原生子任务时按视频编辑执行。
-        edit_mode=UpstreamMode(provider_options={"omni_reference_task_type": "edit"}),
+        edit_mode=_SEEDANCE_EDIT,
+        draft=True,
     ),
     ClipModel(
         VideoClipModelOut(

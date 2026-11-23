@@ -7,6 +7,7 @@ from pydantic import TypeAdapter
 
 from iclip.common.errors import ValidationFailed
 from iclip.domains.generation.schemas import (
+    DRAFT_JOB_FIELD,
     KIND_AUDIO,
     KIND_DUBBING,
     KIND_IMAGE,
@@ -27,6 +28,7 @@ from iclip.domains.generation.schemas import (
     SpeechRequest,
     SubtitleRequest,
     VideoComposeRequest,
+    VideoDraftCompletionRequest,
     VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
@@ -38,6 +40,7 @@ GenerationRequest = (
     VideoGenerationIn
     | VideoTrialRequest
     | VideoEditRequest
+    | VideoDraftCompletionRequest
     | ImageGenerationIn
     | VideoComposeRequest
     | SubtitleRequest
@@ -62,6 +65,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
 }
 
 _EDIT: Final[TypeAdapter[Any]] = TypeAdapter(VideoEditRequest)
+_DRAFT_COMPLETION: Final[TypeAdapter[Any]] = TypeAdapter(VideoDraftCompletionRequest)
 
 _WITHOUT_REQUEST: Final = frozenset({(KIND_IMAGE, OPERATION_CUT)})
 
@@ -73,8 +77,11 @@ def request_from_payload(
         if payload is not None:
             raise ValidationFailed(f"{kind} / {operation} 不该带请求")
         return None
-    if (kind, operation) == (KIND_VIDEO, OPERATION_GENERATE) and has_source:
+    video_generate = (kind, operation) == (KIND_VIDEO, OPERATION_GENERATE)
+    if video_generate and has_source:
         adapter = _EDIT
+    elif video_generate and payload is not None and DRAFT_JOB_FIELD in payload:
+        adapter = _DRAFT_COMPLETION
     else:
         adapter = _ADAPTERS.get((kind, operation))
     if adapter is None:

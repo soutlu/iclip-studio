@@ -47,7 +47,10 @@ from iclip.domains.generation.models import (
     Inheritance,
 )
 from iclip.domains.generation.schemas import (
+    DRAFT_JOB_FIELD,
+    KIND_VIDEO,
     OPERATION_ENHANCE,
+    OPERATION_GENERATE,
     SubtitleSentence,
     request_to_payload,
 )
@@ -402,6 +405,25 @@ class SqlGenerationRepository:
         stmt = (
             select(generation_jobs_table)
             .where(_JOBS.source_job_id == source_job_id, _JOBS.operation == OPERATION_ENHANCE)
+            .order_by(_JOBS.created_at.desc(), _JOBS.id.desc())
+        )
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(stmt)).mappings().all()
+        return tuple(_job_from_row(row) for row in rows)
+
+    async def draft_completions_of(
+        self, draft_job_id: uuid.UUID, *, conversation_id: uuid.UUID | None
+    ) -> tuple[GenerationJob, ...]:
+        stmt = (
+            select(generation_jobs_table)
+            .where(
+                _JOBS.conversation_id.is_(None)
+                if conversation_id is None
+                else _JOBS.conversation_id == conversation_id,
+                _JOBS.kind == KIND_VIDEO,
+                _JOBS.operation == OPERATION_GENERATE,
+                _json_text(_JOBS.request, DRAFT_JOB_FIELD) == str(draft_job_id),
+            )
             .order_by(_JOBS.created_at.desc(), _JOBS.id.desc())
         )
         async with self._engine.connect() as conn:

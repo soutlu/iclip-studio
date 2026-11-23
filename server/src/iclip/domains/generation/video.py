@@ -20,7 +20,9 @@ from iclip.domains.generation.provider import (
     user_name_of,
 )
 from iclip.domains.generation.schemas import (
+    DRAFT_TASK_FIELD,
     NOT_FORWARDED_FIELDS,
+    VideoDraftCompletionRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
 )
@@ -28,6 +30,9 @@ from iclip.domains.generation.schemas import (
 PROVIDER_NAME: Final = "video_api"
 
 _REQUESTS: Final = (VideoGenerationIn, VideoEnhanceRequest)
+
+# 转 1080p 入口只收这三个键，多一个（包括 model）就 400，模型由上游沿用样片的。
+_DRAFT_COMPLETE_FIELDS: Final = frozenset({DRAFT_TASK_FIELD, "resolution", "user_name"})
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -45,6 +50,7 @@ class VideoProviderSettings:
     submit_url: str
     status_base_url: str
     enhance_submit_url: str | None = None
+    draft_complete_url: str | None = None
 
 
 class HttpVideoProvider:
@@ -82,12 +88,22 @@ class HttpVideoProvider:
                     retryable=False,
                 )
             url = self._settings.enhance_submit_url
-            payload = request.model_dump(exclude_none=True)
+            payload = _with_model(request.model_dump(exclude_none=True), upstream_model)
+        elif isinstance(request, VideoDraftCompletionRequest):
+            if self._settings.draft_complete_url is None:
+                raise ProviderError(
+                    "样片转 1080p 功能未启用，缺少转 1080p 提交地址",
+                    code="DRAFT_COMPLETE_NOT_CONFIGURED",
+                    retryable=False,
+                )
+            url = self._settings.draft_complete_url
+            payload = request.model_dump(include=set(_DRAFT_COMPLETE_FIELDS))
         else:
             url = self._settings.submit_url
-            payload = request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS))
-        if upstream_model is not None:
-            payload["model"] = upstream_model
+            payload = _with_model(
+                request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS)),
+                upstream_model,
+            )
         body = await self._request(
             "POST",
             url,
@@ -189,6 +205,10 @@ class HttpVideoProvider:
                 retryable=True,
             )
         return body
+
+
+def _with_model(payload: dict[str, Any], upstream_model: str | None) -> dict[str, Any]:
+    return payload if upstream_model is None else {**payload, "model": upstream_model}
 
 
 def _progress_from_body(

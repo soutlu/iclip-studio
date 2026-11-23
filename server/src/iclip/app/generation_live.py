@@ -187,6 +187,11 @@ class AnnouncingGenerationRepository:
     async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]:
         return await self._inner.enhancements_of(source_job_id)
 
+    async def draft_completions_of(
+        self, draft_job_id: uuid.UUID, *, conversation_id: uuid.UUID | None
+    ) -> tuple[GenerationJob, ...]:
+        return await self._inner.draft_completions_of(draft_job_id, conversation_id=conversation_id)
+
     def _announce(self, job: GenerationJob) -> GenerationJob:
         self._live.announce_generation_changed(
             job.owner_user_id,
