@@ -48,6 +48,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_GENERATE,
     OPERATION_RENDER,
     OPERATION_TRIAL,
+    READ_BACK_CONTEXT,
     ComposeSegment,
     DubbingIn,
     DubbingLine,
@@ -71,6 +72,7 @@ from iclip.domains.generation.schemas import (
     VideoComposeIn,
     VideoComposeRequest,
     VideoDraftCompletionIn,
+    VideoDraftCompletionRequest,
     VideoEditIn,
     VideoEditRequest,
     VideoEnhanceIn,
@@ -176,11 +178,6 @@ class GenerationService:
 
         self._require_video_model(request.model)
         _require_user_name(request.user_name)
-        if request.draft_job_id is not None or request.draft_task_id is not None:
-            raise ValidationFailed(
-                f"{DRAFT_JOB_FIELD} 与 {DRAFT_TASK_FIELD} 只能由样片转 1080p 入口填写，"
-                "提交出片时请去掉这两个字段"
-            )
         if request.reference_ids:
             unlisted = await self._references.unlisted(request.reference_ids)
             if unlisted:
@@ -342,15 +339,15 @@ class GenerationService:
         ):
             if existing.status != STATUS_FAILED:
                 return existing
-        # 不重新 model_validate：旧记录的 prompt 按当时规则由 shot 拼成，今天重拼可能对不上而被拒。
-        # user_name 保留样片的：上游要求转 1080p 与样片同一个 user_name。
-        completion = sample.model_copy(
-            update={
+        completion = VideoDraftCompletionRequest.model_validate(
+            {
+                **sample.model_dump(),
                 "resolution": DRAFT_COMPLETION_RESOLUTION,
                 "provider_options": None,
                 DRAFT_JOB_FIELD: draft.id,
                 DRAFT_TASK_FIELD: draft.provider_task_id,
-            }
+            },
+            context={READ_BACK_CONTEXT: True},
         )
         return await self._accept(
             principal,

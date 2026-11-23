@@ -95,7 +95,6 @@ def finished_draft_request(job: GenerationJob) -> VideoGenerationIn | None:
     request = job.request
     if (
         not is_base_master(job)
-        or job.operation != OPERATION_GENERATE
         or type(request) is not VideoGenerationIn
         or (request.provider_options or {}).get(DRAFT_OPTION) is not True
         or job.provider_task_id is None

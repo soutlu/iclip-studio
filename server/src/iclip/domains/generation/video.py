@@ -22,6 +22,7 @@ from iclip.domains.generation.provider import (
 from iclip.domains.generation.schemas import (
     DRAFT_TASK_FIELD,
     NOT_FORWARDED_FIELDS,
+    VideoDraftCompletionRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
 )
@@ -88,7 +89,7 @@ class HttpVideoProvider:
                 )
             url = self._settings.enhance_submit_url
             payload = _with_model(request.model_dump(exclude_none=True), upstream_model)
-        elif request.draft_task_id is not None:
+        elif isinstance(request, VideoDraftCompletionRequest):
             if self._settings.draft_complete_url is None:
                 raise ProviderError(
                     "样片转 1080p 功能未启用，缺少转 1080p 提交地址",

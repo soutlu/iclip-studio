@@ -83,15 +83,16 @@ MAX_COMPOSE_SEGMENTS: Final = 100
 
 COLUMN_FIELDS: Final = frozenset({"conversation_id", "task_id", "metadata", "shot_index"})
 
-RECORD_ONLY_FIELDS: Final = frozenset({"source_url", "range_start_ms", "range_end_ms"})
-
 DRAFT_OPTION: Final = "draft"
 DRAFT_JOB_FIELD: Final = "draft_job_id"
 DRAFT_TASK_FIELD: Final = "draft_task_id"
-_DRAFT_FIELDS: Final = frozenset({DRAFT_JOB_FIELD, DRAFT_TASK_FIELD})
+
+RECORD_ONLY_FIELDS: Final = frozenset(
+    {"source_url", "range_start_ms", "range_end_ms", DRAFT_TASK_FIELD}
+)
 
 NOT_FORWARDED_FIELDS: Final = (
-    COLUMN_FIELDS | RECORD_ONLY_FIELDS | _DRAFT_FIELDS | frozenset({"shot", "reference_ids"})
+    COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot", "reference_ids"})
 )
 
 READ_BACK_CONTEXT: Final = "read_back"
@@ -222,9 +223,6 @@ class VideoGenerationIn(SnakeModel):
     自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
     按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
     没移除，只记进请求快照，不发给上游。
-
-    ``draft_job_id`` / ``draft_task_id`` 只出现在样片转出的 1080p 上（样片在本系统的记录 id 与它在
-    上游的任务号，同有同无），只由转 1080p 入口填写；提交出片时传了 422。
     """
 
     kind: ClassVar[GenerationKind] = KIND_VIDEO
@@ -243,8 +241,6 @@ class VideoGenerationIn(SnakeModel):
     aspect_ratio: Annotated[str, Field(min_length=1, max_length=20)] | None = None
     seconds: Annotated[int, Field(ge=-1)] | None = None
     provider_options: dict[str, Any] | None = None
-    draft_job_id: uuid.UUID | None = None
-    draft_task_id: Annotated[str, Field(min_length=1, max_length=200)] | None = None
 
     conversation_id: uuid.UUID | None = None
     task_id: uuid.UUID | None = None
@@ -287,6 +283,11 @@ class VideoTrialRequest(VideoGenerationIn):
 class VideoEditRequest(VideoGenerationIn):
     range_start_ms: Annotated[int, Field(ge=0)]
     range_end_ms: int
+
+
+class VideoDraftCompletionRequest(VideoGenerationIn):
+    draft_job_id: uuid.UUID
+    draft_task_id: Annotated[str, Field(min_length=1, max_length=200)]
 
 
 class ImageGenerationIn(CamelModel):
@@ -762,7 +763,9 @@ def request_to_payload(request: None) -> None: ...
 def request_to_payload(request: GenerationRequest | None) -> dict[str, Any] | None:
     if request is None:
         return None
-    exclude = set(COLUMN_FIELDS) | _absent_optional_fields(request)
+    exclude = set(COLUMN_FIELDS)
+    if isinstance(request, ImageGenerationIn) and request.source_url is None:
+        exclude.add("source_url")
     return request.model_dump(mode="json", by_alias=True, exclude=exclude)
 
 
@@ -770,19 +773,8 @@ def _request_out(request: GenerationRequest | None) -> dict[str, Any] | None:
     if request is None:
         return None
     return request.model_dump(
-        mode="json",
-        by_alias=True,
-        exclude=set(COLUMN_FIELDS | RECORD_ONLY_FIELDS | {DRAFT_TASK_FIELD})
-        | _absent_optional_fields(request),
+        mode="json", by_alias=True, exclude=set(COLUMN_FIELDS | RECORD_ONLY_FIELDS)
     )
-
-
-def _absent_optional_fields(request: GenerationRequest) -> set[str]:
-    if isinstance(request, ImageGenerationIn) and request.source_url is None:
-        return {"source_url"}
-    if isinstance(request, VideoGenerationIn) and request.draft_job_id is None:
-        return set(_DRAFT_FIELDS)
-    return set()
 
 
 class GenerationOut(CamelModel):
@@ -1063,6 +1055,7 @@ __all__ = [
     "VideoComposeIn",
     "VideoComposeRequest",
     "VideoDraftCompletionIn",
+    "VideoDraftCompletionRequest",
     "VideoEditIn",
     "VideoEditRequest",
     "VideoEnhanceIn",

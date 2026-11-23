@@ -3903,15 +3903,10 @@ export const zVideoShotIn = z.object({
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
  * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
  * 没移除，只记进请求快照，不发给上游。
- *
- * ``draft_job_id`` / ``draft_task_id`` 只出现在样片转出的 1080p 上（样片在本系统的记录 id 与它在
- * 上游的任务号，同有同无），只由转 1080p 入口填写；提交出片时传了 422。
  */
 export const zVideoGenerationIn = z.object({
   aspect_ratio: z.string().min(1).max(20).nullish(),
   conversation_id: z.uuid().nullish(),
-  draft_job_id: z.uuid().nullish(),
-  draft_task_id: z.string().min(1).max(200).nullish(),
   generate_audio: z.boolean().nullish(),
   metadata: z.record(z.string(), z.unknown()).nullish(),
   model: z.string().min(1).max(200),

@@ -68,8 +68,7 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。
 
         出样片就是带 ``provider_options.draft: true`` 的出片，原样发上游；做好后用
-        ``POST /generations/video-draft-completions`` 转 1080p。``draft_job_id`` / ``draft_task_id``
-        只由那个入口填写，这里传了 422。
+        ``POST /generations/video-draft-completions`` 转 1080p。
         """
 
         user_name = resolve_user_name(principal, body.user_name)

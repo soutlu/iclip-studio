@@ -36,6 +36,7 @@ from tests.helpers.generation import (
     SHOT_PROMPT,
     MemoryObjectStore,
     compose_request,
+    draft_completion_request,
     image_request,
     make_enhancement,
     make_job,
@@ -816,15 +817,13 @@ def in_mkt(job: GenerationJob) -> GenerationJob:
 def completion_of_a_draft() -> GenerationJob:
     return in_mkt(
         make_job(
-            video_request(
+            draft_completion_request(
+                uuid.uuid4(),
                 prompt=None,
                 shot=video_shot(),
                 reference_image_urls=SHOT_IMAGE_URLS,
-                resolution="1080p",
                 generate_audio=True,
                 reference_ids=[uuid.uuid4()],
-                draft_job_id=uuid.uuid4(),
-                draft_task_id="up-draft-1",
                 conversation_id=uuid.uuid4(),
                 shot_index=2,
             )

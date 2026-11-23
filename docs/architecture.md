@@ -131,7 +131,7 @@
 
 1. **媒体生成队列（`domains/generation/`）**：`iclip.generation_jobs` 仅记录生成与加工任务，不记上传（见[后端的持久化与迁移](#后端的持久化与迁移)）。
    - **宫格切图**：同步切分完成后直接落库为 `completed`，不进异步队列。
-   - **视频生成（出片、参考视频试生成、局部编辑段、超分高清版、样片转 1080p）**：异步提交上游视频网关并轮询结果（超分与样片转 1080p 各有提交地址，状态查询共用一处）（试生成与出片共用通道与配置组规则，记为 `operation=trial`）；各模型族参数拼装集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
+   - **视频生成（出片、参考视频试生成、局部编辑段、超分高清版、样片转 1080p）**：异步提交上游视频网关并轮询结果。超分与样片转 1080p 各有提交地址，状态查询共用一处；试生成与出片共用通道与配置组规则，记为 `operation=trial`；各模型族参数拼装集中在 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py)。
    - **视频剪辑合成（`compose`）**：本地调用 ffmpeg 裁剪、重编码拼接后上传 OSS。
    - **字幕识别（`subtitle`）与背景音乐生成（`audio`）**：各自独立通道。字幕识别仅在调用 `POST /generations/subtitles` 时入队（抽取音频调千问 ASR `qwen-audio-3.1-asr-flash`）；背景音乐调千问 TTS `qwen-audio-3.1-tts-next`，经 ffmpeg 切除首尾静音、统一响度后转存 m4a。
    - **配音（`dubbing`）与合成语音（`speech`）**：共用独立通道与 `SpeechSynthesizer` 协议（[generation/dubbing.py](../server/src/iclip/domains/generation/dubbing.py)、[generation/speech.py](../server/src/iclip/domains/generation/speech.py)）。参考音频截取、逐句变速/截尾与等长音轨拼接均在本地由 ffmpeg 完成；逐句语音合成调用千问 TTS `qwen-audio-3.1-tts-next`（参考音频以 data URI 传入并在提示词中以 `@voice1` 引用，音色台词仅落库不发上游；未配置 `media_generation.speech` 时提交接口返回 `422`）。

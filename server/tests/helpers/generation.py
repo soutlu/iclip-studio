@@ -60,6 +60,7 @@ from iclip.domains.generation.schemas import (
     SubtitleRequest,
     SubtitleSentence,
     VideoComposeRequest,
+    VideoDraftCompletionRequest,
     VideoEditRequest,
     VideoEnhanceRequest,
     VideoEnhanceResolution,
@@ -105,6 +106,18 @@ def trial_request(**overrides: Any) -> VideoTrialRequest:
     """参考视频的试生成：和出片同一个请求形状，记成 ``trial``。"""
 
     return VideoTrialRequest(**video_request(**overrides).model_dump())
+
+
+def draft_completion_request(
+    draft_job_id: uuid.UUID, *, draft_task_id: str = "up-draft-1", **overrides: Any
+) -> VideoDraftCompletionRequest:
+    """样片转出的 1080p：和出片同一个请求形状，另记样片。"""
+
+    return VideoDraftCompletionRequest(
+        **video_request(**{"resolution": "1080p", **overrides}).model_dump(),
+        draft_job_id=draft_job_id,
+        draft_task_id=draft_task_id,
+    )
 
 
 def edit_request(**overrides: Any) -> VideoEditRequest:
@@ -612,7 +625,7 @@ class InMemoryGenerationRepository:
             job
             for job in self.jobs.values()
             if job.conversation_id == conversation_id
-            and isinstance(job.request, VideoGenerationIn)
+            and isinstance(job.request, VideoDraftCompletionRequest)
             and job.request.draft_job_id == draft_job_id
         ]
         rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)

@@ -26,7 +26,9 @@ from iclip.domains.generation.provider import ImageModelSpec
 from iclip.domains.generation.schemas import (
     MAX_COMPOSE_SEGMENTS,
     MAX_METADATA_CHARS,
+    READ_BACK_CONTEXT,
     VideoComposeRequest,
+    VideoDraftCompletionRequest,
     VideoGenerationIn,
     request_to_payload,
 )
@@ -37,6 +39,7 @@ from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
+    LEGACY_SHOT_PROMPT,
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
     FakeMediaProbe,
@@ -45,6 +48,7 @@ from tests.helpers.generation import (
     InMemoryGenerationRepository,
     build_queue,
     compose_request,
+    draft_completion_request,
     edit_range,
     external_base,
     image_request,
@@ -244,7 +248,6 @@ async def test_a_take_cannot_claim_to_come_from_a_draft(fields: dict[str, str]) 
         response = await http.post("/generations/video", json={**VIDEO_BODY, **fields})
 
     assert response.status_code == 422, response.text
-    assert "转 1080p" in response.json()["detail"]
     assert repo.jobs == {}
 
 
@@ -2400,12 +2403,6 @@ def draft_request(**overrides: object) -> VideoGenerationIn:
     return video_request(**{**fields, **overrides})
 
 
-def completion_request(draft: GenerationJob) -> VideoGenerationIn:
-    return draft_request(
-        resolution="1080p", provider_options=None, draft_job_id=draft.id, draft_task_id=DRAFT_TASK
-    )
-
-
 def seed_draft(
     repo: InMemoryGenerationRepository, *, owner: uuid.UUID, conversation: uuid.UUID
 ) -> GenerationJob:
@@ -2427,7 +2424,7 @@ def seed_completion(
     status: GenerationStatus,
 ) -> GenerationJob:
     job = make_job(
-        completion_request(draft),
+        draft_completion_request(draft.id, draft_task_id=DRAFT_TASK),
         status=status,
         owner_user_id=draft.owner_user_id,
         conversation_id=conversation,
@@ -2474,13 +2471,12 @@ async def test_a_finished_draft_becomes_a_plain_1080p_take_in_the_same_shot_grou
     )
     assert (job.model_group, job.upstream_model) == ("mkt", "mkt-seedance-2-5")
     assert isinstance(draft.request, VideoGenerationIn)
-    assert job.request == draft.request.model_copy(
-        update={
-            "resolution": "1080p",
-            "provider_options": None,
-            "draft_job_id": draft.id,
-            "draft_task_id": DRAFT_TASK,
-        }
+    assert job.request == VideoDraftCompletionRequest(
+        **draft.request.model_dump(exclude={"resolution", "provider_options"}),
+        resolution="1080p",
+        provider_options=None,
+        draft_job_id=draft.id,
+        draft_task_id=DRAFT_TASK,
     ), "提示词、参考图、画幅、时长、声音与 user_name 都随样片"
     assert app.state.cleared_completions.calls == [(conversation, owner)]
     sent = response.json()["generation"]["request"]
@@ -2494,6 +2490,24 @@ async def test_a_finished_draft_becomes_a_plain_1080p_take_in_the_same_shot_grou
         read = (await http.get(f"/generations/{draft.id}")).json()["generation"]["request"]
     assert read["provider_options"] == {"draft": True}
     assert "draft_job_id" not in read, "样片本身没有来源样片"
+
+
+async def test_a_draft_whose_prompt_came_from_an_older_rule_completes_with_that_prompt() -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    shot_draft = draft_request(prompt=None, shot=video_shot(), reference_image_urls=SHOT_IMAGE_URLS)
+    legacy = VideoGenerationIn.model_validate(
+        {**shot_draft.model_dump(), "prompt": LEGACY_SHOT_PROMPT},
+        context={READ_BACK_CONTEXT: True},
+    )
+    draft = replace(seed_draft(repo, owner=owner, conversation=conversation), request=legacy)
+    repo.jobs[draft.id] = draft
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner), drafts=True)
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 202, response.text
+    assert stored_request(only_new(repo, {draft.id})).model_dump()["prompt"] == LEGACY_SHOT_PROMPT
 
 
 async def test_draft_completion_is_refused_when_drafts_are_off() -> None:
@@ -2526,7 +2540,7 @@ NOT_FINISHED_DRAFTS: dict[str, Callable[[GenerationJob], GenerationJob]] = {
     "composite": lambda d: replace(
         d, operation="compose", request=compose_request(), source_job_id=uuid.uuid4()
     ),
-    "a_1080p_already": lambda d: replace(d, request=completion_request(d)),
+    "a_1080p_already": lambda d: replace(d, request=draft_completion_request(d.id)),
 }
 
 
