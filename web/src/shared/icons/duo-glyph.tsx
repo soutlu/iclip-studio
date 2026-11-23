@@ -7,8 +7,8 @@ export type GlyphProps = ComponentProps<'svg'> & {
 }
 
 /**
- * final-cut 双色图标的画框：24 网格、1.65 圆角描边。图形里要垫淡填充的部分带 `final-cut-glyph-fill` 类
- * （样子见 `final-cut-glyphs.css`）；描边和实心部分用 `currentColor`。
+ * 双色图标容器（供 final-cut、工作区文件树、工作台产物与设置弹窗共用）：采用 24×24 网格与 1.65px 圆角描边。
+ * 需叠加浅填充的图形元素附加 `final-cut-glyph-fill` 类（样式见 `final-cut-glyphs.css`）；描边与实心部分统一使用 `currentColor`。
  */
 export function DuoGlyph({
   size = 24,

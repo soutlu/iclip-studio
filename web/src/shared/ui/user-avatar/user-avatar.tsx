@@ -1,14 +1,14 @@
 import { cn } from '@/shared/lib/utils'
 
 type UserAvatarProps = {
-  /** 头像地址；空串时显示名字首字。 */
+  /** 头像图片 URL；为空时回退显示姓名首字符。 */
   avatarUrl: string
-  /** 用来取首字的名字；空串时显示通用轮廓。 */
+  /** 用于提取首字符的显示名称；为空时回退显示通用头像轮廓。 */
   name: string
   className?: string
 }
 
-/** 圆形用户头像（装饰性，名字由旁边的文字给出）：有图用图，没图用名字首字，再没有用通用轮廓。 */
+/** 装饰性圆形用户头像（无障碍名称由相邻文本提供）：依次回退为图片、姓名首字符、通用轮廓图标。 */
 export function UserAvatar({ avatarUrl, className, name }: UserAvatarProps) {
   const url = avatarUrl.trim()
   const initial = name.trim().charAt(0).toUpperCase()

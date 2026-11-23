@@ -20,8 +20,8 @@ from iclip.domains.conversations.schemas import CamelModel
 
 
 class WholeFilmExportIn(CamelModel):
-    """发起导出：``locale`` 是导出哪种语言的版本，不带或 null 导出原文；``resolution`` 是导出分辨率档位，
-    不带或 null 按画面尺寸导出。"""
+    """成片导出请求：``locale`` 指定目标语言，省略或为 ``null`` 时导出原文；``resolution`` 指定导出分辨率档位，
+    省略或为 ``null`` 时按画面尺寸导出。"""
 
     locale: TargetLocale | None = None
     resolution: ExportResolution | None = None
@@ -39,8 +39,8 @@ class WholeFilmExportErrorOut(CamelModel):
 
 
 class WholeFilmExportOut(CamelModel):
-    """一次导出现在的样子。``locale`` 是导出的哪种语言的版本，原文时是 null；``resolution`` 是导出分辨率
-    档位，按画面尺寸导出时是 null。``downloadUrl`` 只在 ``done`` 时有，``error`` 只在 ``failed`` 时有。"""
+    """成片导出状态视图。``locale`` 为目标导出语言，原文版本为 ``null``；``resolution`` 为导出分辨率档位，
+    按画面尺寸导出时为 ``null``。``downloadUrl`` 仅在 ``done`` 状态提供，``error`` 仅在 ``failed`` 状态提供。"""
 
     id: uuid.UUID
     locale: TargetLocale | None

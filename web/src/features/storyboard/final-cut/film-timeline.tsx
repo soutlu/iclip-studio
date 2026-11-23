@@ -127,7 +127,7 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
-  /** 组件或块的片段在显示着的语言下的文字，悬停提示里写成「名字 · 文字」；没有文字的不在里面。 */
+  /** 贴片或场景片段在当前展示语言下的正文内容，用于悬停提示拼接为「名称 · 正文」；无文本时省略。 */
   hostTexts: ReadonlyMap<string, string>
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
@@ -138,12 +138,12 @@ type FilmTimelineProps = {
   tool: EditTool
   /** 切开几个片段（剃刀，或右键菜单里的「在播放头处切开」）。 */
   onSplit: (cuts: readonly Cut[]) => void
-  /** 组件库：组件或块的片段上铺的封面取自它。 */
+  /** 组件库目录：供贴片与场景片段读取平铺封面图。 */
   catalog: ComponentCatalog
   totalMs: number
-  /** 播放头的位置（在播时最多约 0.1 秒更新一次）：吸附、片段上的切开提示、时间尺按它算。 */
+  /** 播放头节流时刻（播放期间约每 0.1 秒同步一次），供吸附、切开提示与时间尺计算。 */
   playheadMs: number
-  /** 播放头的实时时刻：竖线直接订阅它，播放时每帧挪，不带着整条时间线重画。 */
+  /** 播放头实时时钟源：播放头竖线直接订阅，实现播放期间逐帧移动而不触发整条时间线重绘。 */
   clock: PlayheadClock
   buffered: readonly TimeSpan[]
   scale: TimelineScale
@@ -202,29 +202,28 @@ const seconds = (ms: number) => (ms / 1000).toFixed(1)
 const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
 
 /**
- * 静音（隐藏）的音频片段的小标，照原型：配乐行的写「已静音」，配音写「静音」（分离出来的原声由 `soundBadgeOf`
- * 标）。静音的片段只标这一个。
+ * 静音（隐藏）音频片段的角标：配乐行显示「已静音」，配音显示「静音」（分离原声由 `soundBadgeOf` 负责）；静音片段仅展示此角标。
  */
 const mutedBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   clip.kind === 'audio' && clip.hidden
     ? { text: isDubClip(clip) ? '静音' : '已静音', tone: 'muted' }
     : undefined
 
-/** 配音片段的小标：生成时截了尾的提示一下。 */
+/** 配音片段角标：合成时被截短尾部时标注「截短」。 */
 const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   isDubClip(clip) && clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
 
-/** 开着自动压低的小标：片段上画成压低图标，文字只进无障碍名称。 */
+/** 自动压低开启态角标：片段上以压低图标呈现，文字仅写入无障碍名称。 */
 const CARVE_BADGE: SoundBadge = { text: '自动压低', tone: 'linked' }
 
-/** 开着自动压低的有声片段的小标；静音（隐藏）的不出声，不标。 */
+/** 开启自动压低的有声片段角标；静音（隐藏）片段不出声，不展示。 */
 const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   canCarve(clip) && !clip.hidden && carveOf(clip)?.enabled === true ? CARVE_BADGE : undefined
 
-// 指针离一条空行（待新开的那一行）的上下边这么近也算在它上面
+// 指针距待新建空行上下边缘在该像素内即判定悬停命中
 const ROW_REACH_PX = 3
 
-// 在各行上离播放头的竖线这么近（像素）按下就是按住了竖线（照原型，两边各 6 像素）
+// 各轨道行上距播放头竖线左右 6px 内按下即视作抓起播放头竖线
 const PLAYHEAD_REACH = 6
 
 /** 按下的元素所在的片段（片段的身体、把手、音量曲线都算）；不在片段上时是 undefined。 */
@@ -383,7 +382,7 @@ const movePlan = (
   }
 }
 
-/** 片段上的一个小标：分离出来的原声、静音、截短、其它语言里还没翻的字幕写字；自动压低画成压低图标。 */
+/** 片段状态角标：分离原声、静音、截短及译文未译字幕以文字标签呈现，自动压低以图标呈现。 */
 function ClipBadge({ badge }: { badge: SoundBadge }) {
   return badge === CARVE_BADGE ? (
     <Icon className="wf-clip-duck" decorative name="final-cut-duck" size="xs" />
@@ -395,9 +394,9 @@ function ClipBadge({ badge }: { badge: SoundBadge }) {
 }
 
 /**
- * 片段里画什么。画面类的片段上不写字：视频片段是铺满的画面，没分离原声的底部叠一条细原声波形；组件或块的片段是
- * 封面排成的小帧条（名字和文字在悬停提示里）。字幕是一枚写着这句的字的胶囊；音频片段顶上一条小标题（名字、小标），
- * 下面是贴底往上长的波形；「其他」片段只有名字。自动压低在视频片段的右上角、音频片段的标题条右端画成图标。
+ * 渲染时间线片段主体内容：画面类片段不叠加文字（视频平铺抽帧且未分离原声时底部叠加细原声波形；贴片与场景平铺封面帧条，名称与文本由悬停提示展示）；
+ * 字幕渲染为含正文胶囊；音频顶部展示名称与状态角标、下方绘制贴底波形；「其他」片段仅展示名称。
+ * 自动压低图标分别位于视频片段右上角与音频片段标题条右端。
  */
 function ClipContent({
   clip,
@@ -414,14 +413,14 @@ function ClipContent({
   timing: Timing
   cover: string | null
   badge: SoundBadge | undefined
-  /** 有音量关键帧：音频片段的标题条上标出来（视频片段上只看曲线）。 */
+  /** 是否存在音量关键帧：音频片段在标题条内标注（视频片段直接通过包络曲线体现）。 */
   keyframes: boolean
-  /** 视频片段的原声还在它自己身上（没分离出去）：底部叠原声波形。 */
+  /** 视频片段是否仍保留原声（未分离）：为真时底部叠加原声波形。 */
   withSound: boolean
   peaks: PeaksState
-  /** 有声片段的波形：高低乘多少、是不是不出声（画灰），有没有音量曲线。 */
+  /** 有声片段波形绘制参数：相对增益、是否静音置灰及是否含音量包络。 */
   wave: ClipWave
-  /** 波形那一块：音量曲线叠在它上面。 */
+  /** 波形容器引用，供音量包络层对齐叠加。 */
   waveRef: RefObject<HTMLSpanElement | null>
 }) {
   const name = <span className="wf-clip-name">{clip.label}</span>
@@ -435,10 +434,10 @@ function ClipContent({
     )
   if (clip.kind === 'host')
     return cover === null ? null : (
-      // 封面横着铺满片段，宽度随缩放变，所以用背景图重复而不是数张数
+      // 片段宽度随缩放动态变化，使用 background-repeat 横向平铺封面图避免手动计算张数
       <span className="wf-clip-strip" style={{ backgroundImage: `url("${cover}")` }} />
     )
-  // 片段上画的是它用掉的那段素材：final-cut 里的时长 × 速度
+  // 片段展示对应的素材区间：轨道时长 × 播放倍速
   const part = {
     mediaUrl: clip.src,
     start: timing.mediaStart / 1000,
@@ -462,7 +461,7 @@ function ClipContent({
         </span>
       </>
     )
-  // 波形条只有 7px 高，放不下「无声」「原声读取失败」这类说明，只在读出波形后叠上去
+  // 底部原声波形条仅 7px 高，容不下状态提示文案，仅在波形数据就绪后叠加展示
   return (
     <>
       <span className="wf-clip-frames">
@@ -484,11 +483,11 @@ type ClipWave = {
   envelope: boolean
 }
 
-/** 音频片段的声音从哪来，决定卡片左缘细边、标题和波形的颜色：分离出来的原声、配音，别的算配乐。 */
+/** 判定音频片段来源分类（分离原声、AI 配音或配乐），用于区分左缘色条、标题与波形主题色。 */
 const soundSourceOf = (clip: AudioClip): 'original' | 'dub' | 'music' =>
   isDetachedAudio(clip) ? 'original' : isDubClip(clip) ? 'dub' : 'music'
 
-/** 给片段的身体套上悬停提示；`tip` 是 undefined 时不套。拖动、框选、裁剪中（`quiet`）不出。 */
+/** 为片段主体包装悬停提示（`tip` 为 `undefined` 时直接透传）；拖拽、框选或裁剪期间（`quiet`）抑制显示。 */
 function ClipTip({
   tip,
   quiet,
@@ -510,7 +509,7 @@ function ClipTip({
   )
 }
 
-// 不出声的片段的波形照原型画矮
+// 静音片段波形高度缩放系数
 const SILENT_LEVEL = 0.22
 
 const NO_POINTS: readonly EnvelopePoint[] = []
@@ -528,7 +527,7 @@ type TimelineClipProps = {
   trimmable: boolean
   /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
   groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
-  /** 分离出来的原声、配音片段、开着压低的片段、其它语言里还没翻的字幕的小标（见 `ClipBadge`）；没有时是 undefined。 */
+  /** 片段状态角标（分离原声、配音、自动压低或未译字幕，见 `ClipBadge`）；无角标时为 `undefined`。 */
   badge: SoundBadge | undefined
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
@@ -555,11 +554,11 @@ type TimelineClipProps = {
     edge: Edge,
     edgeMs: number,
   ) => ReadonlyMap<string, Timing>
-  /** 组件或块的片段上铺的封面；没有时是 null。 */
+  /** 贴片或场景片段的平铺封面图地址；无封面时为 `null`。 */
   cover: string | null
-  /** 组件或块的片段在悬停提示里接在名字后面的文字；没有时是 undefined。 */
+  /** 贴片或场景片段悬停提示中接在名称后的正文摘要；无文本时为 `undefined`。 */
   text: string | undefined
-  /** 视频片段的原声还在它自己身上（没分离出去）。 */
+  /** 视频片段是否仍保留原声（未分离）。 */
   withSound: boolean
   peaks: PeaksState
   snap: boolean
@@ -978,7 +977,7 @@ function RowToggle({
   )
 }
 
-/** 行头上画的图标：按行的种类，配音和原声都是人声。颜色由样式表按 `data-kind` 给。 */
+/** 轨道行头图标映射（配音与原声共用人声图标），颜色由样式表按 `data-kind` 区分。 */
 const ROW_ICONS: Readonly<Record<RowKind, IconName>> = {
   visual: 'final-cut-shots',
   caption: 'final-cut-captions',
@@ -988,7 +987,7 @@ const ROW_ICONS: Readonly<Record<RowKind, IconName>> = {
 }
 
 /**
- * 行头上的行名：只画这种行的图标，同种的行不止一行时旁边带一个小编号；行名（`name`）在无障碍名称和悬停提示里。
+ * 轨道行头标识：仅渲染轨道类型图标，同类轨道多于一行时在旁附带序号；完整行名（`name`）通过无障碍名称与悬停提示提供。
  */
 function RowSign({ kind, name, ordinal }: { kind: RowKind; name: string; ordinal: number | null }) {
   return (
@@ -1008,7 +1007,7 @@ function RowSign({ kind, name, ordinal }: { kind: RowKind; name: string; ordinal
 
 const keyOf = (row: RowKey) => `${row.zone}-${row.track}`
 
-/** 播放头竖线：订阅播放头的时钟，播放时每帧挪，只重画自己。 */
+/** 时间线播放头竖线：直接订阅播放头实时时钟，播放期间逐帧重绘自身。 */
 function FilmPlayhead({
   clock,
   totalMs,
@@ -1245,13 +1244,13 @@ export function FilmTimeline({
     setClosing(next)
   }
 
-  // 带着 Shift、⌘ 或 Ctrl 点片段：逐个加进选中或移出去；直接点：只选这一个
-  // 点一下只选中一个片段时，播放头不在它里面就挪进去（照原型）；拖完松手、右键选中、加减选中不挪
+  // 修饰键（Shift / ⌘ / Ctrl）点击切换多选，普通点击单选；
+  // 普通单选且播放头位于片段外时自动将播放头移入片段（拖拽落位、右键选中及多选切换不移动播放头）
   const pick = (id: string, toggle: boolean, clicked: boolean) => {
     if (!toggle) {
       onSelect(new Set([id]))
       const clip = clips.find((each) => each.id === id)
-      // 按点下那一刻竖线所在的时刻判断（在播时 playheadMs 最多落后约 0.1 秒）
+      // 按点击瞬间播放头竖线的精确时刻判定（播放期间 state 层的 playheadMs 最多滞后约 0.1 秒）
       const into = clicked && clip !== undefined ? playheadInto(clock.get(), clip) : null
       if (into !== null) onJump(into)
       return
@@ -1395,8 +1394,8 @@ export function FilmTimeline({
   }
 
   /**
-   * 按住播放头或时间尺拖到 `ms` 处定位（照原型）：开着吸附时吸到片段的两端，都没吸上时再吸配乐的节拍，吸上时画
-   * 吸附线；播放头自己不是吸附的目标。键盘定位不经过这里，不吸。
+   * 拖拽播放头或时间尺定位至 `ms`：开启吸附时优先吸附至片段端点，其次吸附配乐节拍并绘制吸附线（排除播放头自身）；
+   * 键盘定位不经由此处且不触发吸附。
    */
   const scrubTo = (ms: number) => {
     const at = Math.max(0, Math.min(totalMs, ms))
@@ -1637,7 +1636,7 @@ export function FilmTimeline({
                       {dropGhost(row)}
                       {clips.length === 0 && ghost === null ? (
                         <span className="wf-lane-hint">
-                          将「镜头」页签里的镜头拖到此处可加入轨道
+                          将「镜头」页签中的镜头拖到此处可加入轨道
                         </span>
                       ) : null}
                     </div>

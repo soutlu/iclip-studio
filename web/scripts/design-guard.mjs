@@ -144,7 +144,7 @@ const RULES = [
   },
   {
     id: 'invalid-design-allow',
-    desc: '豁免没写原因（写成 design-allow -- 为什么绕不开）',
+    desc: '豁免缺少原因说明（格式：design-allow -- <原因>）',
     ext: ['.css', '.ts', '.tsx'],
     re: /design-allow(?!\s*--\s*\S)/g,
   },

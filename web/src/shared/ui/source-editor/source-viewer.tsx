@@ -21,10 +21,10 @@ export type SourceViewerHandle = {
 type SourceViewerProps = {
   value: string
   kind: FileKind
-  /** 按文件名挑语法高亮；挂载后再改不生效（换文件请换 `key`）。 */
+  /** 用于匹配语法高亮的文件名；挂载后变更不生效（切换文件请更换 `key`）。 */
   fileName: string
   ariaLabel: string
-  /** 有没有折起来的段落：每次折叠状态变了都报一次。 */
+  /** 折叠状态变更回调：每次折叠区间变化时通知当前是否存在已折叠区域。 */
   onFoldedChange?: (folded: boolean) => void
   ref?: Ref<SourceViewerHandle>
   className?: string
@@ -32,7 +32,7 @@ type SourceViewerProps = {
 
 type Range = { from: number; to: number }
 
-/** `[from, to)` 里最外层的可折叠段落，按先后（和 CodeMirror 的 `foldAll` 找法一样，只是限在这一段里）。 */
+/** 按文档顺序查找 `[from, to)` 范围内的最外层可折叠区间（逻辑同 CodeMirror `foldAll`，限定在指定范围内）。 */
 const outerRanges = (state: EditorState, from: number, to: number): Range[] => {
   const ranges: Range[] = []
   for (let pos = from; pos < to;) {
@@ -46,8 +46,8 @@ const outerRanges = (state: EditorState, from: number, to: number): Range[] => {
 }
 
 /**
- * 全部收起：收起每一段最外层的段落；整篇只有一段最外层时（JSON 的根、HTML 的 `<html>`）留着它、收它下一层，
- * 不然整篇只剩一行。
+ * 全部收起：折叠所有最外层可折叠区间；若整篇仅含单个最外层节点（如 JSON 根节点或 HTML 的 `<html>`），
+ * 则保留根节点并折叠其直接子级，避免整篇被收起为单行。
  */
 const foldOutline = (view: EditorView) => {
   const { state } = view
@@ -61,8 +61,8 @@ const foldOutline = (view: EditorView) => {
 }
 
 /**
- * 只读的原文查看器：行号、语法高亮、折叠，可以选中、复制和查找，不能改。
- * `value` 变了整篇换掉；`ref` 给「全部收起 / 全部展开」用。
+ * 只读原文查看器：提供行号、语法高亮与代码折叠，支持选中、复制与查找，禁止编辑。
+ * `value` 变更时全量替换文档内容；通过 `ref` 暴露「全部收起 / 全部展开」控制方法。
  */
 export function SourceViewer({
   ariaLabel,

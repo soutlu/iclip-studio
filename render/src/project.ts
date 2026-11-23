@@ -3,7 +3,7 @@ import { parse, type DefaultTreeAdapterTypes } from 'parse5'
 type Node = DefaultTreeAdapterTypes.Node
 type Element = DefaultTreeAdapterTypes.Element
 
-/** final-cut 工程的一个文件：路径相对工程根，内容是文本。 */
+/** final-cut 工程中的单个文本文件，路径相对工程根目录。 */
 export interface ProjectFile {
   path: string
   content: string
@@ -12,14 +12,14 @@ export interface ProjectFile {
 /** 工程的主文件：唯一的主时间线。 */
 export const MAIN_FILE = 'index.html'
 
-/** 工程里的 `vendor/` 是渲染服务拷进来的公共目录，工程自己不能有这个名字的文件。 */
+/** 工程中的 `vendor/` 为渲染服务注入的公共依赖目录，工程自身不得包含同名路径。 */
 export const VENDOR_DIR = 'vendor'
 
 const CONTROL = /\p{Cc}/u
 
 /**
- * 工程文件的路径哪里不合规；合规时是 undefined。规则和后端取工程文件的规则一样：用 `/` 分隔的相对路径，
- * 不许空段、`.`、`..`、以 `/` 开头或结尾、反斜杠和控制字符；第一段不能是 `vendor`。
+ * 校验工程文件路径并返回错误说明，合规时返回 undefined。规则与后端读取工程文件一致：
+ * 使用 `/` 分隔的相对路径，禁止空段、`.`、`..`、首尾 `/`、反斜杠及控制字符，且首段不得为 `vendor`。
  */
 export function projectPathProblem(path: string): string | undefined {
   if (path === '' || path.includes('\\') || CONTROL.test(path)) return '路径不合规'
@@ -31,11 +31,11 @@ export function projectPathProblem(path: string): string | undefined {
 }
 
 /**
- * 一组工程文件哪里不对；没问题时是 undefined。每个路径都要合规、不重复，一个路径不能同时是文件和
- * 别的文件所在的目录，要有主文件。
+ * 校验整组工程文件并返回错误说明，合规时返回 undefined。要求所有路径合规且不重复，
+ * 同一路径不得既作为文件又作为其他文件的父目录，且须包含主文件。
  */
 export function projectProblem(files: readonly ProjectFile[]): string | undefined {
-  // 比较时不分大小写：工程写进的临时目录可能在不分大小写的文件系统上
+  // 比较时不分大小写：工程写入的临时目录可能位于大小写不敏感的文件系统
   const seen = new Set<string>()
   for (const { path } of files) {
     const problem = projectPathProblem(path)
@@ -51,13 +51,13 @@ export function projectProblem(files: readonly ProjectFile[]): string | undefine
         return `工程文件「${segments.slice(0, end).join('/')}」同时是「${path}」所在的目录`
     }
   }
-  if (!files.some((file) => file.path === MAIN_FILE)) return `工程里没有主文件 ${MAIN_FILE}`
+  if (!files.some((file) => file.path === MAIN_FILE)) return `工程缺少主文件 ${MAIN_FILE}`
   return undefined
 }
 
 const isElement = (node: Node): node is Element => 'tagName' in node
 
-/** `node` 下的全部元素（含 `<template>` 里的），按文件里的先后。 */
+/** `node` 下的全部元素（含 `<template>` 内部），按文档出现顺序排列。 */
 export function* elementsOf(node: Node): Generator<Element> {
   if (isElement(node)) yield node
   const children = 'childNodes' in node ? node.childNodes : []
@@ -65,7 +65,7 @@ export function* elementsOf(node: Node): Generator<Element> {
   if (isElement(node) && 'content' in node) yield* elementsOf(node.content)
 }
 
-/** `node` 下的根：第一个带 `data-composition-id` 的元素。 */
+/** 查找 `node` 下的合成根元素（首个携带 `data-composition-id` 属性的元素）。 */
 export const compositionRootOf = (node: Node): Element | undefined =>
   [...elementsOf(node)].find((element) =>
     element.attrs.some((attr) => attr.name === 'data-composition-id'),
@@ -76,7 +76,7 @@ function* mediaElements(node: Node): Generator<Element> {
     if (element.tagName === 'video' || element.tagName === 'audio') yield element
 }
 
-/** 主文件里 `<video>`、`<audio>` 的 `src` 写的素材地址，不重复。 */
+/** 提取主文件中 `<video>` 与 `<audio>` 元素的 `src` 素材地址并去重。 */
 export function mediaAddresses(html: string): string[] {
   const addresses = new Set<string>()
   for (const element of mediaElements(parse(html))) {
@@ -88,17 +88,17 @@ export function mediaAddresses(html: string): string[] {
 
 const escapeAttribute = (value: string) => value.replaceAll('&', '&amp;').replaceAll('"', '&quot;')
 
-/** 写进 HTML 的一个属性：`name="value"`，值里的 `&`、`"` 转义。 */
+/** 序列化单个 HTML 属性（`name="value"`），转义属性值中的 `&` 与 `"`。 */
 export const attributeText = (name: string, value: string) => `${name}="${escapeAttribute(value)}"`
 
-/** 对 `html` 的一处改动：把 `[from, to)` 这段源码换成 `text`（`from === to` 时是插入）。 */
+/** 对 `html` 源码的单处编辑：将区间 `[from, to)` 替换为 `text`（`from === to` 表示插入）。 */
 export interface SourceEdit {
   from: number
   to: number
   text: string
 }
 
-/** 按源码位置做完 `edits`（互不重叠），别的字一个不动。 */
+/** 按源码偏移应用互不重叠的 `edits`，其余内容保持原样。 */
 export function applyEdits(html: string, edits: readonly SourceEdit[]): string {
   let edited = html
   for (const { from, to, text } of edits.toSorted((a, b) => b.from - a.from))
@@ -107,8 +107,8 @@ export function applyEdits(html: string, edits: readonly SourceEdit[]): string {
 }
 
 /**
- * 导出用的那一份主文件：`<video>`、`<audio>` 的 `src` 按 `paths`（文件里写的地址 → 本地路径）换掉，
- * 别的内容一个字不动。
+ * 生成导出用主文件：按 `paths`（源码中声明的地址 → 本地相对路径）替换 `<video>` 与 `<audio>` 的 `src` 属性，
+ * 其余内容保持原样。
  */
 export function withLocalMedia(html: string, paths: ReadonlyMap<string, string>): string {
   const edits: SourceEdit[] = []

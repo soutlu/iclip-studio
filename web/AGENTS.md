@@ -24,21 +24,21 @@
 
 ## 2. 目录职责与实现边界
 
-| 目录 / 路径                           | 核心职责                                                                                                                                |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/app/`                            | 全局 Provider、路由实例、主题切换与工作台面板注册                                                                                       |
-| `src/routes/`                         | TanStack Router 文件路由与应用外框（`_shell.tsx`）：只负责路由装配、权限守卫、URL 参数解析与跨模块组合，具体业务逻辑放在 `features/` 中 |
-| `src/features/`                       | 各业务功能模块（登录、首页、合集、对话、需求单、审计报表、工作区文件、分镜与制作页、final-cut 编辑器、管理后台配置等）                  |
-| `src/features/storyboard/final-cut/`  | final-cut 编辑器；其中 `composition/` 目录下是 final-cut 主文件的写法，渲染服务 `../render/` 导出和测试也用它                           |
-| `src/shared/api/`                     | 统一 REST 请求客户端（`apiFetch`）与根据后端 OpenAPI 自动生成的类型和 Zod Schema（`generated/`）                                        |
-| `src/shared/auth/`                    | 登录状态管理与权限判断                                                                                                                  |
-| `src/shared/shell/`                   | 应用外框向子页面暴露的布局状态上下文（`ShellChromeContext`）                                                                            |
-| `src/shared/icons/`、`src/shared/ui/` | 统一图标库与基础通用 UI 组件                                                                                                            |
-| `src/shared/transcript/`              | Agent 聊天记录（Transcript）协议解析、WebSocket 订阅与状态合并（升级上游协议见[目录说明](src/shared/transcript/vendor/README.md)）      |
-| `src/shared/workbench/`               | 右侧产物工作台面板宿主、分栏布局与选中态管理（产物注册与认领规则见 [artifact.ts](src/shared/workbench/artifact.ts)）                    |
-| `src/testing/`、`e2e/`                | Vitest 测试辅助工具、MSW Mock 处理器与 Playwright 端到端测试用例                                                                        |
-| `vite/`、`scripts/`                   | Vite 构建插件、开发辅助脚本与 HyperFrames 组件库打包工具（`scripts/hyperframes-*`）                                                     |
-| `../design/cue-mascot/`               | 首页吉祥物素材源文件与生成说明（见[目录说明](../design/cue-mascot/README.md)）                                                          |
+| 目录 / 路径                           | 核心职责                                                                                                                                 |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/app/`                            | 全局 Provider、全局样式与 Token 镜像、路由实例与工作台面板注册                                                                           |
+| `src/routes/`                         | TanStack Router 文件路由与应用外框（`_shell.tsx`）：只负责路由装配、权限守卫、URL 参数解析与跨模块组合，具体业务逻辑放在 `features/` 中  |
+| `src/features/`                       | 各业务功能模块（登录、首页、合集、对话、需求单、资料库、审计报表、成员设置、工作区文件、分镜与制作页、final-cut 编辑器、管理后台配置等） |
+| `src/features/storyboard/final-cut/`  | final-cut 编辑器；其中 `composition/` 目录下是 final-cut 主文件的写法，渲染服务 `../render/` 导出和测试也用它                            |
+| `src/shared/api/`                     | 统一 REST 请求客户端（`apiFetch`）与根据后端 OpenAPI 自动生成的类型和 Zod Schema（`generated/`）                                         |
+| `src/shared/auth/`                    | 登录状态管理与权限判断                                                                                                                   |
+| `src/shared/shell/`                   | 应用外框向子页面暴露的布局状态上下文（`ShellChromeContext`）                                                                             |
+| `src/shared/icons/`、`src/shared/ui/` | 统一图标库与基础通用 UI 组件                                                                                                             |
+| `src/shared/transcript/`              | Agent 聊天记录（Transcript）协议解析、WebSocket 订阅与状态合并（升级上游协议见[目录说明](src/shared/transcript/vendor/README.md)）       |
+| `src/shared/workbench/`               | 右侧产物工作台面板宿主、产物新建与空态、折叠竖条及分栏布局（产物注册与认领规则见 [artifact.ts](src/shared/workbench/artifact.ts)）       |
+| `src/testing/`、`e2e/`                | Vitest 测试辅助工具、MSW Mock 处理器与 Playwright 端到端测试用例                                                                         |
+| `vite/`、`scripts/`                   | Vite 构建插件、开发辅助脚本与 HyperFrames 组件库打包工具（`scripts/hyperframes-*`）                                                      |
+| `../design/cue-mascot/`               | 首页吉祥物素材源文件与生成说明（见[目录说明](../design/cue-mascot/README.md)）                                                           |
 
 ### 核心编码约束
 

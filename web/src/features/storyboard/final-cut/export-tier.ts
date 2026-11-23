@@ -24,7 +24,7 @@ const LIBRARY: ResolutionLibrary<CanvasResolution> = {
   suggestMatchingPreset,
 }
 
-/** 画面 `canvas` 按 `tier` 导出是什么样（规则见 `tierOutput`）。 */
+/** 计算画布 `canvas` 按档位 `tier` 导出的决议（规则见 `tierOutput`）。 */
 export const exportOutput = (canvas: Canvas, tier: ExportTier) => tierOutput(LIBRARY, canvas, tier)
 
 const storageKey = (conversationId: string) => `cue.final-cut.export-tier:${conversationId}`
@@ -32,23 +32,24 @@ const storageKey = (conversationId: string) => `cue.final-cut.export-tier:${conv
 const zTier = z.enum(EXPORT_TIERS)
 
 /**
- * 用户在画面设置里选的导出分辨率档位，按对话记在浏览器里（不写进工程、不进撤销）；没选过时是 undefined。
- * 画面尺寸变了选的档不能选时也不清掉，换回能选的画面又亮（见 `exportTierOf`）。
+ * 按对话在浏览器本地持久化用户选择的导出分辨率档位（不写入工程文件，不计入撤销栈）；未选择过时为 `undefined`。
+ * 画布尺寸变化导致所选档位暂不可用时仍保留记忆，切回兼容画幅后自动重新生效（见 `exportTierOf`）。
  */
 export function useChosenTier(conversationId: string) {
   const key = storageKey(conversationId)
   const [chosen, setChosen] = useState(() => readStoredJson(key, zTier))
   const choose = (next: ExportTier) => {
     setChosen(next)
-    // 浏览器禁用或写满 Web Storage 时只是刷新后记不住，这次照常用
+    // 浏览器禁用或写满 Web Storage 时仅本次会话生效，不影响正常操作
     writeStored(key, next)
   }
   return [chosen, choose] as const
 }
 
 /**
- * 画面 `canvas` 下亮着的导出档位（`tier`）：选的档 `chosen` 还能选时是它，否则是画面档，都没有时是 undefined。
- * `resolution` 是发起导出时带的档位：亮着的档和画面档不同时是它，否则是 null。
+ * 计算当前画布 `canvas` 下的激活导出档位（`tier`）与请求参数（`resolution`）：
+ * `tier` 优先取兼容当前画布的 `chosen`，否则回退至画布原生档位，均无则为 `undefined`；
+ * `resolution` 仅在激活档位须映射至渲染预设（区别于画布原尺寸）时携带该档位，否则为 `null`。
  */
 export function exportTierOf(canvas: Canvas, chosen: ExportTier | undefined) {
   const tier =

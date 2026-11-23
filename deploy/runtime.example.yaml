@@ -1,19 +1,19 @@
-# 运行时服务（agent_runtime）的配置样例：复制成部署目录的 configs/runtime.yaml（本地是 server/configs/runtime.yaml），
-# 按部署改地址与要开的插件段。形状以 runtime/src/agent_runtime/settings.py 与视频插件包的
-# plugins/video/src/iclip_video/registry.py（VideoPluginsConfig）为准，步骤见 docs/deploy.md。
-# 机密只写放它的环境变量名；DATABASE_URL 与 CREDENTIAL_ENCRYPTION_KEYS 也来自环境变量。
+# 运行时服务（agent_runtime）配置样例：复制为部署目录的 configs/runtime.yaml（本地开发为 server/configs/runtime.yaml），
+# 按环境调整服务地址与启用的插件段。字段定义以 runtime/src/agent_runtime/settings.py 与视频插件包
+# plugins/video/src/iclip_video/registry.py（VideoPluginsConfig）为准，部署说明见 docs/deploy.md。
+# 敏感凭证仅填写环境变量名；DATABASE_URL 与 CREDENTIAL_ENCRYPTION_KEYS 同样由环境变量读取。
 
 apps:
-  # 视频后端。应用标识必须是 video：后端开的会话与库里已有的会话都归它。
+  # 视频后端接入配置。应用标识须固定为 video（与既有会话归属一致）。
   video:
-    # 与后端的 RUNTIME_APP_KEY 是同一个值（不少于 32 个字符）。
+    # 须与后端 RUNTIME_APP_KEY 一致（不少于 32 个字符）。
     key_env: RUNTIME_APP_KEY
-    # 配置页的技能库、模型供应商与 agent 配置经运行时的 /v1/admin。
+    # 允许经运行时 /v1/admin 管理技能库、模型供应商与 Agent 配置。
     admin: true
     hooks:
-      # 与后端的 RUNTIME_INTERNAL_TOKEN 是同一个值（不少于 32 个字符）。
+      # 须与后端 RUNTIME_INTERNAL_TOKEN 一致（不少于 32 个字符）。
       token_env: RUNTIME_INTERNAL_TOKEN
-      # 后端的内部接口（conventions §21）。本地 make dev：http://localhost:7788；compose：http://server:7788。
+      # 后端内部回调接口（conventions §21）。本地 make dev 为 http://localhost:7788，Compose 为 http://server:7788。
       gate: http://server:7788/internal/runtime/hooks/gate
       run_started: http://server:7788/internal/runtime/hooks/run-started
       turn_started: http://server:7788/internal/runtime/hooks/turn-started
@@ -21,21 +21,21 @@ apps:
 plugins:
   factory: iclip_video.registry:open_video_plugins
   config:
-    # 拆解与取帧出图经后端干活；地址同上，令牌同 hooks.token_env。
+    # 视频拆解与抽帧出图经由视频后端内部接口执行；地址与令牌同 hooks 配置。
     internal_api:
       base_url: http://server:7788
       token_env: RUNTIME_INTERNAL_TOKEN
-    # 查图片信息前把本桶的公网地址换成内网地址；服务器不在 OSS 同地域内网时删掉这一段。
+    # 探测本桶图片信息前将公网地址改写为内网地址；若服务器不在 OSS 同地域内网，请移除此段。
     # oss:
     #   public_url_base: https://<桶名>.oss-cn-shenzhen.aliyuncs.com
     #   internal_url_base: https://<桶名>.oss-cn-shenzhen-internal.aliyuncs.com
-    # 写了就登记 video_breakdown：拆解交给后端的参考视频。启动时向后端核对，后端要先起来，且 config.yaml 要写
-    # iclip_studio 段，否则运行时起不来。
+    # 配置此段即启用 video_breakdown 插件（委托后端参考视频拆解队列）。
+    # 启动期会向后端核对服务状态，须确保后端已就绪且后端 config.yaml 已配置 iclip_studio 段，否则启动失败。
     # video_breakdown: {}
-    # 写了就登记 shot_video：取帧与出图交给后端。启动时向后端核对，后端要先起来，且 config.yaml 要写 shot_video: {}
-    # 并开媒体生成与对象存储，否则运行时起不来。
-    # 出图的重试策略写在这一段（poll_interval_seconds、dev_attempts、pro_attempts、backoff_seconds、backoff_factor、
-    # job_timeout_seconds），不写用默认值。
+    # 配置此段即启用 shot_video 插件（抽帧拼板、宫格切图与分镜生图）。
+    # 启动期会向后端核对服务状态，须确保后端已就绪且后端 config.yaml 已配置 shot_video: {}、media_generation 与 object_store，否则启动失败。
+    # 出图轮询与重试策略（poll_interval_seconds、dev_attempts、pro_attempts、backoff_seconds、backoff_factor、
+    # job_timeout_seconds）可在此段覆写，省略则使用默认值。
     # shot_video: {}
 
 ops:

@@ -3,14 +3,14 @@ import { z } from 'zod'
 import type { ResizeInput } from '@/shared/ui/resize-handle'
 import { readStoredJson, writeStored } from '../editing/browser-storage'
 
-// 这几个数和 final-cut.css「外框」一节里 .wf-workspace 的夹值一致，改了两边一起改
-/** 右栏宽度（px）：默认、拖动能到的最窄和最宽。 */
+// 下列数值与 final-cut.css「外框」一节中 .wf-workspace 的钳制范围一致，调整时须同步修改
+/** 右栏宽度（px）：默认值及拖拽上下限。 */
 export const SIDE_WIDTH = { default: 432, min: 150, max: 580 } as const
-/** 拖右栏时按指针算出的宽度不到这么宽（px）就收成竖轨：比最窄 150 再往外拖出一截才收。 */
+/** 拖拽右栏至指针计算宽度低于此阈值（px）时自动收起为竖向图标轨（须在最窄宽度 150px 基础上继续向外拖出一段距离）。 */
 const SIDE_COLLAPSE_BELOW = 92
-/** 时间线最矮多高（px）：工具条加两行轨道。 */
+/** 时间线最小高度（px）：满足工具条加两行轨道的展示空间。 */
 export const TIMELINE_MIN_HEIGHT = 186
-/** 拖右栏、时间线时左上的预览舞台至少留多宽、多高（px）：宽度够播放条排开一行。 */
+/** 拖拽调节右栏或时间线时，左上方预览舞台保留的最小宽高（px），确保播放控制条单行完整排布。 */
 const STAGE_MIN = { width: 360, height: 200 } as const
 
 const STORAGE_KEY = 'cue.layout.final-cut'
@@ -22,8 +22,8 @@ const layoutSchema = z.object({
 })
 
 /**
- * final-cut 编辑器的摆法：右栏宽度、右栏是不是收成图标轨、时间线高度（`null` 是没拖过，按内容高、最多占一小半）。
- * 照工作台、对话宽度的做法跨刷新记住，拖动中途不写，松手才写。
+ * final-cut 编辑器面板布局状态：右栏宽度、右栏是否收起为竖向图标轨、时间线高度（`null` 表示未手动调整，按内容自适应且不超过上限）。
+ * 跨刷新持久化至浏览器本地存储；拖拽过程中仅更新内存态，松手后落盘。
  */
 type EditorLayout = z.infer<typeof layoutSchema>
 
@@ -33,12 +33,12 @@ const DEFAULT_LAYOUT: EditorLayout = {
   timelineHeight: null,
 }
 
-// 浏览器禁用或写满 Web Storage 时只是记不住，摆法照常用
+// 浏览器禁用或写满 Web Storage 时仅本次会话生效，不影响布局调整
 const write = (layout: EditorLayout) => void writeStored(STORAGE_KEY, layout)
 
 /**
- * 一条分隔条的回调，见 `LayoutSplitter`：`delta` 是从按下起指针沿着拖动方向走了多少像素，
- * 方向键是一下挪的像素（`input` 为 `keyboard`）。
+ * 分隔条交互回调集合（见 `LayoutSplitter`）：指针拖拽时 `delta` 为自按下起的累计位移像素，
+ * 键盘方向键（`input === 'keyboard'`）为单步位移像素。
  */
 export type SplitterHandlers = {
   onStart: () => void
@@ -48,7 +48,7 @@ export type SplitterHandlers = {
   onReset: () => void
 }
 
-/** 拖动时量尺寸要用的三块：左上的预览舞台、右栏、时间线面板。 */
+/** 拖拽测距所需的三个核心面板节点：预览舞台、右栏与时间线。 */
 type LayoutParts = {
   stage: HTMLElement | null
   side: HTMLElement | null
@@ -57,17 +57,17 @@ type LayoutParts = {
 
 type Axis = 'side' | 'timeline'
 
-/** 一次拖动：按下前的摆法，按下时那一块的实际尺寸（右栏收着时是竖轨的宽），最大能拉到多大。 */
+/** 单次拖拽会话快照：起拖前布局、目标面板起拖实测尺寸（右栏收起态取竖轨宽度）及允许拉伸上限。 */
 type Drag = { axis: Axis; before: EditorLayout; size: number; max: number }
 
 const boxOf = (element: HTMLElement | null) =>
   element?.getBoundingClientRect() ?? { width: 0, height: 0 }
 
-/** 按下分隔条时那一块的实际尺寸，和最大能拉到多大（预览舞台至少留 `STAGE_MIN`）。 */
+/** 测量起拖时目标面板的实际尺寸与可拉伸上限（保证预览舞台不小于 `STAGE_MIN`）。 */
 const measure = (axis: Axis, { stage, side, timeline }: LayoutParts) => {
   if (axis === 'side') {
     const size = boxOf(side).width
-    // 舞台已经不足 360 时也不比按下时窄，不然一拖右栏就缩一截
+    // 舞台当前宽度已不足 360px 时，上限不低于起拖实测宽度，避免一触拖拽即导致右栏骤缩
     const room = Math.min(SIDE_WIDTH.max, size + boxOf(stage).width - STAGE_MIN.width)
     return { size, max: Math.max(size, room) }
   }
@@ -76,8 +76,8 @@ const measure = (axis: Axis, { stage, side, timeline }: LayoutParts) => {
 }
 
 /**
- * 拖右栏分隔条以后的摆法。指针拖到比 `SIDE_COLLAPSE_BELOW` 还窄收成竖轨，记着的宽度留按下前的，
- * 同一次拖回来又展开；方向键不收起，收着时往左一下展开到记着的宽度。
+ * 计算拖拽右栏分隔条后的目标布局：指针拖至窄于 `SIDE_COLLAPSE_BELOW` 时收起为竖轨并保留起拖前的记忆宽度，
+ * 同一次拖拽拉回阈值以上时重新展开；键盘方向键不触发收起，收起态下向左按键直接恢复记忆宽度。
  */
 const sideDragged = (
   layout: EditorLayout,
@@ -98,8 +98,8 @@ const sideDragged = (
 }
 
 /**
- * 编辑器的摆法和改它的两条分隔条。拖动从按下时量出的实际尺寸起算（窄窗口里样式会把记着的宽度压小），
- * `parts` 在按下分隔条时才读。右栏在右边、时间线在下面：往左、往上拖是变大。
+ * 管理编辑器三区布局状态与两条分隔条交互：拖拽以起拖实测尺寸为基准（适配窄视口下样式压缩后的实际尺寸），
+ * `parts` 在起拖瞬间惰性读取。右栏居右、时间线居下，向左或向上拖拽为增大尺寸。
  */
 export function useEditorLayout(parts: () => LayoutParts) {
   const [layout, setLayout] = useState(
@@ -124,7 +124,7 @@ export function useEditorLayout(parts: () => LayoutParts) {
       update(sideDragged(current, drag, delta, input), false)
       return
     }
-    // 舞台已经挤到最矮时也不比最矮还小
+    // 舞台当前高度已达下限时，时间线高度仍不低于最小高度约束
     const height = Math.max(TIMELINE_MIN_HEIGHT, Math.min(drag.size - delta, drag.max))
     update({ ...current, timelineHeight: Math.round(height) }, false)
   }

@@ -214,8 +214,8 @@ VIDEO_APP_ID: Final = "video"
 def _require_ffmpeg(required: bool) -> None:
     if required and not ffmpeg_available():
         raise RuntimeError(
-            "PATH 上找不到 ffmpeg/ffprobe：取帧与出图要用它抽帧切格，视频裁剪拼接要用它切段合成，"
-            "视频拆解要用它读时长与抽帧"
+            "PATH 中未找到 ffmpeg/ffprobe：取帧与出图需用于抽帧切格，视频裁剪拼接需用于分段合成，"
+            "视频拆解需用于读取时长与抽帧"
         )
 
 
@@ -434,25 +434,26 @@ def build_app(
         )
     if settings.shot_tools_missing:
         _logger.warning(
-            "配了 shot_video 段但取帧与出图装不起来", missing=list(settings.shot_tools_missing)
+            "已配置 shot_video 段但缺少依赖，取帧与出图未启用",
+            missing=list(settings.shot_tools_missing),
         )
     if settings.media_generation is None or settings.media_generation.subtitle is None:
         _logger.warning(
             "字幕识别未启用",
             media_generation=settings.media_generation is not None,
-            requires="media_generation.subtitle 段，每个配置组写上 subtitle_api_key_env",
+            requires="media_generation.subtitle 配置段及各配置组的 subtitle_api_key_env",
         )
     if settings.media_generation is None or settings.media_generation.music is None:
         _logger.warning(
             "音乐生成未启用",
             media_generation=settings.media_generation is not None,
-            requires="media_generation.music 段，每个配置组写上 music_api_key_env",
+            requires="media_generation.music 配置段及各配置组的 music_api_key_env",
         )
     if settings.media_generation is None or settings.media_generation.speech is None:
         _logger.warning(
             "配音未启用",
             media_generation=settings.media_generation is not None,
-            requires="media_generation.speech 段，每个配置组写上 speech_api_key_env",
+            requires="media_generation.speech 配置段及各配置组的 speech_api_key_env",
         )
     http_client = httpx.AsyncClient(follow_redirects=True)
     public_http_client = public_client(timeout=TOTAL_TIMEOUT_SECONDS)
@@ -514,22 +515,24 @@ def build_app(
         )
 
     if render_client is not None and settings.media_generation is None:
-        raise RuntimeError("成片导出已启用却没开媒体生成；resolve_settings 应当已拒绝这种配置")
+        raise RuntimeError("成片导出已启用但媒体生成未启用；resolve_settings 应当已拒绝该配置")
     model_group_of = identity.model_groups.group_of
     generation: GenerationModule | None = None
     if settings.media_generation is not None:
         if public_objects is None:
-            raise RuntimeError("媒体生成已启用却没有对象存储；resolve_settings 应当已拒绝这种配置")
+            raise RuntimeError("媒体生成已启用但对象存储未配置；resolve_settings 应当已拒绝该配置")
         if connector is None:
-            raise RuntimeError("媒体生成已启用却没建队列连接器；上面的条件漏了媒体生成")
+            raise RuntimeError("媒体生成已启用但队列连接器未初始化")
         if codec is None or compose_concurrency is None:
-            raise RuntimeError("媒体生成已启用却没选编解码；ffmpeg_required 应当已包含媒体生成")
+            raise RuntimeError("媒体生成已启用但未选定编解码器；ffmpeg_required 应当已包含媒体生成")
         if uploads is None:
-            raise RuntimeError("媒体生成已启用却没装上传；有对象存储就该装上")
+            raise RuntimeError("媒体生成已启用但上传模块未装配")
         render: RenderSetup | None = None
         if render_client is not None:
             if server_uploads is None:
-                raise RuntimeError("成片导出已启用却没有上传签名；注入的测试桶不支持成片导出")
+                raise RuntimeError(
+                    "成片导出已启用但缺少服务端上传签名能力；注入的测试存储不支持成片导出"
+                )
             render = RenderSetup(
                 client=render_client,
                 uploads=server_uploads,
@@ -556,7 +559,9 @@ def build_app(
     tagging_setup: TaggingSetup | None = None
     if settings.iclip_studio is not None and connector is not None:
         if codec is None or breakdown_concurrency is None:
-            raise RuntimeError("拆解已启用却没选编解码；ffmpeg_required 应当已包含 iclip_studio")
+            raise RuntimeError(
+                "视频拆解已启用但未选定编解码器；ffmpeg_required 应当已包含 iclip_studio"
+            )
         breakdown_setup = BreakdownSetup(
             breakdowns=reference_breakdowns
             or build_reference_breakdown(runtime_client, model_url_downloads, codec),
@@ -863,8 +868,8 @@ def build_app(
             allow_methods=["*"],
             allow_headers=["*"],
         )
-    # 写请求的来源检查在 CORS 与登录态解析之外：来源不对的直接 403，不必先查凭证；预检请求是 OPTIONS，
-    # 不经它检查，仍由 CORS 直接答。它在按主机名的划分之内，预览域名上除预览地址外一律 404 的规则不受影响。
+    # 写请求来源校验位于 CORS 与登录态解析之外：非法来源直接返回 403，无需校验凭证；OPTIONS 预检请求
+    # 不经此校验，仍由 CORS 直接响应。该中间件位于预览域名隔离之内，不影响预览域名除预览路由外一律 404 的约束。
     app.add_middleware(WriteOriginCheck, allowed_origins=settings.security.cors_allow_origins)
     # 按主机名的划分是 final-cut 预览的安全边界，必须在 CORS、来源检查与登录态解析之外，最后注册。
     preview_origin = settings.final_cut_preview_origin

@@ -83,7 +83,7 @@ const pressedIn = (name: string) =>
     .map((button) => button.textContent || button.getAttribute('aria-label'))
 const width = () => panel().getByRole('textbox', { name: '宽' })
 const height = () => panel().getByRole('textbox', { name: '高' })
-const RANGE_TEXT = '宽高要在 240–4096 之间'
+const RANGE_TEXT = '宽高须在 240–4096 之间'
 
 describe('画面设置 · 画面尺寸', () => {
   it('触发条写现在的比例；六个比例按钮，宽高正好等于哪一种时它按下，都不是时都不按下；点一下改成它', async () => {

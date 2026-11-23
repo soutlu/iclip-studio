@@ -9,13 +9,13 @@ import { CATALOG_NAV, type SideTab } from './side-tabs'
 type SideNavProps = {
   collapsed: boolean
   onCollapsedChange: (collapsed: boolean) => void
-  /** 有片段选中：「属性」上带一个圆点。 */
+  /** 是否存在选中片段；为真时在「属性」页签上展示指示圆点。 */
   selection: boolean
 }
 
 /**
- * 右栏顶上的导航（放在 `TabsRoot` 里）：五个目录页签是双色图标加两字短词，竖线隔开后是「属性」，最右是收起按钮。
- * 收起时整栏缩成一条竖的图标轨，短词只留给读屏，悬停给提示；点哪个页签都展开右栏并切到它。
+ * 右栏顶部导航（嵌套于 `TabsRoot` 内）：五个目录页签（双色图标与短标签）、分隔线、「属性」页签及右侧收起按钮。
+ * 收起态下收缩为竖向图标轨，文字标签仅保留给读屏设备并改由 Tooltip 提示；点击任意页签均展开右栏并切换至对应页签。
  */
 export function SideNav({ collapsed, onCollapsedChange, selection }: SideNavProps) {
   const expand = () => onCollapsedChange(false)
@@ -47,7 +47,7 @@ export function SideNav({ collapsed, onCollapsedChange, selection }: SideNavProp
         icon={collapsed ? 'final-cut-panel-open' : 'final-cut-panel-close'}
         label={collapsed ? '展开右栏' : '收起右栏'}
         onClick={() => onCollapsedChange(!collapsed)}
-        tip={collapsed ? '展开右栏' : '收起右栏，预览更大'}
+        tip={collapsed ? '展开右栏' : '收起右栏，扩大预览区'}
       />
     </div>
   )
@@ -70,13 +70,13 @@ function NavTab({
 }) {
   const [hint, setHint] = useState(false)
   return (
-    // 展开时短词就写在图标下面，只有收成图标轨时才给提示
+    // 展开态下图标下方已显示文字标签，仅在收起为竖向图标轨时启用 Tooltip
     <TooltipRoot onOpenChange={setHint} open={collapsed && hint}>
       <TooltipTrigger asChild>
         <TabsTrigger
           className="wf-side-tab after:hidden"
           data-tab={tab}
-          // 点当前页签不会切换，收起时也要展开
+          // Radix Tabs 点击当前激活页签不会触发切换，收起态下需显式触发展开
           onClick={collapsed ? onExpand : undefined}
           value={tab}
         >

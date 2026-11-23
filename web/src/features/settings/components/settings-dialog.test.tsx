@@ -146,7 +146,7 @@ describe('SettingsDialog 用户', () => {
 
     await user.clear(search)
     await user.type(search, '没有这个人')
-    expect(screen.getByText('没有匹配的成员')).toBeVisible()
+    expect(screen.getByText('暂无匹配的成员')).toBeVisible()
     expect(screen.queryByRole('list', { name: '用户列表' })).not.toBeInTheDocument()
   })
 
@@ -174,7 +174,7 @@ describe('SettingsDialog 用户', () => {
 
     await user.click(screen.getByRole('tab', { name: '只读' }))
     await user.type(search, '陈晓')
-    expect(screen.getByText('没有匹配的成员')).toBeVisible()
+    expect(screen.getByText('暂无匹配的成员')).toBeVisible()
 
     await user.click(screen.getByRole('button', { name: '清除筛选条件' }))
     expect(search).toHaveValue('')
@@ -197,7 +197,7 @@ describe('SettingsDialog 用户', () => {
         .map((item) => item.textContent),
     ).toEqual(['默认组', 'mkt', 'ecom'])
     expect(within(menu).queryByRole('menuitemradio', { checked: true })).not.toBeInTheDocument()
-    expect(within(menu).getByText('原组「legacy-vip」已失效，请切换')).toBeVisible()
+    expect(within(menu).getByText('原配置组「legacy-vip」已失效；请切换')).toBeVisible()
 
     await user.click(within(menu).getByRole('menuitemradio', { name: '默认组' }))
     expect(

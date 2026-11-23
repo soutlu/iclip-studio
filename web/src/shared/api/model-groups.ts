@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { apiFetch } from '@/shared/api/client'
 import { zModelGroupsOut } from '@/shared/api/generated/zod.gen'
 
-/** 部署配置里的配置组名，按配置顺序；只在部署时改，页面里不会变。 */
+/** 部署配置中定义的模型配置组名称列表（保持配置顺序）；仅随部署变更，运行期间不修改。 */
 export const useModelGroups = () =>
   useQuery({
     queryFn: ({ signal }) =>

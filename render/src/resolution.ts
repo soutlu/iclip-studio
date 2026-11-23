@@ -22,7 +22,7 @@ const LIBRARY: ResolutionLibrary<CanvasResolution> = {
   suggestMatchingPreset,
 }
 
-/** 根上 `data-width` / `data-height` 写的画面尺寸；没写或不是正整数时是 undefined。 */
+/** 从合成根元素的 `data-width` / `data-height` 读取画布尺寸；未声明或非正整数时返回 undefined。 */
 function canvasOf(html: string) {
   const root = compositionRootOf(parse(html))
   const side = (name: string) => {
@@ -34,9 +34,9 @@ function canvasOf(html: string) {
 }
 
 /**
- * 按档位 `tier` 导出主文件 `main` 时交给渲染器的 `outputResolution`：没选档位、档位就是画面档时是 undefined
- * （按画面尺寸出片），否则是同形状的预设（规则见 `tierOutput`）。这个画面导不出这一档时以
- * `resolution-unsupported` 失败。
+ * 计算按档位 `tier` 导出主文件 `main` 时传给渲染器的 `outputResolution`：未指定档位或档位与画布原始
+ * 档位一致时返回 undefined（按画布原始尺寸导出），否则返回同宽高比预设（规则见 `tierOutput`）。
+ * 若当前画布不支持该档位，则抛出 `resolution-unsupported` 失败。
  */
 export function outputResolutionFor(
   main: string,

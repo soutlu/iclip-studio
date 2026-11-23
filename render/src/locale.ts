@@ -28,21 +28,22 @@ import {
 import type { ExportLocale } from './request'
 
 /**
- * 按语言导出：final-cut 的原文是视频自带的语言（主文件根上变量的默认值，没有值表），能加的每种语言一份值表
- * `locales/<语言>.json`（变量 id → 这种语言的值）。导出一种语言时规则和编辑器预览这种语言一样：字幕的字是主文件
- * 根上的变量，值交给渲染器；贴片、场景里随语言的字段由 `localizedHostValues`（和预览同一个函数）并进宿主的
- * `data-variable-values`；人声由 `localizedVoices`（也和预览同一个函数）定，原文也要用它去掉其它语言的配音片段。
+ * 按语言导出逻辑：final-cut 原文为视频自有语言（取主文件根元素变量的默认值，无独立值表），
+ * 每种目标语言对应一份值表 `locales/<语言>.json`（变量 ID → 目标语言取值）。导出规则与编辑器多语言预览一致：
+ * 字幕文本作为主文件根变量传给渲染器；贴片与场景中的多语言字段由 `localizedHostValues`（与预览共用）
+ * 合并至宿主元素的 `data-variable-values`；人声轨道由 `localizedVoices`（与预览共用）处理，导出原文时亦
+ * 通过该函数移除其他语种的配音片段。
  */
 
-/** 成功时的结果，或说明哪里不对的一句话（会给用户看，不带值表里的字）。 */
+/** 校验结果：成功时携带值，失败时携带面向用户的错误说明（不含值表具体文本）。 */
 export type Checked<T> = { ok: true; value: T } | { ok: false; message: string }
 
 const VALUES_ATTRIBUTE = 'data-variable-values'
 
-/** 一种语言的值表在工程里的路径（相对工程根）。 */
+/** 返回指定目标语言的值表在工程内的相对路径。 */
 export const localePath = (locale: ExportLocale) => `locales/${locale}.json`
 
-/** 从工程文件里读 `locale` 的值表：要有这个文件，内容是一个 JSON 对象。 */
+/** 从工程文件中读取 `locale` 对应的值表：要求文件存在且内容为 JSON 对象。 */
 export function readLocaleTable(
   files: readonly ProjectFile[],
   locale: ExportLocale,
@@ -69,8 +70,8 @@ export function readLocaleTable(
 }
 
 /**
- * 主文件根（`<html>`）上 `data-composition-variables` 声明的变量。写法不对的声明不算，整个属性写法不对时
- * 当作没有声明：和引擎读声明的规则一样（同一个 `isCompositionVariable`）。
+ * 解析主文件根元素（`<html>`）的 `data-composition-variables` 变量声明。
+ * 忽略格式无效的单条声明，属性整体无法解析时视为空声明，与引擎解析规则（`isCompositionVariable`）保持一致。
  */
 export function rootDeclarations(html: string): CompositionVariable[] {
   const root = [...elementsOf(parse(html))].find((element) => element.tagName === 'html')
@@ -96,8 +97,8 @@ const TYPE_NAMES: Record<CompositionVariableType, string> = {
 }
 
 /**
- * 按主文件根上的声明校验值表：没声明的变量去掉（答复去掉了几条），有一个值的类型和声明的不对（或不在
- * 可选范围里）就整份不用。
+ * 按主文件根元素的变量声明校验语言值表：自动过滤未声明的变量并统计剔除数量；
+ * 若任意已声明变量的值类型不符或超出可选范围，则整份值表校验失败。
  */
 export function checkLocaleValues(
   values: Readonly<Record<string, unknown>>,
@@ -124,9 +125,9 @@ export function checkLocaleValues(
 }
 
 /**
- * 主文件里贴片、场景的宿主换成一种语言的取值：只重写有随语言字段（`data-locale-bindings`）的宿主的
- * `data-variable-values`，规则见 `localizedHostValues`（`values` 是校验过的值表，`defaults` 是根上变量的
- * 默认值）。字幕宿主、没有随语言字段的宿主不动，别的字一个不动。
+ * 将主文件中贴片与场景宿主的多语言属性替换为指定语言取值：仅重写含 `data-locale-bindings` 的宿主
+ * `data-variable-values`（规则见 `localizedHostValues`，`values` 为已校验值表，`defaults` 为根变量默认值）。
+ * 字幕宿主、无多语言绑定的宿主及主文件其余内容均保持不变。
  */
 export function withLocalizedHosts(
   html: string,
@@ -154,7 +155,7 @@ export function withLocalizedHosts(
     if (host === undefined || location?.startTag === undefined) continue
     const text = attributeText(VALUES_ATTRIBUTE, JSON.stringify(next))
     const at = location.attrs?.[VALUES_ATTRIBUTE]
-    // 宿主上没写取值时加在标签名后面
+    // 宿主未声明取值属性时，紧接开始标签名后插入
     const after = location.startTag.startOffset + 1 + host.tagName.length
     edits.push(
       at === undefined
@@ -167,7 +168,7 @@ export function withLocalizedHosts(
 
 type Element = DefaultTreeAdapterTypes.Element
 
-/** 去掉 `[from, to)` 这段源码（一个元素或属性）时连同它前面的空白一起去掉。 */
+/** 移除 `[from, to)` 区间源码（元素或属性）时一并清除其前导空白。 */
 const withLeadingSpace = (html: string, from: number, to: number) => {
   let start = from
   while (start > 0 && /\s/.test(html[start - 1] ?? '')) start -= 1
@@ -175,8 +176,8 @@ const withLeadingSpace = (html: string, from: number, to: number) => {
 }
 
 /**
- * 主文件按导出的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（和预览同一个函数），别的语言的
- * 配音片段去掉，AI 配音时原声和原文的旁白关掉。只改要改的元素，别的字一个不动。
+ * 按目标语言 `locale`（原文为 null）改写主文件中的人声轨道：规则见 `localizedVoices`（与预览共用），
+ * 移除其他语言的配音片段，AI 配音模式下关闭原声与原文旁白；仅修改涉及元素，其余内容保持不变。
  */
 export function withLocalizedVoices(html: string, locale: ExportLocale | null): string {
   const root = compositionRootOf(parse(html, { sourceCodeLocationInfo: true }))
@@ -199,7 +200,7 @@ export function withLocalizedVoices(html: string, locale: ExportLocale | null): 
       edits.push({ text: '', ...withLeadingSpace(html, location.startOffset, location.endOffset) })
       continue
     }
-    // 新加的属性写在开始标签的结尾：去掉的属性都在它前面，按位置倒着改时不会挪动它们
+    // 新增属性追加在开始标签末尾；待移除属性均位于其前方，按位置逆序编辑时不会产生偏移冲突
     const end = location.startTag.endOffset - 1
     const after = html[end - 1] === '/' ? end - 1 : end
     for (const [name, value] of Object.entries(change.attributes)) {
@@ -216,8 +217,8 @@ export function withLocalizedVoices(html: string, locale: ExportLocale | null): 
 }
 
 /**
- * 按 `locale` 导出时交给渲染的：改好主文件的工程文件、给渲染器的变量值（原文时是 null），和值表里去掉了几条
- * 没声明的。
+ * 完成语言本地化后的导出工程：包含已改写主文件的工程文件列表、传入渲染器的变量值表（原文为 null）
+ * 及从值表中剔除的未声明变量条数。
  */
 export interface LocalizedProject {
   files: ProjectFile[]
@@ -229,8 +230,8 @@ const withMain = (files: readonly ProjectFile[], content: string): ProjectFile[]
   files.map((file) => (file.path === MAIN_FILE ? { path: file.path, content } : file))
 
 /**
- * 把工程变成 `locale`（原文是 null）的版本：主文件按这种语言放人声（见 `withLocalizedVoices`）；原文以外的语言
- * 还要读值表、按主文件根上的声明校验、改宿主取值。工程要有主文件。
+ * 将工程转换为 `locale`（原文为 null）对应的导出版本：按目标语言改写主文件人声轨道（见 `withLocalizedVoices`）；
+ * 非原文版本还须读取并校验对应语言值表，并重写多语言宿主取值。要求工程包含主文件。
  */
 export function localizeProject(
   files: readonly ProjectFile[],

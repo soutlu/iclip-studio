@@ -1,5 +1,5 @@
-# 合同导出（scripts/dump_openapi.py）用的占位配置：各可选段全开，路由才齐；真实配置不进仓库。
-# 地址、名字与功能开关都写在这里，写出一段（或一个字段）即开对应功能；.env 只放密钥的值。
+# OpenAPI 合同导出（scripts/dump_openapi.py）使用的占位配置：启用全部可选段以导出完整路由；真实配置不入库。
+# 服务地址、名称与功能开关均在此维护，配置对应段或字段即启用相应功能；.env 仅存放敏感凭证。
 app:
   name: iclip-studio
 
@@ -11,83 +11,83 @@ security:
   cookie_secure: false
   cors_allow_origins: []
 
-# 写出这一段即挂载 /auth/sso/*。
+# 配置此段即挂载 /auth/sso/* 路由。
 sso:
   app_name: iclip
   base_url: https://placeholder.invalid/sso
   redirect_url: https://placeholder.invalid/auth/sso/callback
-  pms_base_url: https://placeholder.invalid/pms # 可省；写了才在 SSO 登录时从 PMS 取城市、职位与部门
-  root_email: root@placeholder.invalid # 可省；这个邮箱首次 SSO 登录即得 root
-  oauth_name: sso # 可省，缺省 sso
+  pms_base_url: https://placeholder.invalid/pms # 可选；配置后 SSO 登录时从 PMS 同步城市、职位与部门
+  root_email: root@placeholder.invalid # 可选；该邮箱首次通过 SSO 登录时自动授予 root 角色
+  oauth_name: sso # 可选，默认 sso
 
-# 写出这一段即开对象存储；.env 里要有 OSS_ACCESS_KEY_ID 与 OSS_ACCESS_KEY_SECRET。
+# 配置此段即启用对象存储；须在 .env 中设置 OSS_ACCESS_KEY_ID 与 OSS_ACCESS_KEY_SECRET。
 object_store:
   bucket: placeholder
   endpoint: https://placeholder.invalid
   public_url_base: https://placeholder.invalid/public
-  internal_endpoint: https://placeholder-internal.invalid # 可省；同地域内网读写用，只写 scheme 与 host
+  internal_endpoint: https://placeholder-internal.invalid # 可选；同地域内网读写地址，仅填写 scheme 与 host
 
-# 写出这一段即开生成路由与后台队列；须同时写 object_store 段与 model_groups.default。
+# 配置此段即启用媒体生成路由与后台队列；须同时配置 object_store 与 model_groups.default。
 media_generation:
   video:
     submit_url: https://placeholder.invalid/video/submit
     status_base_url: https://placeholder.invalid/video/status
     model: vendor-b-seedance-2-5 # 默认模型，显式指定 vendor-b 前缀以固定供应商
-    # 只是允许表。哪个模型能做视频编辑、怎么触发，前端按模型名自己认，这里不声明。
+    # 仅声明允许使用的模型白名单；模型是否支持视频编辑等能力由代码侧按模型名判定。
     allowed_models:
       - vendor-b-seedance-2-0
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
-    # 写出这一段即开通高清版（超分）；查询地址同出片，key 与 model_id 取自各配置组。
+    # 配置此段即启用高清版（超分）；状态查询复用 status_base_url，密钥与 model_id 取自各配置组。
     enhance:
       submit_url: https://placeholder.invalid/video/enhance
       model: video-enhance
-      resolutions: [1080p, 720p] # 能提到的档，从高到低；上游只收 720p 与 1080p
-      fps: 30 # 目标帧率 15–60；不写就不插帧
+      resolutions: [1080p, 720p] # 可选超分档位，按从高到低排列（上游仅支持 720p 与 1080p）
+      fps: 30 # 目标帧率（15–60）；省略则不插帧
   image:
     api_base: https://placeholder.invalid/image
-    env: prod # 网关按调用方标识与这一项一起判这次调用合不合法
-    # 两条任务路由拼在每家的地址后面：无参考图打文生图，有参考图打图像编辑。
+    env: prod # 网关结合调用方标识校验环境合法性
+    # 默认任务路径后缀（拼接于各模型地址后）：无参考图走文生图，含参考图走图像编辑。
     text_to_image_task: text-to-image
     image_edit_task: image-edit
-    default: nano_banana_pro # 请求省略 model 时用哪家
-    # 键名即落库的 provider 名；route 拼在 api_base 后面。
-    # concurrency 是这家同时最多挂几个提交，一家一条队列，互不占用。
+    default: nano_banana_pro # 请求未指定 model 时使用的默认模型
+    # 键名为落库 provider 名，route 拼接于 api_base 后；
+    # concurrency 为该模型的单进程提交并发上限（各模型独立队列，互不阻塞）。
     models:
       nano_banana_pro:
         route: nano-banana-pro
         concurrency: 40
       seedream_v5_pro:
-        route: seedrance5.0pro # 上游路由拼写沿用它公开契约里的 seedrance
+        route: seedrance5.0pro # 上游路径沿用其公开契约拼写 seedrance
         concurrency: 40
       gpt-image-2.5:
         route: openai/gpt-image-2.5-flare-developer
         concurrency: 10
-        # 这家的两条任务路由与别家不同名，写在它自己这里。
+        # 覆盖默认任务路径后缀。
         text_to_image_task: text-to-image
         image_edit_task: edit
-  poll_interval_seconds: 5 # 状态查询间隔，固定轮询
-  job_timeout_seconds: 3600 # 提交后等待终态的上限
-  # 本地合成每个进程的并发；不写时按启动探测选中的编解码取：硬件 4，软件 2
+  poll_interval_seconds: 5 # 状态查询固定轮询间隔（秒）
+  job_timeout_seconds: 3600 # 提交后等待终态的超时上限（秒）
+  # 单进程本地合成并发数；省略时按启动期探测结果默认取值（硬件加速 4，软件编码 2）
   # compose_concurrency: 4
   subtitle:
-    # 写出这一段即开通素材片字幕识别，每个配置组都要写 subtitle_api_key_env；模型固定 qwen-audio-3.1-asr-flash，不在这里配。
+    # 配置此段即启用素材片字幕识别（固定模型 qwen-audio-3.1-asr-flash），各配置组须声明 subtitle_api_key_env。
     url: https://placeholder.invalid/api/v1/services/aigc/multimodal-generation/generation
-    concurrency: 4 # 识别队列每个进程同时跑几条
-    timeout_seconds: 120 # 一次识别请求等结果的上限
+    concurrency: 4 # 单进程识别队列并发数
+    timeout_seconds: 120 # 单次识别请求超时时间（秒）
   music:
-    # 写出这一段即开通生成背景音乐，每个配置组都要写 music_api_key_env；模型固定 qwen-audio-3.1-tts-next，不在这里配。
+    # 配置此段即启用生成背景音乐（固定模型 qwen-audio-3.1-tts-next），各配置组须声明 music_api_key_env。
     url: https://placeholder.invalid/api/v1/services/audio/tts/SpeechSynthesizer
-    concurrency: 2 # 生成队列每个进程同时跑几条
-    timeout_seconds: 300 # 一次生成请求等结果的上限
+    concurrency: 2 # 单进程生成队列并发数
+    timeout_seconds: 300 # 单次生成请求超时时间（秒）
   speech:
-    # 写出这一段即开通 final-cut 配音，每个配置组都要写 speech_api_key_env；模型固定 qwen-audio-3.1-tts-next，不在这里配。
+    # 配置此段即启用 final-cut 配音与旁白（固定模型 qwen-audio-3.1-tts-next），各配置组须声明 speech_api_key_env。
     url: https://placeholder.invalid/api/v1/services/audio/tts/SpeechSynthesizer
-    concurrency: 2 # 配音队列每个进程同时跑几条
-    timeout_seconds: 120 # 一句合成请求等结果的上限
+    concurrency: 2 # 单进程配音队列并发数
+    timeout_seconds: 120 # 单句合成请求超时时间（秒）
 
-# 媒体生成的 key（写环境变量名）与「产品模型名 → 网关 model_id」，按组分。default 是没选组的人用的那一组，
-# 开了媒体生成就必须有；video_models 的键恰好是 allowed_models，开了高清版再加 enhance.model。
+# 按配置组声明媒体生成密钥（填写环境变量名）及「产品模型名 → 网关 model_id」映射。
+# default 为未分组用户的保留组，启用媒体生成时必填；各组 video_models 的键集合须与 allowed_models（启用高清版时含 enhance.model）完全一致。
 model_groups:
   default:
     video_api_key_env: VIDEO_API_KEY
@@ -100,26 +100,25 @@ model_groups:
       wan3.0-video-prime: wan3.0-video-prime
       video-enhance: video-enhance
 
-# 写出这一段即启用视频拆解（video_breakdown 与参考视频的后台拆解）与资料库打标；须在 PATH 上有 ffmpeg。模型写定在代码里，
-# 经运行时调，配置页的火山方舟里要启用它。
-# breakdown_concurrency 是参考视频后台拆解每个进程的并发，多进程时总并发乘以进程数；不写时按启动探测选中的编解码取：
-# 硬件 4，软件 2。
+# 配置此段即启用视频拆解（video_breakdown 与参考视频后台拆解）及资料库 AI 打标；须确保 PATH 中存在 ffmpeg，
+# 并在管理后台的火山方舟供应商中启用对应固定模型。
+# breakdown_concurrency 为单进程参考视频拆解并发数（多进程按进程数倍增；省略时硬件 4、软件 2）。
 iclip_studio: {}
 
-# 写出这一段即给运行时的 shot_video 插件挂取帧与出图的内部接口；须同时启用媒体生成与对象存储，并在 PATH 上有
-# ffmpeg。出图的重试策略在运行时配置的 plugins.config.shot_video。
+# 配置此段即向运行时 shot_video 插件开放抽帧与生图内部接口；须同时启用 media_generation、object_store
+# 且 PATH 中存在 ffmpeg（出图重试策略位于运行时配置 plugins.config.shot_video）。
 shot_video: {}
 
-# 写出这一段即开产品资料查询（爆款视频按款号降级）；.env 里要有 PRODUCT_CATALOG_DATABASE_URL（只读连接串）。
+# 配置此段即启用产品资料库查询（爆款视频按款号降级）；须在 .env 中设置只读连接串 PRODUCT_CATALOG_DATABASE_URL。
 product_catalog: {}
 
 final_cut:
-  # 写了即开成片导出：交给这个地址的渲染服务；须同时写 object_store 与 media_generation 段。
+  # 配置后即启用成片导出（转发至该地址的渲染服务）；须同时配置 object_store 与 media_generation。
   render_url: https://placeholder.invalid/render
-  # 写了才有 final-cut 预览域名，格式 http(s)://主机[:端口]，不带路径；不写则编辑器预览无法加载。
+  # 配置 final-cut 独立预览域名（格式 http(s)://主机[:端口]，不含路径）；未配置时编辑器预览无法加载。
   preview_origin: https://preview.placeholder.invalid
 
-# 运行时服务的地址（必写）；访问它的密钥是 .env 里的 RUNTIME_APP_KEY。
+# 运行时服务地址（必填）；鉴权密钥取自 .env 的 RUNTIME_APP_KEY。
 runtime:
   url: https://placeholder.invalid/runtime
 

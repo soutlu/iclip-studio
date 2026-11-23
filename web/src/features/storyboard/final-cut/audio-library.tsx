@@ -25,7 +25,7 @@ type AudioLibraryProps = {
   /** 搜索框本身：排在「配乐 / 音效」切换和列表之间。 */
   search: ReactNode
   onNotice: (message: string) => void
-  /** 画出一行：这条音频和它的试听状态。加进 final-cut、拖动和「使用中」都由画行的那边管。 */
+  /** 渲染单条音频行（传入音频数据与试听状态）；加入轨道、拖拽及「使用中」状态由调用方负责。 */
   renderRow: (
     audio: LibraryAudio,
     audition: { playing: boolean; onToggle: () => void },

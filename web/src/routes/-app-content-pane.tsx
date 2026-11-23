@@ -13,11 +13,11 @@ type AppContentPaneProps = {
   alignEnd: boolean
   collapsed: boolean
   canReorder: boolean
-  /** 两栏之间有没有调宽把手（把手画着分隔线）。 */
+  /** 两栏之间是否存在调宽把手（分隔线由把手绘制）。 */
   resizable: boolean
   onExpand: () => void
   onReveal: () => void
-  /** 工作台收起成竖条时，竖条里交给工作台放内容的元素（见 `WorkbenchLayout.railSlot`）。 */
+  /** 工作台收起为竖轨时，用于承载工作台内容的插槽容器回调（见 `WorkbenchLayout.railSlot`）。 */
   railSlotRef?: (node: HTMLElement | null) => void
   children: ReactNode
 }
@@ -90,8 +90,8 @@ export function AppContentPane({
           />
         </div>
       ) : (
-        // 工作台的竖条：「展开工作台」下面是工作台自己放进来的页签图标和「+」（见 WorkbenchRail）。
-        // 并排时两栏之间的分隔线由调宽把手画，二选一时没有把手，竖条自己在朝内的一边画一道
+        // 工作台收起后的竖轨：「展开工作台」下方通过插槽渲染常驻页签图标与新建按钮（见 WorkbenchRail）。
+        // 并排布局时由调宽把手绘制两栏分隔线；非并排布局下无把手，由竖轨在内侧自行绘制分隔线。
         <div
           className={cn(
             'flex h-full flex-col items-center gap-1.25 bg-surface py-2.5',

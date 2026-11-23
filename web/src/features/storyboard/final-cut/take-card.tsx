@@ -34,24 +34,24 @@ export type CarryPoint = { clientX: number; clientY: number }
 
 type TakeCardProps = {
   take: MaterialTake
-  /** 这条原作显示着的版本：镜头、选区、已用的段都按它算。 */
+  /** 当前展示的版本：镜头切点、选区及已入轨区间均按此版本计算。 */
   version: Material
   keyframe: KeyframeState | undefined
-  /** 这条原作上选中的几段（按时间排）。 */
+  /** 当前原作已选中的时间区间列表（按时间升序）。 */
   spans: readonly PickSpan[]
-  /** 素材预览正放着这一版里的一段。 */
+  /** 素材预览播放器是否正在预览当前版本。 */
   previewing: boolean
-  /** 时间线上用掉的素材段，按素材地址分（见 `usedSpans`）。 */
+  /** 时间线已占用的素材区间映射（按素材地址索引，见 `usedSpans`）。 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 素材预览在播时播到哪里（毫秒）；只在预览放着这一版时给。 */
+  /** 素材预览当前播放位置（毫秒）；仅在预览当前版本时传入。 */
   playingMs: number | undefined
-  /** 选区改了；`view` 是改完要在素材预览里放的那一段，去掉一段时是 null。 */
+  /** 选区变更回调；`view` 为更新后同步给素材预览的区间，移除选区时传 `null`。 */
   onChange: (spans: readonly PickSpan[], view: MaterialView | null) => void
   onInsert: () => void
-  /** 「+」：把显示着的版本从头到尾整条加入轨道。 */
+  /** 点击「+」将当前展示版本从头至尾整条加入轨道。 */
   onInsertWhole: (span: MediaSpan) => void
   onVersion: (takeId: string, jobId: string) => void
-  /** 选区被拖出镜头条：带着这条原作上的选区跟着指针走；null 是取消了。 */
+  /** 选区拖出镜头条时的悬空回调：跟随指针传递当前选区；取消拖拽时传 `null`。 */
   onCarry: (point: CarryPoint | null, spans: readonly PickSpan[]) => void
   onDrop: (point: CarryPoint, spans: readonly PickSpan[]) => void
 }
@@ -64,33 +64,32 @@ type GestureKind =
 type Gesture = GestureKind & {
   pointerId: number
   originX: number
-  /** 按下时的选区，拖动按它加上挪过的距离算。 */
+  /** 起拖瞬间的选区快照，拖拽位移均基于此计算。 */
   base: readonly PickSpan[]
   moved: boolean
-  /** 拖出了镜头条以后跟着指针走的选区。 */
+  /** 拖出镜头条后跟随指针携带至时间线的选区集合。 */
   carried: readonly PickSpan[] | null
 }
 
-/** 新选上的一段。 */
+/** 构造带稳定 UI 标识的新选区段。 */
 const picked = (span: MediaSpan): PickSpan => ({ ...span, id: mintUuid() })
 
-/** 素材很长时镜头条至少这么宽（每秒像素），放不下就在卡片里横着滚，镜头不会挤成一条缝。 */
+/** 长素材的镜头条最小时间密度（px/s），超出卡片宽度时允许横向滚动，避免镜头缩成窄缝。 */
 const STRIP_PX_PER_SECOND = 28
 
-/** 选区至少这么长才在左上角写秒数（照稿子）：按上面的最小宽度，写得下「0.0s」。 */
+/** 选区左上角展示时长角标的最小时长阈值：按上述最小密度至少可完整容纳「0.0s」。 */
 const PICK_TIME_MIN_MS = 1_800
 
-/** 拖动提示气泡宽度的一半左右：气泡跟着指针走，但不伸出卡片。 */
+/** 拖拽提示气泡的半宽估算值，用于将跟随指针的气泡钳制在卡片边界内。 */
 const TIP_HALF_WIDTH = 64
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
 const percent = (ms: number, durationMs: number) => `${(ms / durationMs) * 100}%`
 
-/** 选区两端把手的位置：贴着框的左右两边。 */
 const handleAt = (edge: Edge) => ({ left: edge === 'start' ? 0 : '100%' })
 
-/** 选区够长时左上角写的时长；选好的和正在划的都写。 */
+/** 选区达到最小展示宽度时在左上角渲染时长角标（已选定区间与划选草稿共用）。 */
 function PickTime({ span }: { span: MediaSpan }) {
   const length = span.endMs - span.startMs
   return length < PICK_TIME_MIN_MS ? null : (
@@ -107,7 +106,7 @@ const insertOnEnter = (event: KeyboardEvent<HTMLElement>, onInsert: () => void) 
   return true
 }
 
-/** 选区以外的几段：照稿子压暗。 */
+/** 计算选区以外的未选中区间，用于叠加压暗遮罩。 */
 const dimmedOf = (spans: readonly MediaSpan[], durationMs: number): MediaSpan[] => {
   const gaps: MediaSpan[] = []
   let cursor = 0
@@ -119,7 +118,7 @@ const dimmedOf = (spans: readonly MediaSpan[], durationMs: number): MediaSpan[] 
   return gaps
 }
 
-/** 「镜头」页签里的一条原作：顶行见 `TakeHead`，下面是满宽的镜头条，入了轨的段和选区都画在镜头条上。 */
+/** 「镜头」页签单条原作卡片：顶部为 `TakeHead`，下方为全宽镜头条，叠绘已入轨标记与选区。 */
 export function TakeCard({
   take,
   version,
@@ -145,7 +144,7 @@ export function TakeCard({
   const durationMs = takeDurationMs(keyframe)
   const shots = takeShots(keyframe)
 
-  /** 改完的选区里盖着 `at` 的那一段放进素材预览，停在 `show` 那一端。 */
+  /** 更新选区并将包含 `at` 的区间同步至素材预览，停靠在 `edge` 端。 */
   const show = (next: readonly PickSpan[], at: number, edge: Edge) => {
     const index = spanIndexAt(next, at)
     const span = index === undefined ? undefined : next[index]
@@ -167,7 +166,7 @@ export function TakeCard({
     })
   }
 
-  /** 点一个镜头：落在选区里时去掉那一段（同点选区），不然把它整个并进选区；按着 Shift 时从最后一段连过来。 */
+  /** 点击镜头：已落于现有选区内则移除该选区，否则并入该镜头；按住 Shift 时从末段连选扩展。 */
   const pickShot = (shot: MediaSpan, extend: boolean) => {
     const inside = spanIndexAt(spans, (shot.startMs + shot.endMs) / 2)
     if (inside !== undefined) onChange(removeSpan(spans, inside), null)
@@ -199,7 +198,7 @@ export function TakeCard({
       onCarry(point, gesture.carried)
       return
     }
-    // 划选、平移拖出了镜头条：退回按下时的样子（从没选的镜头上拖出来时先选上它），整组选区跟着指针去时间线
+    // 划选或平移手势纵向拖出镜头条：恢复按下态选区（若从未选中镜头起拖则先并入该镜头），转为跨区拖拽至时间线
     if (gesture.kind !== 'trim' && (event.clientY < box.top || event.clientY > box.bottom)) {
       const carried =
         gesture.kind === 'draw' ? addSpan(gesture.base, picked(gesture.shot)) : gesture.base
@@ -263,7 +262,7 @@ export function TakeCard({
       clickAfterDrag.swallow()
       onDrop({ clientX: event.clientX, clientY: event.clientY }, gesture.carried)
     } else if (gesture.kind === 'draw') {
-      // 没拖开、拖得不够一个最短片段时不划：松手算点了这个镜头，交给它的点击
+      // 未形成有效划选（未拖动或长度不足最短片段）时放行给镜头的 click 事件处理
       if (gesture.drawn === null) return
       clickAfterDrag.swallow()
       show(addSpan(gesture.base, picked(gesture.drawn)), gesture.drawn.startMs, 'start')
@@ -283,7 +282,7 @@ export function TakeCard({
 
   const handlers = { onPointerCancel: cancel, onPointerMove: drag, onPointerUp: release }
   const dimmed: readonly MediaSpan[] = draft === null ? spans : addSpan<MediaSpan>(spans, draft)
-  // 已用段按选区的并段规则（addSpan）连起来画：整条加入时一个镜头一个片段，不连起来会断成一截一截
+  // 已入轨区间按 addSpan 规则合并绘制，避免整条加入按镜头拆分后在条上呈现零碎断点
   const usedHere = (used.get(version.url) ?? []).reduce<UsedSpan[]>(addSpan, [])
 
   return (
@@ -452,7 +451,7 @@ export function TakeCard({
                   }}
                 >
                   <PickTime span={draft} />
-                  {/* 只是和选区一样的样子：松手前不能拖、不进焦点，所以不用裁剪把手 */}
+                  {/* 仅作划选草稿的外观占位，松手前不可交互且不进入焦点序，故不渲染可交互 TrimHandle */}
                   {(['start', 'end'] as const).map((edge) => (
                     <span
                       className={`timeline-handle is-${edge}`}

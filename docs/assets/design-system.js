@@ -22,7 +22,7 @@ const darkTokens = readBlock(".dark");
 const tokenValue = (name, theme) =>
   (theme === "dark" && darkTokens.get(name)) || lightTokens.get(name);
 
-// 把 var(--p80) 写成 P80、var(--color-tertiary) 写成 = tertiary，字面值原样返回
+// 将 var(--p80) 简写为 P80、var(--color-tertiary) 简写为 = tertiary，其余字面值原样返回
 const referenceLabel = (name, theme) => {
   const value = tokenValue(name, theme);
   if (!value) return "—";

@@ -486,12 +486,13 @@ def create_conversations_router(
         principal: Annotated[Principal, require_permission("agent:run")],
         body: WholeFilmExportIn | None = None,
     ) -> WholeFilmExportStartedOut:
-        """按 final-cut 导出一条成片：记成一条成片生成记录排队，答复导出 id。只有属主能导；
-        还没有主文件 ``final-cut/index.html``、要导的语言没有值表 ``final-cut/locales/<语言>.json``、
-        没开通都是 422。没有请求体或 ``locale`` 为 null 时导出原文。``resolution`` 是导出分辨率档位，
-        不带或 null 按画面尺寸导出，记进导出记录原样交给渲染服务，这个画面能不能导这一档由渲染服务判断。
-        主文件里的素材按输出地址对上生成记录的记进导出记录，对不上的不记、也不拒绝。导出的是交给渲染服务
-        那一刻的工程。"""
+        """按 final-cut 工程发起成片导出：创建成片生成记录并入队，返回导出 ID。仅对话属主可操作；
+        缺少主文件 ``final-cut/index.html``、目标语言缺少值表 ``final-cut/locales/<语言>.json`` 或成片导出未启用时，
+        均返回 422。省略请求体或 ``locale`` 为 ``null`` 时导出原文版本；``resolution`` 指定导出分辨率档位，
+        省略或为 ``null`` 时按画面尺寸导出，原样记录并转发给渲染服务，由渲染服务校验当前画面是否支持该档位。
+        主文件中的素材按地址匹配来源并记入导出记录，未命中项跳过且不拒绝：``<video>`` 匹配生成记录；
+        ``<audio>`` 依次匹配本对话（含分叉继承）的生成记录、本对话（含分叉继承）的上传记录及参考音频库。
+        实际渲染以提交至渲染服务时刻的工作区工程为准。"""
 
         export_id = await service.export_whole_film(
             principal,

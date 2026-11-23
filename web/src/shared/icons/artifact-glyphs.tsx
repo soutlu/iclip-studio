@@ -9,8 +9,8 @@ const glyph = (body: ReactNode) =>
   }
 
 /**
- * 工作台产物的双色图标里图标库原先没有的两个：分镜（四格）、制作（摄像机）。
- * final-cut 用 `final-cut-shots`，文件用 `file-folder`，四个产物同一种画法。
+ * 工作台产物专用双色图标：分镜（四宫格）与制作（摄像机）。
+ * final-cut 复用 `final-cut-shots`，文件复用 `file-folder`，四类产物保持统一的双色风格。
  */
 export const ARTIFACT_GLYPHS = {
   'artifact-storyboard': glyph(

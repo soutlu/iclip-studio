@@ -70,14 +70,14 @@ class HttpVideoProvider:
         upstream_model = job.upstream_model
         if upstream_model is None and job.model_group is not None:
             raise ProviderError(
-                f"配置组 {group.name} 的这条记录没有记下发给网关的 model_id",
+                f"配置组 {group.name} 的生成记录缺少视频网关 model_id",
                 code="MODEL_GROUP_UPSTREAM_MODEL_MISSING",
                 retryable=False,
             )
         if isinstance(request, VideoEnhanceRequest):
             if self._settings.enhance_submit_url is None:
                 raise ProviderError(
-                    "高清版没有开通，没有超分的提交地址",
+                    "高清版（超分）功能未启用，缺少超分提交地址",
                     code="ENHANCE_NOT_CONFIGURED",
                     retryable=False,
                 )

@@ -13,12 +13,12 @@ type FileTreeViewProps = {
   tree: FileTree
   query: string
   onQueryChange: (query: string) => void
-  /** 展开着的目录 id；同一份内容要传同一个数组，换数组即重排整棵树。 */
+  /** 当前展开的目录 ID 列表；内容未变时须保持引用稳定，更换数组引用会触发整树重排。 */
   expanded: string[]
   onExpandedChange: (expanded: string[]) => void
-  /** 右边正显示的文件（窄屏时是刚看过的那份）。 */
+  /** 当前预览的文件路径（窄屏下为最近查看的文件）。 */
   selected: string | undefined
-  /** 挂载时把键盘焦点放到 `selected` 那一行（从阅读页返回列表时）。 */
+  /** 挂载时是否将键盘焦点定位至 `selected` 对应行（用于从预览页返回列表时恢复焦点）。 */
   focusSelected: boolean
   onOpen: (path: string) => void
 }
@@ -27,8 +27,8 @@ const apply = <T,>(updater: Updater<T>, current: T): T =>
   typeof updater === 'function' ? (updater as (old: T) => T)(current) : updater
 
 /**
- * 工作区文件目录树：顶上筛选框，下面按 WAI-ARIA tree 排的目录和文件。
- * 方向键移动、左右收起展开、Home / End 到头尾（headless-tree 的键位），回车或点击打开文件。
+ * 工作区文件目录树：顶部为路径筛选框，下方按 WAI-ARIA Tree 模式展示目录与文件。
+ * 支持方向键移动、左右键展开/收起、Home / End 跳转首尾（由 headless-tree 提供），回车或点击打开文件。
  */
 export function FileTreeView({
   expanded,
@@ -94,7 +94,7 @@ export function FileTreeView({
         </label>
       </div>
       {count === 0 ? (
-        <PanelNotice text="没有匹配的文件" />
+        <PanelNotice text="暂无匹配的文件" />
       ) : (
         <div
           {...headless.getContainerProps('文件目录')}

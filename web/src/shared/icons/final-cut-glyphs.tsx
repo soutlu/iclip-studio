@@ -114,7 +114,7 @@ export const FINAL_CUT_GLYPHS = {
   'final-cut-close': glyph(<path d="M17.5 6.5 6.5 17.5M6.5 6.5l11 11" />),
   'final-cut-add': glyph(<path d="M12 5.2v13.6M5.2 12h13.6" />),
   'final-cut-expand': glyph(<path d="m6.5 9.2 5.5 5.6 5.5-5.6" />),
-  // 「属性」没选中片段时：点选一个片段
+  // 「属性」面板未选中片段时的空态指引图标
   'final-cut-cursor-select': glyph(
     <>
       <rect className={FILL} height={9} rx={2.4} width={14} x={3.5} y={5.5} />

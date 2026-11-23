@@ -317,15 +317,15 @@ def create_transcript_router(
         图片附件的地址挂不上 OSS 处理参数时，受理前先转存进本桶、记成发消息那个人的一条上传，
         消息里存新地址；转存失败是 422，说明第几张附件。
 
-        这条消息的运行用对话属主所在配置组的模型密钥；组在要用的某个供应商下没有密钥时 409
-        ``agent_unavailable``，属主存的组已不在部署配置里时 409 ``model_group_unavailable``。
+        本次运行使用对话属主所属配置组的模型密钥；若该配置组在所需供应商下缺少密钥，返回 409
+        ``agent_unavailable``；若属主绑定的配置组已不在部署配置中，返回 409 ``model_group_unavailable``。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         agent_id = await _writable(principal, conversation_id)
-        # 能写这段对话的只有属主本人（预览也一样），所以属主就是 principal。先定组再转存附件，
-        # 组失效时不留下转存的上传。
+        # 仅属主本人可写入对话（预览会话亦然），因此对话属主即 principal。先校验配置组再转存附件，
+        # 避免配置组失效时产生孤立的上传记录。
         model_group = await model_group_of(principal.user_id)
         content = await _imported(principal, conversation_id, body.prompt_id, body.content)
         return await runtime.submit_prompt(
@@ -430,11 +430,11 @@ def create_transcript_router(
         principal: Annotated[Principal, require_permission("agent:run")],
         body: ApprovalIn,
     ) -> None:
-        """对一张审批卡点同意或拒绝。
+        """提交审批卡片的同意或拒绝决定。
 
-        决定记下就返回 204：审批卡在运行停下前就会显示，这时回应也照收；运行停在审批上、这一批都有了
-        决定之后，服务端自己起续跑。
-        重复点同一个决定照样 204；改主意是 409；卡不在等回应的那几张里是 404。
+        记录决定后即返回 204：审批卡片在运行暂停前展示时亦可提前提交；当运行停在审批节点且当前批次全部
+        审批完成后，服务端自动触发续跑。重复提交相同决定返回 204；修改已有决定返回 409；目标卡片不在待审
+        列表中返回 404。
         """
 
         principal = await act_as(principal, body.user_name)
@@ -511,7 +511,7 @@ def create_transcript_router(
         principal = websocket_principal(websocket)
         if principal is None:
             _logger.info(
-                "订阅连接被拒：没有身份",
+                "订阅连接被拒：缺少有效身份凭证",
                 has_cookie="cookie" in websocket.headers,
                 has_authorization="authorization" in websocket.headers,
             )
@@ -554,7 +554,7 @@ class _Connection:
             async with self._runtime.connect_transcript() as upstream:
                 await self._serve_with(upstream)
         except RuntimeUnavailable as exc:
-            _logger.warning("对话内容流连不上运行时，关掉这条订阅连接", reason=str(exc))
+            _logger.warning("对话内容流无法连接运行时，关闭订阅连接", reason=str(exc))
             with contextlib.suppress(RuntimeError):
                 await self._ws.close(code=GOING_AWAY)
 
@@ -593,7 +593,7 @@ class _Connection:
             try:
                 await self._handle(frame, upstream)
             except RuntimeUnavailable as exc:
-                _logger.warning("订阅转不到运行时，关掉这条订阅连接", reason=str(exc))
+                _logger.warning("订阅请求无法转发至运行时，关闭订阅连接", reason=str(exc))
                 self.drop(GOING_AWAY)
 
     async def _handle(self, frame: Any, upstream: TranscriptChannel) -> None:
@@ -634,7 +634,7 @@ class _Connection:
             while True:
                 self.offer(await upstream.receive())
         except RuntimeUnavailable as exc:
-            _logger.warning("运行时的对话内容流断了，关掉这条订阅连接", reason=str(exc))
+            _logger.warning("运行时对话内容流断开，关闭订阅连接", reason=str(exc))
             self.drop(GOING_AWAY)
 
     def receives(self, owner: uuid.UUID) -> bool:

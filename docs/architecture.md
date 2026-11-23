@@ -53,7 +53,7 @@
 ### 后端的配置与装配
 
 - 服务启动时通过 `--config`（或环境变量 `CONFIG_FILE`）读取 `config.yaml`，结合环境变量由 `resolve_settings()` 一次性完成校验；业务模块内部不再直接读取环境变量。
-- **`config.yaml` 与环境变量的分工**：地址、名字与功能开关都写在 `config.yaml`，功能开不开只看 `config.yaml` 里有没有写对应的段或字段；环境变量（`.env`）只放密钥的值。只有一把的密钥变量名固定在[配置模型](../server/src/iclip/config/models.py)里，配置组的 key 由 `model_groups` 的 `*_api_key_env` 指名。
+- **`config.yaml` 与环境变量的分工**：地址、名称与功能开关统一维护在 `config.yaml` 中，各可选功能仅以对应配置段或字段是否存在作为启用开关；环境变量（`.env`）仅存放敏感凭证（单值密钥的变量名固定于[配置模型](../server/src/iclip/config/models.py)，各配置组的媒体密钥由 `model_groups` 的 `*_api_key_env` 指定）。若运行环境中残留已迁入 `config.yaml` 的旧环境变量名，服务在启动阶段直接报错退出并指明目标配置路径。
 - **启动期自动探测硬件编码器（[platform/media/codec.py](../server/src/iclip/platform/media/codec.py)）**：只要开启了需要本地处理视频的功能（抽帧出图、视频剪辑合成、参考视频拆解），后端在启动时自动按 `Apple VideoToolbox → NVIDIA NVENC → 软件 libx264` 顺序实际试编一小段视频，选出可用的最快编码器注入各模块；未手动指定并发数时，硬件加速默认并发为 4，纯软件编码默认为 2。
 
 ### 客户端库
@@ -90,7 +90,7 @@
 | `video_breakdown` | 在 `runtime.yaml` 配置 `video_breakdown` 段 | `workspace` | 提供 `breakdown_video` **后台异步工具（`BackgroundTools`）**：通过内部接口调用后端 `app/reference_breakdown.py` 查询或触发参考视频拆解队列 |
 
 - **运行时镜像与启动期双向检查**：生产运行时镜像安装组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)（打包 `runtime` 与 `plugins/video`）。启用 `shot_video` 或 `video_breakdown` 时，运行时启动阶段自动请求后端 `/internal/runtime/plugins/services` 核对图片模型、OSS、ffmpeg 与拆解服务是否就绪，未配齐则拒绝启动。
-- **后台异步工具收尾（`BackgroundTools`）**：`breakdown_video` 调用后立即返回「已启动」回执，拆解完成后将结果作为新消息送回模型；拆解未完时又调用了需要审批的工具，运行先等拆解完成、结果记入历史，再停下等待审批（审批卡在等待期间即可回应）；若拆解未完对话即中止或异常结束，下次开跑前自动将原回执替换为 `interrupted` 标记。
+- **后台异步工具收尾（`BackgroundTools`）**：`breakdown_video` 调用后立即返回「已启动」回执，拆解完成后将结果作为新消息送回模型；若拆解未完成期间同一步触发了需要审批的工具，当前运行会先等待后台拆解结束并将结果写入历史，再进入审批暂停（审批卡在运行暂停前即已展示并接受回应，暂停时若同批待审调用均已回应则直接续跑）；若后台任务尚未完成即因手动中止或异常结束，下次开跑前自动将原回执替换为 `interrupted` 标记。
 
 ### 身份与模块协作
 
@@ -104,7 +104,7 @@
 - **后端排队与调度（[app/whole_film_exports.py](../server/src/iclip/app/whole_film_exports.py)、[generation/render.py](../server/src/iclip/domains/generation/render.py)）**：发起导出时，后端提取主文件素材地址匹配血缘来源（`<video>` 匹配生成记录；`<audio>` 依次匹配本对话含分叉继承的生成记录、本对话含继承的上传、参考音频库未移除记录）创建 `whole_film` 生成任务入队。队列执行时才通过组合根回调读取实时 `final-cut/` 全目录，连同素材下载地址映射与预签名 OSS 上传地址经内网 HTTP（`final_cut.render_url`）提交渲染服务并轮询进度（总超时与签名有效期均为 6 小时）。
 - **独立 Node 渲染服务（[render/](../render/package.json)）**：运行于内网（无鉴权），只读挂载共享组件库目录（`RENDER_REGISTRY_ROOT`）：
   1. **入队前校验**：`POST /exports` 仅接收 `Content-Type: application/json`（其余返回 `415` 触发浏览器跨源预检拦截，防止渲染页内脚本访问回环端口伪造导出请求）；校验工程路径规范、主文件存在性、多语言值表合法性（复用前端 [composition/](../web/src/features/storyboard/final-cut/composition/film.ts) 的 `localizedHostValues` 与 `localizedVoices` 生成目标语言主文件）及素材域名白名单（`RENDER_ALLOWED_MEDIA_HOSTS`），不合规返回 `400`。
-  2. **单任务渲染流水线**：内存队列先进先出执行——按请求里的导出分辨率档位和主文件根上的画面宽高求渲染器预设（复用前端 [export-resolution.ts](../web/src/features/storyboard/final-cut/composition/export-resolution.ts) 的 `tierOutput`，判断交给导出库；画面导不出这一档报 `resolution-unsupported`）→ 写出临时工程并拷入 `vendor/` 公共目录 → 扫描未声明 `@font-face` 的字体族（复用 [font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)，缺失即报 `font-missing` 列出字体名，防止渲染器外联拉取或静默替换字体）→ 调用 `@hyperframes/core/lint` 的 `lintProject`（`studio` 规则）检查工程（有 error 报 `lint-failed`，仅 warning 记日志放行）→ 下载目标语言实际引用的素材并替换为本地路径 → 启动无头 Chrome 按 30 fps 渲染 MP4（选了和画面不同的档位时把预设交给渲染器，按预设尺寸直接出片，画面本身的宽高不变）并上传 OSS，完成后清理临时目录。
+  2. **单任务渲染流水线**：内存队列先进先出执行——依据请求的导出分辨率档位与主文件根元素的画布宽高计算渲染器预设（复用前端 [export-resolution.ts](../web/src/features/storyboard/final-cut/composition/export-resolution.ts) 的 `tierOutput`，兼容性由导出库预设规则判定；画布不支持目标档位时报错 `resolution-unsupported`）→ 写出临时工程并拷入 `vendor/` 公共目录 → 扫描未声明 `@font-face` 的字体族（复用 [font-families.ts](../web/src/features/storyboard/final-cut/composition/font-families.ts)，缺失即报 `font-missing` 列出字体名，防止渲染器外联拉取或静默替换字体）→ 调用 `@hyperframes/core/lint` 的 `lintProject`（`studio` 规则）检查工程（有 error 报 `lint-failed`，仅 warning 记日志放行）→ 下载目标语言实际引用的素材并替换为本地路径 → 启动无头 Chrome 按 30 fps 渲染 MP4（目标档位与画布原生档位不同时将预设传入渲染器，按目标预设尺寸直接输出且不改动画布自身宽高）并上传 OSS，完成后清理临时目录。
   3. **浏览器离线沙箱与重启兜底**：渲染浏览器经启动脚本将一切非回环请求导向本地拒绝代理并禁用 WebRTC 直连，彻底阻断外网与链路本地访问（被拦请求记 warn 日志，页面内按加载失败处理）。若渲染服务重启丢失内存任务，后端轮询自动将其标记为 `RENDER_LOST` 失败。
 
 ### 后端的持久化与迁移

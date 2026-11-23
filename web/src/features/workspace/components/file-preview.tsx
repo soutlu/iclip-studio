@@ -19,19 +19,19 @@ import { ToneIcon } from './tone-icon'
 type FilePreviewProps = {
   conversationId: string
   path: string
-  /** 文件列表里的这一项，给头部的大小和时间；文件已不在列表里时没有。 */
+  /** 文件列表中的元信息记录（用于头部展示文件大小与更新时间）；文件已从列表中移除时为 `undefined`。 */
   entry: ConversationFileOut | undefined
-  /** 这份文件归哪个页签（见 `fileOwnerOf`）：有就给一个直达它的按钮。 */
+  /** 该文件归属的工作台页签（见 `fileOwnerOf`）；存在时展示直达按钮。 */
   owner: FileOwner | undefined
-  /** 窄屏时回到文件列表；宽屏左边一直有目录树，不给。 */
+  /** 窄屏下返回文件列表的回调；宽屏左侧常驻目录树，不传入。 */
   onBack?: (() => void) | undefined
 }
 
-// 「打开 final-cut」「打开分镜」：英文名和中文之间留一个空格
+// 拼接直达按钮文案（如「打开 final-cut」「打开分镜」）：ASCII 标题前保留一个空格
 const openLabelOf = (title: string): string =>
   /^[\x21-\x7e]/.test(title) ? `打开 ${title}` : `打开${title}`
 
-/** 一份工作区文件的预览：头部是路径、直达页签的按钮和复制，内容按类型排进一张卡片。 */
+/** 工作区单文件预览视图：头部展示路径、直达页签入口与操作按钮，正文按文件类型在卡片内渲染。 */
 export function FilePreview({ conversationId, entry, onBack, owner, path }: FilePreviewProps) {
   const file = useWorkspaceFile(conversationId, path)
   const openArtifact = useOpenArtifact()
@@ -46,7 +46,7 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
     [content, kind],
   )
   const look = fileLookOf(path)
-  // 纯文本（口播文案之类）照正文排，不带行号；代码和 JSON 用原文查看器
+  // 纯文本（如口播文案）按正文排版且不显示行号；代码与 JSON 使用只读原文查看器
   const prose = kind === 'text' && !look.foldable
   const foldable = content !== undefined && !empty && kind !== 'markdown' && !prose
   const dir = dirName(path)
@@ -63,7 +63,7 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
   }
 
   return (
-    // 面板窄于 320 时头部和内容卡片不再跟着挤，多出来的部分由面板裁掉
+    // 面板宽度低于 320px 时维持最小宽度，溢出部分由外层面板裁切
     <div className="flex min-h-0 min-w-80 flex-1 flex-col">
       <div
         className={cn(
@@ -86,7 +86,7 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
             )}
           </h3>
           {entry === undefined ? null : (
-            // 只占剩下的地方：放不下时先让出位置，文件名再省略
+            // 仅占剩余空间：宽度不足时优先压缩元信息，再截断文件名
             <span className="ml-1 min-w-0 flex-1 truncate font-mono text-caption text-on-surface-faint">
               {formatBytes(entry.sizeBytes)} · {formatWhen(entry.updatedAt)}
             </span>
@@ -136,8 +136,8 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
           <PanelNotice
             hint={
               onBack === undefined
-                ? '该文件已被删除，请在左侧选择其他文件'
-                : '该文件已被删除，请返回文件列表查看其他文件'
+                ? '该文件已被删除；请在左侧选择其他文件'
+                : '该文件已被删除；请返回文件列表查看其他文件'
             }
             text="该文件已不存在"
           />

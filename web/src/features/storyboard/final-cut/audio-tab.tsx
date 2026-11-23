@@ -149,7 +149,7 @@ export function AudioTab({
     items.flatMap((item) => (isReady(item) && item.durationMs === null ? [item.url] : [])),
   )
   const peaks = useAudioPeaks(unmeasured)
-  /** 加进 final-cut 的样子；还加不了时是加不了的原因。 */
+  /** 构建待加入轨道的音频数据；尚不满足加入条件时返回不可加入的原因文案。 */
   const addable = (item: ConversationAudio): NewAudio | string => {
     if (!isReady(item))
       return item.status === 'failed'

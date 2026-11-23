@@ -3,9 +3,9 @@ import { cjkFontFaces } from './fonts'
 import { escapeAttribute, seconds } from './html'
 
 /**
- * final-cut 工程的主文件 `index.html`：工程目录里唯一的主时间线。根下面每个带时间的元素是时间线上的一个片段；
- * 文件可以由编辑器写，也可以手写。编辑器只改片段、根上的总长、画面尺寸和底色、`<html>` 上声明的字幕变量，
- * `<head>` 里只重算带标记的字体块（见 `withFontBlock`）和写死的画面尺寸（见 `withCanvasSize`），别的内容原样留着。
+ * final-cut 工程主文件 `index.html`：工程目录内唯一的主时间线，根节点下每个带时间属性的元素对应时间线上的一个片段。
+ * 文件可由编辑器维护亦可手工编辑。编辑器仅修改片段、根节点总时长、画布尺寸与底色及 `<html>` 上声明的字幕变量，
+ * `<head>` 中仅重算带标记的字体块（见 `withFontBlock`）与模板画布尺寸（见 `withCanvasSize`），其余内容保持原样。
  */
 export interface Canvas {
   width: number
@@ -530,14 +530,14 @@ export function withFontBlock(
 
 export const FILM_ID = 'film'
 
-/** 「新建 final-cut」按默认模版建工程时的画面尺寸：竖版。 */
+/** 「新建 final-cut」按默认模板创建工程时的初始画布尺寸（9:16 竖屏）。 */
 export const DEFAULT_CANVAS: Canvas = { width: 1080, height: 1920 }
 
-/** `<head>` 里的视口：画面多大。 */
+/** 生成 `<head>` 中与画布等大的 viewport 元标签。 */
 const viewportOf = ({ width, height }: Canvas) =>
   `<meta name="viewport" content="width=${width}, height=${height}">`
 
-/** 铺满画面的样式（`html,body`、根、`.component`）里写死的宽高。 */
+/** 生成铺满画布的尺寸声明（用于 `html,body`、合成根与 `.component` 规则）。 */
 const fillingOf = ({ width, height }: Canvas) => `width:${width}px;height:${height}px`
 
 const VIEWPORT = /<meta name="viewport" content="width=\d+, height=\d+">/
@@ -547,9 +547,9 @@ const FILLING = new RegExp(
 )
 
 /**
- * 主文件 `<head>` 里写死的画面尺寸换成 `canvas`：`emptyProject` 写的视口和铺满画面的几条样式。画面尺寸以根上的
- * `data-width` / `data-height` 为准，存出时按它重算这几处；手写的、写法和 `emptyProject` 不一样的 `<head>` 原样留着。
- * 没有 `</head>` 时原样返回。
+ * 将主文件 `<head>` 中由 `emptyProject` 写入的视口与全画布容器宽高同步为 `canvas`。
+ * 画布尺寸以根节点 `data-width` / `data-height` 为准，保存时据此重算；手写或结构不同的 `<head>` 原样保留。
+ * 缺少 `</head>` 标签时原样返回。
  */
 export function withCanvasSize(html: string, canvas: Canvas): string {
   const headEnd = html.search(/<\/head\s*>/i)
@@ -564,8 +564,8 @@ export function withCanvasSize(html: string, canvas: Canvas): string {
 const FILM_BACKGROUND = new RegExp(`\\n#${FILM_ID}\\{[^}\\n]*?background:([^;}\\n]+)`)
 
 /**
- * 主文件 `<head>` 里给根写的底色（`emptyProject` 写的是 black）；写法和 `emptyProject` 不一样、没写时是 null。
- * 编辑器选的底色写在根的行内样式上，盖过这一条。
+ * 提取主文件 `<head>` 中为根节点声明的背景色（`emptyProject` 默认写作 `black`）；未声明或格式不匹配时返回 `null`。
+ * 编辑器选择的底色写入根节点行内样式，优先级高于此规则。
  */
 export function headBackground(html: string): string | null {
   const headEnd = html.search(/<\/head\s*>/i)
@@ -573,8 +573,8 @@ export function headBackground(html: string): string | null {
 }
 
 /**
- * 新建工程时的主文件：根上的属性照空的 final-cut 写，`<head>` 里带动画库、摆放片段的样式和空的字体块。
- * `children` 是根下面一开始就有的元素，`durationMs` 是根上写的总长。
+ * 生成新建工程的初始主文件 HTML：包含合成根节点属性、动画库脚本、片段基础排版样式及空白字体块占位。
+ * `children` 为根节点初始子元素，`durationMs` 为根节点声明总时长。
  */
 export function emptyProject(
   canvas: Canvas,

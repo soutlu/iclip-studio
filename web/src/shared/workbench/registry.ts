@@ -64,15 +64,15 @@ export class ArtifactRegistry {
     return this.entries.filter(isStanding)
   }
 
-  /** 登记了 `create`、用户能新建的类型，按登记顺序。 */
+  /** 返回已配置 `create` 的可新建产物类型，按注册顺序排列。 */
   creatable(): CreatableEntry[] {
     return this.entries.filter((entry): entry is CreatableEntry => entry.create !== undefined)
   }
 
   /**
-   * 工作区里路径是 `path` 的文件归哪件产物（不看它在不在、只读时显不显示）：确切路径、模式、`anyPath` 依次认，
-   * 再认 `anyPath` 登记的 `dir` 目录，都不认时是 undefined。`document` 是这份文件就是产物本身的文档，
-   * 只因在 `dir` 目录里才归它时为 false。
+   * 解析工作区路径 `path` 归属的产物（不校验文件是否存在或只读可见性）：依次按精确路径、通配模式、`anyPath`
+   * 与 `anyPath.dir` 目录前缀匹配，未命中时返回 `undefined`。`document` 为 `true` 表示该文件即为产物主文档，
+   * 仅因位于 `dir` 目录下而归属时为 `false`。
    */
   ownerOf(
     path: string,
@@ -169,8 +169,8 @@ export class ArtifactRegistry {
 }
 
 /**
- * 工作台里有哪些产物，按页签的先后：按路径命中的文件、按 `anyPath` 命中的、工作区、工具帧。
- * `readOnly` 时去掉登记为 `hiddenWhenReadOnly` 的类型。
+ * 汇总当前工作台内的全部产物，按页签展示顺序排列：路径匹配文件、`anyPath` 产物、工作区、工具帧。
+ * `readOnly` 为 `true` 时过滤掉标记为 `hiddenWhenReadOnly` 的类型。
  */
 export const composeArtifacts = (
   registry: ArtifactRegistry,

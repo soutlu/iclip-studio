@@ -1,10 +1,10 @@
 import type { IconName } from '@/shared/icons'
 import { extensionOf } from '@/shared/lib/file-kind'
 
-/** 文件页的分类色调，对应 `--color-tone-*`。 */
+/** 文件页分类色调名称，对应 `--color-tone-*` token。 */
 export type Tone = 'copper' | 'ochre' | 'teal' | 'umber' | 'slate'
 
-/** `foldable`：原文按语法分得出段落，查看时能整段收起。 */
+/** 文件外观配置；`foldable` 表示原文具备语法结构，在只读查看器中支持代码折叠。 */
 export type FileLook = { icon: IconName; tone: Tone; foldable: boolean }
 
 const DOC: FileLook = { foldable: false, icon: 'file-doc', tone: 'umber' }
@@ -32,7 +32,7 @@ const LOOKS: Partial<Record<string, FileLook>> = {
   xml: CODE,
 }
 
-/** 按扩展名给图标和色调：HTML / 代码 copper，JSON ochre，Markdown teal，其余按纯文本 umber。 */
+/** 按文件扩展名映射图标与色调：HTML / 代码为 copper，JSON 为 ochre，Markdown 为 teal，其余按纯文本归为 umber。 */
 export const fileLookOf = (path: string): FileLook => LOOKS[extensionOf(path)] ?? DOC
 
 export const dirName = (path: string): string => {

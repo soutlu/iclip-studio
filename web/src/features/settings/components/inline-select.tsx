@@ -6,8 +6,8 @@ import { TooltipContent, TooltipRoot, TooltipTrigger, useTabTooltip } from '@/sh
 import { NO_HOVER_WASH_CLASS } from '@/shared/workbench'
 import { RAISE_ON_HOVER_CLASS } from './settings-surface'
 
-// 能改的、不能改的、失效警示三种格子共用的外形。左右各留 10 的内边距，再用等量的负外边距拉回去，
-// 里面的色点和文字才和表头的列名落在同一条竖线上
+// 可编辑、只读与失效警示单元格共用的基础几何样式：左右内边距 10px 并以等量负左外边距抵消，
+// 使内部色点与文本左缘与表头列名对齐。
 const CELL_CLASS =
   'inline-flex h-7.5 max-w-[calc(100%+10px)] min-w-0 -ml-2.5 items-center gap-1.5 rounded-sm px-2.5 text-ui ui-focus'
 
@@ -19,25 +19,25 @@ const WARNING_TRIGGER_CLASS = [
 ].join(' ')
 
 type InlineSelectProps = {
-  /** 触发按钮的无障碍名称，写全当前值，例如「小王的角色：管理员」。 */
+  /** 触发按钮的无障碍名称，须包含当前值（如「小王的角色：管理员」）。 */
   label: string
-  /** 触发按钮上显示的当前值（色点、图标、文字）；后面的 ⌄ 由这里加。 */
+  /** 触发按钮内展示的当前值（色点、图标、文本）；尾部展开箭头由组件统一渲染。 */
   face: ReactNode
   value: string
   onChange: (value: string) => void
-  /** 菜单里的单选项（`MenuRadioItem`）。 */
+  /** 下拉菜单中的单选项列表（`MenuRadioItem`）。 */
   children: ReactNode
-  /** 单选项下面的附加内容，例如失效说明。 */
+  /** 单选项下方的附加内容（如配置组失效提示）。 */
   footer?: ReactNode
-  /** 菜单的宽度类。 */
+  /** 下拉菜单的宽度样式类。 */
   menuClassName: string
-  /** 正在保存，暂时不能点。 */
+  /** 是否禁用交互（例如保存请求进行中）。 */
   disabled: boolean
-  /** 当前值有问题：触发按钮换成警示样子。 */
+  /** 当前值异常时启用警示态外观。 */
   warning?: boolean
 }
 
-/** 成员表里的行内选择：静止时只是文字和 ⌄，悬停浮起成白色小块，点开是左边缘对齐它的单选菜单。 */
+/** 成员表行内单选控件：静止态仅展示文本与展开箭头，悬停抬升为白块，点击后左对齐展开单选菜单。 */
 export function InlineSelect({
   children,
   disabled,
@@ -83,7 +83,7 @@ export function InlineSelect({
 }
 
 /**
- * 不能改的格子：看起来是静态文字，不带 ⌄、悬停不浮起。仍是能聚焦的按钮，悬停或用 Tab 移上来时提示原因。
+ * 不可编辑的成员表单元格：外观呈静态文本（无展开箭头与悬停抬升），仍保留可聚焦按钮语义，悬停或键盘聚焦时通过 Tooltip 说明不可编辑原因。
  */
 export function FixedCell({
   children,
@@ -98,7 +98,7 @@ export function FixedCell({
   return (
     <TooltipRoot {...rootProps}>
       <TooltipTrigger asChild {...triggerProps}>
-        {/* aria-disabled 而不是 disabled：按钮还要能悬停和聚焦，才看得到原因 */}
+        {/* 使用 aria-disabled 而非 disabled，保持悬停与键盘聚焦能力以展示不可编辑原因 */}
         <button aria-disabled="true" aria-label={label} className={CELL_CLASS} type="button">
           {children}
         </button>

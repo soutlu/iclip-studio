@@ -78,7 +78,7 @@ const chooserRows = (registry: ArtifactRegistry, artifacts: readonly Artifact[])
   return [...standing, ...fromFrames]
 }
 
-/** 工作台顶栏：48 高、没有底线，左边页签（或标题），右边 `end`。 */
+/** 工作台顶栏：高度 48px、无底部分隔线，左侧放置页签或标题，右侧渲染 `end`。 */
 function WorkbenchBar({ children, end }: { children: ReactNode; end: ReactNode }) {
   const chrome = useShellChrome()
   return (
@@ -112,16 +112,16 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
   const frames = useMemo(() => toolFrames(view.items), [view.items])
   const { openToken, requestOpen } = useWorkbenchOpenRequest()
   const layout = use(WorkbenchLayoutContext)
-  if (layout === null) throw new Error('WorkbenchHost 要在 WorkbenchLayoutProvider 里用')
+  if (layout === null) throw new Error('WorkbenchHost 必须在 WorkbenchLayoutProvider 内使用')
   const { compact, onCollapsedChange, onOpen, railSlot, sideBySide } = layout
   const previousOpenRef = useRef<{ selectedId: string | undefined; token: number }>({
     selectedId: undefined,
     token: openToken,
   })
-  // 顶栏右侧给当前页签放控件的地方（见 WorkbenchHeaderActions）
+  // 顶栏右侧供当前页签挂载自定义控件的插槽容器（见 WorkbenchHeaderActions）
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null)
   const asideRef = useRef<HTMLElement>(null)
-  // 用键盘关掉页签后，焦点落到接着选中的页签上
+  // 标记通过键盘关闭页签，以便在切换后将焦点移至新选中的页签
   const refocusTabRef = useRef(false)
 
   useEffect(() => {
@@ -277,7 +277,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
               <div
                 className={cn(
                   'flex shrink-0 items-center gap-1.5 empty:hidden',
-                  // 页签放了控件时和后面的交换、折叠之间隔一道淡出两头的细线
+                  // 页签插槽非空时，在其与右侧交换、折叠按钮之间绘制两端渐隐的竖向分隔线
                   actions !== null &&
                     'after:mx-0.5 after:h-4 after:w-px after:bg-linear-to-b after:from-transparent after:via-panel-line-strong after:to-transparent',
                 )}
@@ -294,14 +294,14 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
                   artifact.id === selected.id || isStandingType(registry, artifact.type),
               )
               .map((artifact) => {
-                // 不常驻的（委派任务）只在被选中时占着页签，可以关
+                // 非常驻产物（如委派任务）仅在选中时显示页签，并支持关闭
                 const closable = !isStandingType(registry, artifact.type)
                 return (
                   <TabsTrigger
                     aria-keyshortcuts={closable ? 'Delete' : undefined}
                     className={cn(
                       'gap-1.25',
-                      // 常驻页签按名字占宽、不缩；委派任务的名字长，最宽 256，整排放不下时只有它缩、名字省略
+                      // 常驻页签按标题自然占位不收缩；可关闭页签（如委派任务）限宽 256px，空间不足时仅该页签收缩并省略标题
                       closable && 'max-w-64 shrink',
                       creation.arrived(artifact.id) &&
                         'motion-safe:animate-in motion-safe:duration-(--dur-m) motion-safe:ease-(--ease-decel) motion-safe:fade-in motion-safe:zoom-in-92',
@@ -351,8 +351,8 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
 }
 
 /**
- * 能关的页签名字后面的 ×：只给鼠标点，读屏和键盘走页签上的 Delete 键（WAI-ARIA 页签模式的做法），
- * 所以不进无障碍树、不单独占焦点。页签按下鼠标就会选中，这里拦住不让它冒上去。
+ * 可关闭页签尾部的关闭图标：仅响应指针点击，键盘与屏幕阅读器通过页签上的 Delete 键关闭（遵循 WAI-ARIA Tabs 模式），
+ * 因此移出无障碍树且不获取焦点；同时阻止 mousedown / click 冒泡，避免关闭时误触发页签选中。
  */
 function CloseMark({ onClose }: { onClose: () => void }) {
   return (

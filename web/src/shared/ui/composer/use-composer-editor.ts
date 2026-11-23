@@ -161,8 +161,8 @@ export const useComposerEditor = ({
         })
       : nodeType(part.node.name).create(part.node.attrs)
 
-  // 一行一段，文字节点里不放换行符：ProseMirror 读回浏览器的原生编辑（打字、删字）时，
-  // 会把段落里的换行符改成空格，删一个字整段就塌成一行。
+  // 每行拆分为独立段落，文本节点内不保留换行符：ProseMirror 同步浏览器原生编辑（输入、删除）时，
+  // 会将段落内的换行符规范化为空格，导致删除字符时整段折叠为单行。
   const paragraphsOf = (parts: readonly AnyPart[]): PMNode[] => {
     let line: PMNode[] = []
     const lines = [line]
@@ -182,7 +182,7 @@ export const useComposerEditor = ({
     return lines.map((children) => nodeType('paragraph').create(null, children))
   }
 
-  // 两侧开放：首行接进插入点所在的段落，末行接上插入点后面的内容。
+  // 设置首尾 openDepth 为 1：首行并入插入点所在段落，末行衔接插入点之后的文本。
   const sliceOf = (parts: readonly AnyPart[]) => new Slice(Fragment.from(paragraphsOf(parts)), 1, 1)
 
   const mediaOf = (parts: readonly AnyPart[]) =>
@@ -392,7 +392,7 @@ export const useComposerEditor = ({
         ...(mount.clipboardTextParser === undefined
           ? {}
           : { clipboardTextParser: mount.clipboardTextParser }),
-        // 一行一段，复制成纯文字时段落之间只隔一个换行（ProseMirror 默认隔一个空行）。
+        // 按行分段存储，复制为纯文本时段落间仅以单个换行符分隔（覆盖 ProseMirror 默认的双换行）。
         clipboardTextSerializer: (slice) => slice.content.textBetween(0, slice.content.size, '\n'),
         dispatchTransaction(tr) {
           const next = view.state.apply(tr)

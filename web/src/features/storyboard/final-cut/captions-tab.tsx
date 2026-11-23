@@ -32,28 +32,27 @@ const NARRATION_LABEL = '旁白配音'
 const INSERT_NARRATION_LABEL = '插入配音与字幕'
 const AUDITION_FAILED_TEXT = '音色试听失败，请重试'
 
-/** 改一句字幕在语言 `locale` 里的字（见 `useFilmSession` 的 `setCaptionText`）。 */
+/** 修改指定字幕在目标语言 `locale` 下的文本（见 `useFilmSession` 的 `setCaptionText`）。 */
 export type CaptionTextChange = (id: string, text: string, locale: Language) => void
 
-/** 其它语言下的「翻译」：为什么现在不能点（给了就置灰，点了说明它），是不是在翻译中。 */
+/** 译文语言下的「翻译」控制：包含禁用原因与翻译进行中状态。 */
 type TranslateControl = {
   blocked: string | undefined
   translating: boolean
   onTranslate: () => void
 }
 
-/** 参考音频库里的一个音色：名字和试听用的地址。 */
+/** 参考音频库中的音色条目：标识、名称与试听音频地址。 */
 export type VoiceOption = { id: string; name: string; url: string }
 
-/** 音色读不出来的原因和重试。 */
+/** 音色列表加载失败原因及重试回调。 */
 type VoicesProblem = { message: string; onRetry: () => void }
 
 /**
- * 其它语言下的人声设置：`mode` 是现在的设置，`voice` 是记着的配音音色（null 是原声的音色），`voices` 是资料库里
- * 这种语言能用的音色，`voicesProblem` 是它们读不出来的原因；`dubbed` 是这种语言已经有配音片段，`generating` 是正在
- * 给几条素材片生成配音、`narrating` 是正在给几句旁白生成配音（没在生成时都是 0），`generateBlocked` 是现在为什么
- * 不能换音色生成配音，`redoBlocked` 是为什么不能重新生成。`lines` 是各句自己的选择（没有的跟着这种语言的音色），
- * `lineBlocked` 是各句为什么不能单独配音。
+ * 译文语言下的人声配置与控制：`mode` 为当前人声模式，`voice` 为该语言默认配音音色（`null` 表示沿用原声音色），
+ * `voices` 与 `voicesProblem` 为资料库可用音色及其加载错误；`dubbed` 标识是否已有配音片段，
+ * `generating` / `narrating` 分别记录在途的素材片配音数与旁白合成数（空闲时为 0）；
+ * `generateBlocked` / `redoBlocked` 为换音色生成与重新生成的禁用原因；`lines` 与 `lineBlocked` 为单句级覆盖配置及禁用原因。
  */
 export type VoiceControl = {
   mode: VoiceMode
@@ -68,20 +67,20 @@ export type VoiceControl = {
   lines: LineVoices
   lineBlocked: ReadonlyMap<string, string>
   onMode: (mode: VoiceMode) => void
-  /** 把这种语言的音色换成 `voice`（null 是原声的音色），重配跟着它的句子（已有配音时换掉）。 */
+  /** 切换当前语言默认音色（`null` 表示原声音色）并重配跟随默认音色的字幕句（已有配音时替换）。 */
   onGenerate: (voice: string | null) => void
-  /** 要配音的句子各用各的音色重新生成。 */
+  /** 按各句当前配置的音色重新生成全部待配音句子的配音。 */
   onRedo: () => void
   /**
-   * 改一句的选择（null 是跟着这种语言的音色）：选音色时只重配这一句（实际用的音色没变、已有配音时只改选择），
-   * 不配音时删掉它的配音。
+   * 修改单句配音配置（传 `null` 恢复跟随整体音色）：选定音色时仅重配该句（实际音色未变且已有配音时仅更新配置），
+   * 设为不配音时移除对应配音片段。
    */
   onLine: (caption: string, line: LineVoice | null) => void
 }
 
 /**
- * 原文下的「旁白配音」：`open` 是展开着没有，`voices` 是资料库里的音色（还在读时是 undefined），`voicesProblem` 是
- * 它们读不出来的原因；`generating` 是有配音正在生成，`blocked` 是文案、音色以外为什么现在不能插入。
+ * 原文语言下的「旁白配音」面板控制：`open` 为展开状态，`voices` 与 `voicesProblem` 为资料库音色列表及加载错误；
+ * `generating` 标识正在合成旁白，`blocked` 为除文案与音色外的外部阻断原因。
  */
 export type NarrationControl = {
   open: boolean
@@ -90,59 +89,57 @@ export type NarrationControl = {
   voicesProblem: VoicesProblem | undefined
   generating: boolean
   blocked: string | undefined
-  /** 用资料库里的音色 `voice` 把 `text` 合成旁白，合成好后连同一句字幕插进时间线。 */
+  /** 使用资料库音色 `voice` 将 `text` 合成为旁白，完成后连同对应字幕一并插入时间线。 */
   onInsert: (text: string, voice: string) => void
 }
 
 type CaptionsTabProps = {
-  /** 这个页签是不是正显示着；被藏起来时停止试听音色。 */
+  /** 当前页签是否可见；隐藏时自动停止音色试听。 */
   active: boolean
-  /** 提示一句话（试听失败时）。 */
+  /** 操作提示回调（如试听失败时提示）。 */
   onNotice: (message: string) => void
-  /** 其它语言下的「翻译」；原文时是 undefined，不显示。 */
+  /** 译文语言下的「翻译」控制；原文语言时为 `undefined`（不展示）。 */
   translate: TranslateControl | undefined
-  /** 其它语言下的人声设置；原文时是 undefined，不显示。 */
+  /** 译文语言下的人声配置；原文语言时为 `undefined`（不展示）。 */
   voice: VoiceControl | undefined
-  /** 原文下的「旁白配音」；其它语言时是 undefined，不显示。 */
+  /** 原文语言下的「旁白配音」控制；译文语言时为 `undefined`（不展示）。 */
   narration: NarrationControl | undefined
   captions: readonly CaptionClip[]
-  /** 「组件文字」那一段（显示着的语言、选中的片段和这里共用）。 */
+  /** 「组件文字」视图配置（与当前展示语言及选中片段共享状态）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
-  /** 显示着的语言：其它语言时文字框里是这种语言的字，旁边写着原文。 */
+  /** 当前展示语言：译文语言下输入框编辑译文，并在下方附带原文对照。 */
   locale: ShownLocale
-  /** 最上面的语言切换和添加，和工具条上的是同一份。 */
+  /** 顶部语言切换与添加控制，与底部工具条共享同一份状态。 */
   locales: LocaleControls
-  /** 编辑器里选中的片段的编号。 */
+  /** 编辑器当前选中的片段 ID 集合。 */
   selected: ReadonlySet<string>
-  /** 选中的片段在这里对应什么（见 `captionsFocus`）：列表里标出哪几句，选中变了时切到哪一段。 */
+  /** 当前选中片段在字幕页签内的聚焦映射（见 `captionsFocus`）：决定高亮句及自动切换视图。 */
   focus: { lines: ReadonlySet<string>; view: CaptionsView | undefined }
-  /** 为什么现在不能在播放头处加一句；给了就把按钮置灰，点了说明它。 */
+  /** 无法在播放头处新增字幕时的禁用原因；非空时置灰按钮并在点击时提示。 */
   addBlocked: string | undefined
-  /** 正在识别几个视频片段的字幕；没在识别时是 0。 */
+  /** 正在执行语音识别的视频片段数量；空闲时为 0。 */
   recognizing: number
-  /** 为什么现在不能识别字幕；给了就把「识别字幕」置灰，点了说明它。 */
+  /** 无法触发字幕识别时的禁用原因；非空时置灰「识别字幕」并在点击时提示。 */
   recognizeBlocked: string | undefined
   onRecognize: () => void
-  /** 字幕写法不对时的原因，显示在最上面。 */
+  /** 字幕文件结构异常提示，置顶展示。 */
   problem: string | undefined
-  /** 在播放头处加一句，答复新字幕的编号；没加上时是 undefined。 */
+  /** 在播放头处新增一句字幕并返回新字幕 ID；未成功添加时返回 `undefined`。 */
   onAdd: () => Promise<string | undefined>
   onText: CaptionTextChange
   onRemove: (id: string) => void
-  /** 点了一句的时间：选中它、播放头跳到它的开始。 */
+  /** 点击字幕时间按钮：选中该字幕并将播放头跳转至其起始时刻。 */
   onPick: (caption: CaptionClip) => void
 }
 
 /**
- * 「字幕」页签。顶行左边是语言小块（见 `LocaleBar`），右边在「字幕」和「组件文字」（见 `ComponentTexts`）两段之间
- * 切换，各写着有几个。下一行是动作：其它语言下的「翻译」（两段里还没翻的一起翻），「字幕」段里还有识别字幕、原文下的
- * 「旁白配音」（展开见 `NarrationPanel`）和最右边在播放头处加一句的「+」。「字幕」段下面是按开始时间排的字幕卡片，
- * 每句能直接改字、删掉，点时间选中它、跳到它的开始。编辑器里选中的字幕、选中的配音片段配的那句标成当前这一句；
- * 刚加的那一句焦点进它的文字框。识别中写着在识别几个片段。其它语言下改的是这种语言的字，「字幕」段上面多一块人声
- * 设置（见 `VoiceCard`）。
+ * 「字幕」页签：顶栏左侧为语言切换（见 `LocaleBar`），右侧在「字幕」与「组件文字」（见 `ComponentTexts`）间切换并附数量统计；
+ * 次行为操作栏：包含译文语言的「翻译」（统一翻译两视图未译项）、「字幕」视图的「识别字幕」、原文语言的「旁白配音」（展开见 `NarrationPanel`）
+ * 及右侧在播放头处新增字幕的「+」。列表按起始时间排序，支持直接编辑、删除及点击时间定位；
+ * 选中字幕或对应配音片段时高亮当前句，新增字幕自动聚焦输入框；译文语言下顶部额外展示人声配置卡（见 `VoiceCard`）。
  *
- * 两段跟着选中走：选中变了的那一下，选中字幕或配音片段时切到「字幕」，选中有文字的贴片、场景时切到「组件文字」；
- * 之后用户自己切了另一段就听用户的，等下一次选中变了再切。
+ * 视图随选区变化自动跟随：选中字幕或配音时切至「字幕」，选中含文字贴片/场景时切至「组件文字」；
+ * 用户手动切换视图后保持选择，直至下次选区发生变化。
  */
 export function CaptionsTab({
   active,
@@ -282,8 +279,8 @@ export function CaptionsTab({
 }
 
 /**
- * 字幕操作一行最右边的「+」：在播放头处加一句。悬停提示写这个名字；加不了时置灰，提示和点击都说明原因
- * （和工具条上置灰的按钮一样，见 `editor-toolbar.tsx` 的 `Tool`）。
+ * 字幕操作栏最右侧的「+」按钮：在播放头处新增一句字幕。悬停展示功能名；不可用时置灰并在悬停及点击时说明原因
+ * （交互行为与工具条禁用按钮一致，见 `editor-toolbar.tsx` 的 `Tool`）。
  */
 function AddLineButton({ blocked, onAdd }: { blocked: string | undefined; onAdd: () => void }) {
   const [hint, setHint] = useState(false)
@@ -320,15 +317,14 @@ const GENERATING_TEXT = '正在生成配音，请等待生成完成'
 
 const ORIGINAL_VOICE = '原声'
 
-/** 有配音正在生成（素材片的或旁白的）时为什么不能点。 */
+/** 存在在途配音生成任务（素材片或旁白）时返回阻断文案。 */
 const busyOf = ({ generating, narrating }: Pick<VoiceControl, 'generating' | 'narrating'>) =>
   generating + narrating > 0 ? GENERATING_TEXT : undefined
 
 /**
- * 其它语言下的人声设置，一张卡片：标题行是「人声」、「保留原声」，有配音时右边多一个「重新生成」（要配音的句子各用
- * 各的音色）；下面是 AI 配音的音色小块：「原声」（从素材片的原声里取）在前，后面是资料库里的音色（能试听）。保留原声
- * 和选中的音色二选一，当前的高亮。点一个音色：这种语言已有用它配好的配音时只切过去，不然把它当这种语言的音色、重配
- * 跟着它的句子（生成完自动用上，已有配音时换掉）。生成中写着在给几条素材片、几句旁白配音。
+ * 译文语言下的人声配置卡片：顶栏包含「人声」标题、「保留原声」及已有配音时的「重新生成」按钮；
+ * 下方列出可选 AI 配音音色（「原声」居首，随后为支持试听的资料库音色）。「保留原声」与所选音色互斥高亮。
+ * 选择某音色时：若当前语言已有该音色的既有配音则直接切入配音模式，否则将其设为当前语言默认音色并重配跟随默认音色的句子。
  */
 function VoiceCard({
   voice,
@@ -427,14 +423,14 @@ function VoiceCard({
 type VoiceChipProps = {
   name: string
   picked: boolean
-  /** 为什么现在不能点；给了就置灰，点了说明它。 */
+  /** 不可选时的禁用原因；非空时置灰并在点击时提示。 */
   blocked: string | undefined
   onPick: () => void
-  /** 资料库里的音色能试听；「原声」没有。 */
+  /** 资料库音色的试听控制；「原声」不提供试听。 */
   audition?: { playing: boolean; onToggle: () => void }
 }
 
-/** 一个音色小块：前面是试听钮（有的话），后面是音色的名字，点名字选它。 */
+/** 单个音色胶囊：左侧为可选试听按钮，右侧为音色名称选择按钮。 */
 function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) {
   return (
     <span className={cn('wf-voice-chip', picked && 'is-picked')}>
@@ -468,10 +464,10 @@ const FOLLOW = 'follow'
 const ORIGINAL = 'original'
 const UNVOICED = 'unvoiced'
 const UNVOICED_NAME = '不配音'
-// 记着的音色已不在资料库里（移除了，或还没读到）
+// 已选音色已从资料库移除或尚未加载时的兜底展示名
 const LIBRARY_VOICE_NAME = '资料库音色'
 
-/** 菜单里一项的值 → 这句的选择（null 是跟着这种语言的音色）。 */
+/** 将菜单选项值转换为单句配音覆盖配置（`null` 表示跟随整体音色）。 */
 const lineVoiceOfValue = (value: string): LineVoice | null =>
   value === FOLLOW
     ? null
@@ -479,7 +475,7 @@ const lineVoiceOfValue = (value: string): LineVoice | null =>
       ? { dub: false }
       : { voice: value === ORIGINAL ? null : value.slice('voice:'.length) }
 
-/** 这句的选择 → 菜单里打勾的那一项。 */
+/** 将单句配音覆盖配置映射为菜单选中值。 */
 const valueOfLineVoice = (line: LineVoice | undefined): string =>
   line === undefined
     ? FOLLOW
@@ -490,9 +486,8 @@ const valueOfLineVoice = (line: LineVoice | undefined): string =>
         : `voice:${line.voice}`
 
 /**
- * 一句字幕在其它语言下的配音小块。保留原声时只是一个「原声」标签；AI 配音时写着这句现在的音色（跟着这种语言的
- * 音色时是它，原声的音色写「原声」），不配音写「不配音」，自己选过的和跟着的样子不一样。点开菜单选：「跟随整体
- * 音色」、「原声」、资料库里的音色、「不配音」，现在的选择打勾。这句配不了音、有配音在生成时置灰，点了说明原因。
+ * 译文语言下单句字幕的配音状态控件：保留原声时渲染只读「原声」标签；AI 配音模式下展示本句实际音色或「不配音」
+ * （显式单独配置与跟随整体音色在视觉上区分），点击弹出单选菜单切换配置；不可配音或生成中置灰并说明原因。
  */
 function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceControl }) {
   const [open, setOpen] = useState(false)
@@ -534,7 +529,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
       }}
       open={open}
     >
-      {/* 和工具条的下拉一样：菜单开着时不出提示 */}
+      {/* 菜单展开时抑制 Tooltip，避免与菜单重叠 */}
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <MenuTrigger asChild>
           <TooltipTrigger asChild>{chip}</TooltipTrigger>
@@ -564,7 +559,7 @@ function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceContro
   )
 }
 
-/** 「字幕」那一段：原文下展开的「旁白配音」（见 `NarrationPanel`）、识别中的说明和字幕列表。 */
+/** 「字幕」子视图：包含原文下展开的「旁白配音」面板（见 `NarrationPanel`）、识别进度提示与字幕列表。 */
 function CaptionsView({
   active,
   onNotice,
@@ -592,9 +587,9 @@ function CaptionsView({
   | 'voice'
   | 'narration'
 > & {
-  /** 标成当前的那几句。 */
+  /** 当前高亮标注的字幕 ID 集合。 */
   lines: ReadonlySet<string>
-  /** 焦点要进的那一句（刚加的）。 */
+  /** 待自动聚焦输入框的字幕 ID（用于新建后立即编辑）。 */
   focusing: string | null
   onFocused: () => void
 }) {
@@ -642,9 +637,8 @@ const NO_NARRATION_VOICE_TEXT =
 const NO_NARRATION_TEXT = '旁白文案为空，无法插入旁白配音；请先输入文案'
 
 /**
- * 「旁白配音」展开的一块：两行的文案框，资料库里的音色小块（能试听，点名字选它，默认选第一个），最下面一行左边是选着
- * 的音色，右边是「插入配音与字幕」（有配音在生成时写「合成中…」）。文案空着、超字数、没有音色、或者 `blocked` 时
- * 按钮置灰，点了说明原因。
+ * 「旁白配音」展开面板：包含两行文案输入框、可试听的资料库音色列表（默认选中首个音色）以及底部所选音色与「插入配音与字幕」按钮
+ * （合成期间显示「合成中…」）。文案为空、超出字数上限、无可用音色或存在 `blocked` 时置灰并在点击时说明原因。
  */
 function NarrationPanel({
   narration,
@@ -730,17 +724,17 @@ type CaptionRowProps = {
   caption: CaptionClip
   locale: ShownLocale
   current: boolean
-  /** 焦点要进这一句的文字框（刚加的那一句）。 */
+  /** 是否在挂载后自动聚焦并全选该句输入框（用于新建后立即编辑）。 */
   focus: boolean
   onFocused: () => void
   onText: CaptionTextChange
   onRemove: () => void
   onSeek: () => void
-  /** 其它语言下的人声设置：右上多一个这句的配音小块（见 `LineVoiceChip`）；原文时是 undefined。 */
+  /** 译文语言下的人声配置（右上角附单句配音控件，见 `LineVoiceChip`）；原文语言为 `undefined`。 */
   voice: VoiceControl | undefined
 }
 
-/** 一句字幕：起止时间、这句的配音（其它语言下）、删除钮和文字框。 */
+/** 单条字幕卡片：展示起止时间、单句配音控件（译文语言）、删除按钮与字幕文本框。 */
 function CaptionRow({
   caption,
   locale,
@@ -795,7 +789,7 @@ function CaptionRow({
 
 type CaptionTextFieldProps = {
   caption: CaptionClip
-  /** 显示着的语言；换了语言时调用方要换一个文字框（按语言给 `key`），没写的字留在原来的语言里。 */
+  /** 当前展示语言；切换语言时调用方应以语言代码作为 `key` 重建输入框，确保未提交草稿写回原语言。 */
   locale: ShownLocale
   onText: CaptionTextChange
   className: string
@@ -805,8 +799,8 @@ type CaptionTextFieldProps = {
 }
 
 /**
- * 一句字幕的文字框（「字幕」页签和「属性」共用）：回车是换行，停下 300 毫秒再写进去（见 `usePausedCommit`）。
- * 其它语言下框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文。
+ * 字幕文本输入框（「字幕」页签与「属性」共用）：回车换行，停顿 300 毫秒后提交变更（见 `usePausedCommit`）。
+ * 译文语言下编辑该语言译文（未译时为空并展示占位提示），下方附带原文对照。
  */
 export function CaptionTextField({ caption, locale, onText, ...field }: CaptionTextFieldProps) {
   const { draft, fieldProps } = usePausedCommit((text) => onText(caption.id, text, locale.code))

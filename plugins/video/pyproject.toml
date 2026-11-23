@@ -1,7 +1,7 @@
 [project]
 name = "iclip-video-plugins"
 version = "0.1.0"
-description = "视频业务的 agent 插件（导演工程、视频理解、镜头组表、视频拆解、取帧与出图）与共用的视频格式代码；插件要装可选依赖 runtime，后端只用视频格式代码，不装运行时"
+description = "视频业务 Agent 插件（导演工程、视频理解、镜头组表、视频拆解、取帧与出图）及共用视频格式模块；运行插件需安装可选依赖 runtime，后端仅复用视频格式模块，不依赖运行时"
 requires-python = ">=3.13"
 dependencies = [
     "pydantic>=2.13.5",
@@ -66,13 +66,13 @@ reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnknownParameterType = false
 reportMissingTypeStubs = false
-# 已经不需要的豁免注释要删掉，与 ruff 的 RUF100 一致。
+# 禁止保留已失效的类型忽略注释，与 ruff 的 RUF100 规则保持一致。
 reportUnnecessaryTypeIgnoreComment = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-# 单个用例的墙钟上限：卡住就报错并打印栈，不让整条门禁挂死。
+# 单个测试用例的墙钟超时上限：超时即中止并输出调用栈，避免门禁阻塞。
 timeout = 180
 markers = [
     "unit: 纯逻辑与进程内契约（默认门禁）",

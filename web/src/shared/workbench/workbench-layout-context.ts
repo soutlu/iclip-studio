@@ -6,7 +6,7 @@ export interface WorkbenchLayout {
   collapsed: boolean
   onCollapsedChange: (value: boolean) => void
   onOpen: (reason: 'automatic' | 'explicit') => void
-  /** 工作台收起成竖条时竖条里给宿主放页签图标和「+」的元素（见 `WorkbenchRail`）；没收成竖条时是 null。 */
+  /** 工作台收起为竖轨时供宿主渲染页签图标与新建按钮的插槽元素（见 `WorkbenchRail`）；展开态为 `null`。 */
   railSlot: HTMLElement | null
 }
 

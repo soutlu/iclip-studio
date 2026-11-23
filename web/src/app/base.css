@@ -157,8 +157,8 @@
     0 18px 40px -8px color-mix(in srgb, var(--n0) 16%, transparent),
     0 0 0 1px var(--color-panel-line-strong);
   --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 92%, transparent);
-  /* 工作台浮起面板与其中控件的圆角。不放进 globals.css 的圆角标尺：那里没被工具类用到的值（如 --radius-3xl）
-     运行时取不到，这两个目前主要在样式表里用 var() 引用，放在这里保证一直有值 */
+  /* 工作台浮起面板与内部控件圆角。未放入 globals.css 的 @theme 圆角标尺（未被 Tailwind 工具类引用的主题变量不会生成运行时声明）；
+     这两个变量主要在样式表中通过 var() 引用，定义在此处以确保运行时始终有效。 */
   --radius-panel: 18px;
   --radius-control: 9px;
 
@@ -349,8 +349,8 @@
   --color-accent-7: #2a9fb0; /* 青 */
   --color-accent-8: #5c6bd6; /* 靛蓝 */
 
-  /* 代码着色：只用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
-     三色相避开品牌绿、错误红与警告琥珀；guide 画缩进参考线。 */
+  /* 代码着色：仅用于 JSON 等代码正文的键、字符串、数字与 true / false / null，标点仍用 on-surface-faint；不表达状态，不做底色。
+     三色相避开品牌绿、错误红与警告琥珀。 */
   --color-code-key: #2e5aa6;
   --color-code-string: #8a4a8f;
   --color-code-literal: #1d6f7d;

@@ -325,7 +325,7 @@ export function narrationDubs(
   })
 }
 
-/** 要加进 final-cut 的一个配音片段（放在哪一行由会话按配音行的规则找，见 `dubRowFor`）。 */
+/** 待加入轨道的配音片段（落位行由会话按配音行规则决定，见 `dubRowFor`）。 */
 export type NewDub = Pick<
   AudioClip,
   'label' | 'src' | 'start' | 'duration' | 'mediaStart' | 'playbackRate'

@@ -28,9 +28,8 @@ import { servePreviewPages } from './preview-page'
 import { renderWithProviders } from './render'
 import { WithHeaderSlot } from './workbench-header-slot'
 
-// final-cut 编辑器各组用例（final-cut-editor-*.test.tsx）共用的准备。每个用例文件自己写
-// `vi.mock('mediabunny', ...)`、`vi.setConfig`，并把 `setUpEditorCase` / `tearDownEditorCase`
-// 交给自己的 `beforeEach` / `afterEach`
+// final-cut 编辑器集成测试用例（final-cut-editor-*.test.tsx）共用测试夹具。
+// 各测试文件需自行配置 `vi.mock('mediabunny', ...)` 与 `vi.setConfig`，并在 `beforeEach` / `afterEach` 中调用 `setUpEditorCase` / `tearDownEditorCase`
 
 export const CONVERSATION = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d'
 export const URL_A = 'https://media.test/take-a.mp4'
@@ -67,7 +66,7 @@ export const takes = [
   }),
 ]
 
-/** 同一组的另外两条素材片：一条没有音轨，一条读不出有没有音轨。 */
+/** 同镜头组的另外两条素材片：一条无音轨，一条音轨检测失败。 */
 export const quietTakes = [
   makeGenerationJob({
     id: TAKE_SILENT,
@@ -105,7 +104,7 @@ export const keepRealSaveDelay = () => {
   saveDelay = {}
 }
 
-/** 挂上编辑器，不等它打开。 */
+/** 挂载编辑器组件（不等待初始化完成）。 */
 const renderEditor = async (records: GenerationJob[] = takes) => {
   serveGenerations(records)
   const editor = (
@@ -126,8 +125,8 @@ const renderEditor = async (records: GenerationJob[] = takes) => {
 }
 
 /**
- * 打开编辑器，等它打开。工作区里还没有工程时先放一份按默认模版建的空工程（版本 1），和在工作台里新建过
- * final-cut 以后一样；新建本身见 `create-final-cut.test.ts`。
+ * 挂载编辑器并等待其初始化就绪。若工作区尚无工程，预先写入一份按默认模板生成的空工程（版本 1），
+ * 与工作台新建 final-cut 后的初始态一致；新建流程本身由 `create-final-cut.test.ts` 覆盖。
  */
 export const openEditor = async (records: GenerationJob[] = takes) => {
   if (mockProjectMain(CONVERSATION) === undefined)
@@ -137,19 +136,19 @@ export const openEditor = async (records: GenerationJob[] = takes) => {
   return opened
 }
 
-/** 编辑器的根节点：点在编辑器的空白处时焦点落在它上面。 */
+/** 获取编辑器根节点：点击编辑器空白处时焦点落于此元素。 */
 export const editorRoot = () => screen.getByRole('group', { name: 'final-cut 编辑器' })
 
-// 预览页换成跑着真逻辑的替身（播放器是测试替身），编辑器经消息和它来往
+// 预览页运行真实通信与控制逻辑，内部播放器替换为测试替身，编辑器通过 postMessage 协议与之交互
 export let previewPages: ReturnType<typeof servePreviewPages>
 
-/** 交给每个用例文件的 `beforeEach`：保存等待换回 10 毫秒，换上预览页替身。 */
+/** 供测试文件 `beforeEach` 调用：恢复 10ms 保存延迟并启动预览页测试替身。 */
 export const setUpEditorCase = () => {
   saveDelay = { saveDelayMs: 10 }
   previewPages = servePreviewPages({ run: true })
 }
 
-/** 交给每个用例文件的 `afterEach`：停掉预览页替身。 */
+/** 供测试文件 `afterEach` 调用：停止并清理预览页测试替身。 */
 export const tearDownEditorCase = () => previewPages.stop()
 
 type PreviewPlayerElement = HTMLElement & {
@@ -158,7 +157,7 @@ type PreviewPlayerElement = HTMLElement & {
   muted: boolean
   loop: boolean
   iframeElement: HTMLIFrameElement
-  /** 播放器页面里运行库时钟的时刻（秒），改它模拟在放时的时钟（见 `hyperframes-player.ts`）。 */
+  /** 播放器内部运行库时钟当前时刻（秒），供用例改写以模拟播放推进（见 `hyperframes-player.ts`）。 */
   runtimeTime: number
 }
 
@@ -200,7 +199,7 @@ export const twoVideos = () =>
     { width: 720, height: 1280 },
   )
 
-/** 字幕场景里的一句：`owner` 是它属于的视频片段，手动加的是 null。 */
+/** 字幕场景单句测试数据：`owner` 为所属视频片段 ID，手动添加时为 `null`。 */
 export type SceneLine = Pick<
   CaptionClip,
   'id' | 'start' | 'duration' | 'variable' | 'text' | 'owner'
@@ -223,8 +222,8 @@ export const CAPTION_CANVAS = { width: 720, height: 1280 }
 export const SCENE_FILE = `final-cut/${CAPTIONS_PATH}`
 
 /**
- * 工作区里放一份工程：主文件按 `clips` 写；有 `lines` 时照编辑器用 SDK 写的样子加上字幕宿主、变量和场景文件；
- * 给了 `voiceModes` 时写进主文件根上的人声设置。
+ * 向模拟工作区写入测试工程：按 `clips` 生成主文件；传入 `lines` 时按编辑器 SDK 格式补齐字幕宿主、变量声明与字幕场景文件；
+ * 传入 `voiceModes` 时在主文件根节点写入人声模式配置。
  */
 export const putFilm = async (clips: FilmClip[], lines: SceneLine[] = [], voiceModes?: string) => {
   const main = await openComposition(mainFile(clips, CAPTION_CANVAS))
@@ -242,7 +241,7 @@ export const putFilm = async (clips: FilmClip[], lines: SceneLine[] = [], voiceM
   putMockProjectMain(CONVERSATION, main.serialize())
 }
 
-/** 存下来的字幕场景里各句的「字、开始、时长（秒）、属于哪个片段」，按文件里的先后。 */
+/** 解析已落盘字幕场景中各句的 `[文本, 开始秒数, 时长秒数, 所属片段 ID]`（保持文件顺序）。 */
 export const savedSceneLines = () =>
   [
     ...new DOMParser()
@@ -258,7 +257,7 @@ export const savedSceneLines = () =>
     element.getAttribute('data-caption-of'),
   ])
 
-/** 存下来的主文件根上声明的字幕变量的默认值。 */
+/** 提取已落盘主文件根节点声明的字幕变量默认值列表。 */
 export const savedVariableTexts = () =>
   (
     JSON.parse(

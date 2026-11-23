@@ -22,15 +22,15 @@
   | `CREDENTIAL_ENCRYPTION_KEYS` | 必填 | 运行时用来加密模型 API Key 和 MCP 请求头的 Fernet 密钥。生成命令：<br>`uv run --project runtime python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"` |
   | `RUNTIME_APP_KEY` | 必填 | 视频后端访问运行时的密钥（不少于 32 个字符，与 `runtime.yaml` 中 `apps.video.key_env` 对应） |
   | `RUNTIME_INTERNAL_TOKEN` | 必填 | 运行时回调后端、以及视频插件调用后端内部接口共用的令牌（不少于 32 个字符） |
-  | `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` | 写了 `object_store` 段时必填 | 对象存储凭证 |
-  | `PRODUCT_CATALOG_DATABASE_URL` | 写了 `product_catalog` 段时必填 | 产品资料库只读连接串 |
-  | 各配置组的媒体 key | 开启媒体生成时必填 | 变量名由 `config.yaml` 的 `model_groups` 指定，见[配置组](#配置组) |
+  | `OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET` | 配置 `object_store` 段时必填 | 对象存储凭证 |
+  | `PRODUCT_CATALOG_DATABASE_URL` | 配置 `product_catalog` 段时必填 | 产品资料库只读连接串 |
+  | 各配置组的媒体密钥 | 开启媒体生成时必填 | 变量名由 `config.yaml` 的 `model_groups` 指定，见[配置组](#配置组) |
 
 - 准备两份本地配置文件（均不入 Git 仓库，修改后需重启服务）：
-  1. `server/configs/config.yaml`：视频后端运行配置。写法照占位配置 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml)（各可选段全开的完整样例）与[配置模型](../server/src/iclip/config/models.py)，用不到的功能删掉对应段或字段即可。本地开发时：
-     - `runtime.url` 填 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)）；
-     - 需要调试成片导出时写 `final_cut.render_url: http://localhost:8080`；
-     - `final_cut.preview_origin` 是 `final-cut` 预览沙箱源地址，格式为 `http(s)://主机[:端口]`（不带路径，规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)，不写则编辑器预览无法加载）。本地填与主应用不同的另一回环主机名（同端口）：如用 `http://localhost:3013` 打开应用则填 `http://127.0.0.1:3013`，反之亦然。
+  1. `server/configs/config.yaml`：视频后端运行配置。结构参考占位配置 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml)（各可选段全开的完整样例）与[配置模型](../server/src/iclip/config/models.py)，按需删除未启用功能的对应配置段或字段即可。本地开发时：
+     - `runtime.url` 设为 `http://localhost:7790`（见[调运行时](architecture.md#调运行时)）；
+     - 需调试成片导出时配置 `final_cut.render_url: http://localhost:8080`；
+     - `final_cut.preview_origin` 为 `final-cut` 预览沙箱源地址，格式为 `http(s)://主机[:端口]`（不带路径，规则见 [conventions「预览域名」](../contract/conventions.md#final-cut-工程与预览域名)，未配置时编辑器预览无法加载）。本地配置为与主应用不同的另一回环主机名（同端口）：如用 `http://localhost:3013` 访问应用则设为 `http://127.0.0.1:3013`，反之亦然。
   2. `server/configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制一份，将里面的 `http://server:7788` 全部替换成 `http://localhost:7788`，并按需开启要用到的插件配置段。
 
 ### 3. 执行数据库迁移并启动后端服务
@@ -74,15 +74,15 @@ CREATE DATABASE iclip OWNER iclip;
 ### 3. 准备服务器部署目录
 在服务器上新建部署目录，放入以下文件与子目录：
 - `compose.yaml` 与 `upgrade.sh`：从仓库 `deploy/compose.yaml` 与 [deploy/upgrade.sh](../deploy/upgrade.sh) 复制，保留 `upgrade.sh` 可执行权限供[升级](#升级)使用。
-- `.env`：只放 compose 用的变量与密钥的值——镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口、`RENDER_ALLOWED_MEDIA_HOSTS`（开启成片导出时填本系统 OSS 域名和上游视频生成域名，多个域名用逗号分隔）、`DATABASE_URL`、`AUTH_SECRET`、OSS 凭证、各配置组的媒体 key（见[配置组](#配置组)），以及运行时所需的 `RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`。
+- `.env`：仅存放 Compose 编排变量与敏感凭证——镜像仓库 `ACR_REGISTRY`、`ACR_NAMESPACE`、镜像版本号 `IMAGE_TAG` 与 `RUNTIME_IMAGE_TAG`（见[升级](#升级)）、对外端口 `WEB_PORT`、`RENDER_ALLOWED_MEDIA_HOSTS`（启用成片导出时填写本系统 OSS 域名和上游视频生成域名，多个域名以逗号分隔）、`DATABASE_URL`、`AUTH_SECRET`、OSS 凭证、`PRODUCT_CATALOG_DATABASE_URL`（启用 `product_catalog` 时）、各配置组的媒体密钥（见[配置组](#配置组)），以及运行时所需的 `RUNTIME_APP_KEY`、`RUNTIME_INTERNAL_TOKEN`、`CREDENTIAL_ENCRYPTION_KEYS`。
   - **重要提醒**：请将 `CREDENTIAL_ENCRYPTION_KEYS` 与数据库备份分开妥善保管；一旦丢失，数据库里已保存的所有模型 API Key 和 MCP 配置都将无法解密，只能重新录入。
-- `configs/config.yaml`：写法照 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml) 与[配置模型](../server/src/iclip/config/models.py)。部署时注意：
-  - `runtime.url` 填 `http://runtime:7790`；
-  - 若服务器是与 OSS 同地域的阿里云 ECS，建议写 `object_store.internal_endpoint` 走内网高速读写；
-  - 媒体生成各项服务的 key 与视频网关 `model_id` 按组写在 `model_groups` 段，开启媒体生成必须写 `default` 组：见[配置组](#配置组)；
-  - 按需开启高清版（写 `media_generation.video.enhance` 段）与千问音频能力（三项独立开关，写出子段即启用）：素材片字幕识别写 `media_generation.subtitle`；生成背景音乐写 `media_generation.music`；`final-cut` 配音与旁白写 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省）；
-  - 开启成片导出：写 `final_cut.render_url: http://render:8080`，`.env` 里同时配好 `RENDER_ALLOWED_MEDIA_HOSTS`；
-  - 开启 `final-cut` 预览沙箱：写 `final_cut.preview_origin: https://<预览子域名>`（不写则编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
+- `configs/config.yaml`：结构参考 [server/scripts/contract/config.yaml](../server/scripts/contract/config.yaml) 与[配置模型](../server/src/iclip/config/models.py)。部署时注意：
+  - `runtime.url` 设为 `http://runtime:7790`；
+  - 若服务器是与 OSS 同地域的阿里云 ECS，建议配置 `object_store.internal_endpoint` 走内网高速读写；
+  - 媒体生成各项服务的密钥环境变量名与视频网关 `model_id` 按组配置在 `model_groups` 段，启用媒体生成时必须配置 `default` 组（见[配置组](#配置组)）；
+  - 按需启用高清版（配置 `media_generation.video.enhance` 段）与千问音频能力（三项独立开关，配置对应子段即启用）：素材片字幕识别配置 `media_generation.subtitle`；生成背景音乐配置 `media_generation.music`；`final-cut` 配音与旁白配置 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省略）；
+  - 启用成片导出：配置 `final_cut.render_url: http://render:8080`，并在 `.env` 中配置 `RENDER_ALLOWED_MEDIA_HOSTS`；
+  - 启用 `final-cut` 预览沙箱：配置 `final_cut.preview_origin: https://<预览子域名>`（未配置时编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。
 - `configs/runtime.yaml`：从 [deploy/runtime.example.yaml](../deploy/runtime.example.yaml) 复制生成，回调地址保持 `http://server:7788`（插件启用条件见[内部接口与视频插件包](architecture.md#内部接口与视频插件包)，接入其他系统见运行时项目的 `docs/apps.md`）。
 - 两份配置的 `ops.log_format` 都设为 `json`：默认的 Console 格式会省略例行的访问日志（见[日志](architecture.md#4-日志)）。
 - `components/`：外置组件库挂载目录（镜像内不包含组件库，按下方[发布组件库](#发布组件库)上传）。
@@ -99,7 +99,7 @@ curl http://localhost/api/healthz
 运行时的迁移命令须加 `--no-deps`（`compose.yaml` 中 `runtime` 依赖 `server` 健康，不加会提前拉起后端）。
 
 ### 5. 设置首个 root 与管理员账号
-- **方式一（SSO 自动授权）**：在 `config.yaml` 的 `sso` 段写 `root_email: <管理员邮箱>`，该邮箱首次通过 SSO 登录时自动获得 `root` 角色。
+- **方式一（SSO 自动授权）**：在 `config.yaml` 的 `sso` 段配置 `root_email: <管理员邮箱>`，该邮箱首次通过 SSO 登录时自动获得 `root` 角色。其余成员首次通过 SSO 登录默认仅获得只读角色 `viewer`，须由 `root` 或管理员在网页「设置 → 用户」中为其分配写权限角色（如 `editor`）与配置组。
 - **方式二（命令行手动授权）**：
   ```bash
   # 授予最高管理员（包含 Agent 与模型供应商配置权限）：
@@ -149,7 +149,7 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 
 每个版本标签 `vX.Y.Z` 均包含全部四个镜像（见[发版与镜像发布](release.md)）。服务器 `.env` 通过 `IMAGE_TAG`（`server / web / render`）和 `RUNTIME_IMAGE_TAG`（`runtime`）分开记录版本，支持独立或同时升级；具体升级范围与需核对的配置文件见该版本 GitHub Release 的上线前摘要。
 
-升级前先对照新版本标签上的 [compose.yaml](../deploy/compose.yaml)、[配置模型](../server/src/iclip/config/models.py) 与 [runtime.example.yaml](../deploy/runtime.example.yaml) 补齐新增配置项，再在部署目录执行 `./upgrade.sh`：
+升级前先对照新版本标签上的 [compose.yaml](../deploy/compose.yaml)、[占位配置样例](../server/scripts/contract/config.yaml)、[配置模型](../server/src/iclip/config/models.py) 与 [runtime.example.yaml](../deploy/runtime.example.yaml) 补齐新增配置项（若存在已迁入 `config.yaml` 的旧环境变量，须同步从 `.env` 中清理），再在部署目录执行 `./upgrade.sh`：
 
 | 用法 | 升级范围 |
 |---|---|
@@ -206,16 +206,16 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 ### 修改线上配置
 
 - **修改模型、Agent、技能库与 MCP 服务**：直接在网页后台修改并保存/发布，下一次对话运行自动加载最新配置，无需重启容器（已有对话锁定的 Agent 版本不受影响）。
-- **只修改 `configs/*.yaml`**：执行 `docker compose restart server`（改的是 `runtime.yaml` 则 `restart runtime`）。配置文件是挂载进容器的，`docker compose up -d` 认为容器没变、不会重启它，进程读不到新内容。
-- **修改 `.env`**（无论是否同时改了 `configs/*.yaml`）：执行 `docker compose up -d` 重建容器才能生效（`docker compose restart` 不会重新读取 `.env`）。
+- **仅修改 `configs/*.yaml`**：执行 `docker compose restart server`（修改 `runtime.yaml` 则执行 `docker compose restart runtime`）。因配置文件以卷挂载方式注入容器，`docker compose up -d` 不会重建或重启未变更的容器，进程无法加载新配置。
+- **修改 `.env`**（无论是否同时修改 `configs/*.yaml`）：执行 `docker compose up -d` 重建容器方可生效（`docker compose restart` 不会重新读取 `.env`）。
 
 ### 配置组
 
-配置组用于按用户隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置写在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中选组绑定，用户归哪个组由 `root` 在网页设置里选。`default` 是保留组名，即默认组在媒体生成里用的那一组，写法与校验和其他组相同，但不出现在网页的可选组里，大模型密钥也不能绑到它：
+配置组用于按用户隔离媒体生成与大模型调用的密钥及上游视频网关 `model_id`（用户归组与定组规则见 [CONTEXT.md「配置组」](CONTEXT.md#配置组model-group)）。媒体生成组配置维护在 `configs/config.yaml` 顶层 `model_groups` 段（环境变量名指向 `.env` 中的实际密钥），大模型密钥在网页后台「模型与供应商」中按组绑定，用户归属配置组由 `root` 在网页「设置 → 用户」中分配。`default` 为保留组名，对应默认组在媒体生成中使用的配置，格式与校验规则与其他组相同，但不出现在后台可选配置组中，大模型密钥亦不可绑定至该组：
 
 ```yaml
 model_groups:
-  default:                                          # 没选组的人用这一组；开启媒体生成时必填
+  default:                                          # 未分组用户使用此组；启用媒体生成时必填
     video_api_key_env: VIDEO_API_KEY
     subtitle_api_key_env: QWEN_SUBTITLE_API_KEY
     music_api_key_env: QWEN_MUSIC_API_KEY
@@ -227,25 +227,25 @@ model_groups:
       video-enhance: <默认的 model_id>
   mkt:                                              # 组名：小写字母开头，仅含小写字母、数字和下划线
     video_api_key_env: VIDEO_API_KEY_MKT            # 该组视频密钥环境变量名（必填）
-    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 开启字幕识别时必填
-    music_api_key_env: QWEN_MUSIC_API_KEY_MKT       # 开启生成背景音乐时必填
-    speech_api_key_env: QWEN_SPEECH_API_KEY_MKT     # 开启配音时必填
+    subtitle_api_key_env: QWEN_SUBTITLE_API_KEY_MKT # 启用字幕识别时必填
+    music_api_key_env: QWEN_MUSIC_API_KEY_MKT       # 启用生成背景音乐时必填
+    speech_api_key_env: QWEN_SPEECH_API_KEY_MKT     # 启用配音时必填
     video_models:                                   # 产品模型名 → 该组视频网关 model_id
       vendor-b-seedance-2-0: <该组的 model_id>
       vendor-b-seedance-2-5: <该组的 model_id>
       wan3.0-video-prime: <该组的 model_id>
-      video-enhance: <该组的 model_id>              # 键取 media_generation.video.enhance.model；仅开启高清版时填写
+      video-enhance: <该组的 model_id>              # 键取 media_generation.video.enhance.model；仅启用高清版时填写
 ```
 
-- **启动期严格校验**：组名格式非法时后端启动即报错退出。开启媒体生成后，缺 `default` 组，或任一组（含 `default`）的 `video_models` 键集合与 `allowed_models`（含已开启的 `enhance.model`）不完全一致、已开启功能（视频必开，字幕、配乐、配音看 `media_generation` 里有没有对应子段）的 `*_api_key_env` 没写或所指环境变量为空，同样启动即报错退出；未开启媒体生成时不校验各组的 key 与 `video_models`。只写 `default` 时没有可选的组，全员在默认组。
-- **上线新组三步**（先绑好大模型密钥再放人进组，防止组内成员因后台尚未绑定密钥而被拦截发消息）：
-  1. 在 `config.yaml` 新增组，在 `.env` 填入该组各媒体密钥，执行 `docker compose up -d`；
-  2. 使用 `root` 登录网页后台「模型与供应商」，为该组需用到的各供应商添加密钥并选定该配置组；
-  3. 使用 `root` 在网页设置里给用户选这个组，即时生效，无需重启。
+- **启动期严格校验**：组名格式非法时后端启动即报错退出。启用媒体生成后，若缺少 `default` 组，或任一组（含 `default`）的 `video_models` 键集合与 `allowed_models`（含已启用的 `enhance.model`）不一致、已启用服务（视频必启；字幕、配乐、配音视 `media_generation` 是否配置对应子段而定）的 `*_api_key_env` 未声明或所指环境变量为空，同样在启动阶段报错退出；未启用媒体生成时不校验各组的密钥与 `video_models`。仅配置 `default` 组时，后台无可选配置组，全员归属默认组。
+- **上线新组三步**（先绑定大模型密钥再分配用户，避免成员因缺少密钥而无法发送消息）：
+  1. 在 `config.yaml` 新增配置组，在 `.env` 填入该组各媒体密钥，执行 `docker compose up -d`；
+  2. 使用 `root` 登录网页后台「模型与供应商」，为该组所需供应商添加密钥并绑定至该配置组；
+  3. 使用 `root` 在网页「设置 → 用户」中为成员分配该配置组，即时生效、无需重启。
 - **日常变更与安全删组**：
-  - **换密钥**：换媒体密钥直接改 `.env` 变量值并 `docker compose up -d`（在途轮询即用新密钥）；换大模型密钥直接在网页后台编辑对应密钥，无需重启。
-  - **删组**：先在网页设置里把该组的人改到别的组或清空（回默认组）→ 待在途任务归零（`SELECT count(*) FROM iclip.generation_jobs WHERE model_group = '<组名>' AND status IN ('pending', 'submitting', 'submitted');` 返回 `0`）→ 再从 `config.yaml` 与 `.env` 移除该组并执行 `docker compose up -d`。漏改的人所在组已不在配置里，发消息、出片会报错并提示联系管理员（不回退默认组），给他重新选组即可。
-  - **按用户查组**：`SELECT email, username, model_group FROM iclip.users WHERE model_group IS NOT NULL ORDER BY model_group;` 列出已选组的用户（不在结果里的都在默认组）；`GET /users` 的 `modelGroup` 字段同样给出每个人的组。
+  - **换密钥**：更换媒体密钥直接修改 `.env` 变量值并执行 `docker compose up -d`（在途轮询自动使用新密钥）；更换大模型密钥直接在网页后台编辑对应密钥，无需重启。
+  - **删组**：先在网页「设置 → 用户」中将该组成员调整至其他组或清空（恢复默认组）→ 待在途任务归零（`SELECT count(*) FROM iclip.generation_jobs WHERE model_group = '<组名>' AND status IN ('pending', 'submitting', 'submitted');` 返回 `0`）→ 再从 `config.yaml` 与 `.env` 移除该组并执行 `docker compose up -d`。若仍有遗漏成员绑定已删除的组，其发起消息或生成请求时将报错并提示联系管理员重新分配（不回退默认组）。
+  - **按用户查组**：`SELECT email, username, model_group FROM iclip.users WHERE model_group IS NOT NULL ORDER BY model_group;` 列出已分配配置组的用户（未列出者均在默认组）；`GET /users` 的 `modelGroup` 字段同样返回各成员的配置组。
 
 ### 换密钥加密钥匙
 

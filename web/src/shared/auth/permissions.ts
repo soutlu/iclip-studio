@@ -27,6 +27,6 @@ export const hasPermission = (user: PermissionHolder, permission: Permission): b
 export const canAuditAll = (user: PermissionHolder): boolean =>
   hasPermission(user, PERMISSION.usersManage) && hasPermission(user, PERMISSION.agentRead)
 
-/** 「设置 → 用户」：读用户、改角色要 `users:manage`，选配置组要 `model:manage`。 */
+/** 「设置 → 用户」访问权限：读取成员列表与修改角色需 `users:manage`，调整模型配置组需 `model:manage`。 */
 export const canManageMembers = (user: PermissionHolder): boolean =>
   hasPermission(user, PERMISSION.usersManage) && hasPermission(user, PERMISSION.modelManage)

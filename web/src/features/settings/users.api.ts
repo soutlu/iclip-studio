@@ -14,7 +14,7 @@ const PAGE_SIZE = 200
 
 const userPath = (id: string) => `/users/${encodeURIComponent(id)}`
 
-/** 全部用户的完整记录（角色、配置组、部门），按接口返回的顺序。 */
+/** 拉取全部用户的完整信息（含角色、配置组与部门），保持接口返回顺序。 */
 export const useAllUsers = () =>
   useQuery({
     queryFn: ({ signal }) =>
@@ -33,7 +33,7 @@ export const useAllUsers = () =>
     queryKey: ALL_USERS_KEY,
   })
 
-/** 改一个用户的写操作：成功后先把返回的记录写进列表，再让所有 `/users` 查询（含用户名册）失效。 */
+/** 单用户变更 mutation 封装：成功后先用返回记录更新本地列表缓存，再使所有 `/users` 查询（含用户名册）失效。 */
 const useUserWrite = <Variables extends { userId: string }>(
   request: (variables: Variables) => Promise<{ user: ManagedUser }>,
 ) => {

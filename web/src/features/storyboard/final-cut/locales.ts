@@ -2,7 +2,7 @@ import type { JsonPatchOp } from '@hyperframes/sdk'
 import { UserFacingError } from '@/shared/api/client'
 
 /**
- * final-cut 能加的语言，各有一份值表 `locales/<code>.json`。`name` 是界面上写的名字，`tag` 是语言按钮上的代码。
+ * final-cut 支持添加的语言列表（各自对应 `locales/<code>.json` 值表）：`name` 为界面展示名，`tag` 为按钮缩写代码。
  */
 export const LOCALES = [
   { code: 'zh', name: '中文', tag: 'ZH' },
@@ -15,29 +15,29 @@ export const LOCALES = [
 export type LocaleCode = (typeof LOCALES)[number]['code']
 
 /**
- * 原文：视频自带的语言，什么语言都行，不用声明。主文件根上声明的变量默认值就是原文的字，没有值表。编辑器里
- * 原文的语言写作 null，导出接口里也是 null。
+ * 原文标识：代表视频原生语言（无需预先声明）。主文件根节点变量的默认值即原文内容，不单独生成值表文件。
+ * 编辑器内部与导出接口均以 `null` 表示原文。
  */
 export const SOURCE_LOCALE = null
 
-/** 界面上原文的名字，也是语言切换里原文按钮上的字。 */
+/** 原文在界面与语言切换按钮上的显示名称。 */
 export const SOURCE_NAME = '原文'
 
-/** 编辑器里的一种语言：原文，或能加的一种语言。 */
+/** 编辑器可选语言：原文或已支持的译文语言代码。 */
 export type Language = LocaleCode | typeof SOURCE_LOCALE
 
 const localeNamed = (code: LocaleCode) =>
   LOCALES.find((locale) => locale.code === code) ?? LOCALES[0]
 
-/** 界面上一种语言的名字：原文写「原文」，别的写 `LOCALES` 里的名字。 */
+/** 获取语言的界面显示名称：原文返回「原文」，其余返回 `LOCALES` 中定义的名称。 */
 export const languageName = (code: Language): string =>
   code === SOURCE_LOCALE ? SOURCE_NAME : localeNamed(code).name
 
 const HAN = /\p{Script=Han}/u
 
 /**
- * 把一个词接进中文句子：西文、数字的词和挨着的汉字之间留一个空格，挨着标点、句首句尾不留；中文的词不留。例如
- * `phraseAround('正在提交', '720P', '导出…')` 是「正在提交 720P 导出…」。
+ * 将词组嵌入中文句式：西文或数字词组与相邻汉字间补一个空格，邻接标点或位于句首句尾时不补；中文词组不补空格。
+ * 例如 `phraseAround('正在提交', '720P', '导出…')` 返回「正在提交 720P 导出…」。
  */
 export function phraseAround(before: string, word: string, after: string): string {
   const gap = (neighbor: string) => (!HAN.test(word) && HAN.test(neighbor) ? ' ' : '')
@@ -45,31 +45,30 @@ export function phraseAround(before: string, word: string, after: string): strin
 }
 
 /**
- * 把语言名接进中文句子（空格规则见 `phraseAround`）。例如 `phraseWith('导出', 'en', '版')` 是「导出 English 版」，
- * `phraseWith('导出', 'zh', '版')` 是「导出中文版」。
+ * 将语言名称嵌入中文句式（空格规则见 `phraseAround`）。例如 `phraseWith('导出', 'en', '版')` 返回「导出 English 版」，
+ * `phraseWith('导出', 'zh', '版')` 返回「导出中文版」。
  */
 export const phraseWith = (before: string, code: LocaleCode, after: string): string =>
   phraseAround(before, localeNamed(code).name, after)
 
-/** 语言值表在工程里的路径（相对工程根）。 */
+/** 语言值表在工程内的相对路径。 */
 export const localePath = (code: LocaleCode) => `locales/${code}.json`
 
-/** 工程里的路径 `path`（相对工程根）是哪种语言的值表；不是值表、或是不认识的语言时是 undefined。 */
+/** 根据工程内相对路径 `path` 识别对应语言代码；非值表路径或不支持的语言返回 `undefined`。 */
 export const localeOfPath = (path: string): LocaleCode | undefined =>
   LOCALES.find((locale) => localePath(locale.code) === path)?.code
 
-/** 一份值表里的值：变量 id → 这种语言的值（照官方的变量值文件，值可以是任意 JSON）。 */
+/** 语言值表映射：变量 ID → 对应语言取值（遵循官方变量值文件规范，值可为任意 JSON 类型）。 */
 export type LocaleValues = Readonly<Record<string, unknown>>
 
-/** 一句字幕（读变量 `variable`）在值表 `values` 里的字；`values` 是 null（原文）或没写这句时是 null。 */
+/** 读取字幕变量 `variable` 在值表 `values` 中的译文；`values` 为 `null`（原文）或未收录该键时返回 `null`。 */
 export const translationOf = (values: LocaleValues | null, variable: string): string | null => {
   const value = values === null || !Object.hasOwn(values, variable) ? undefined : values[variable]
   return typeof value === 'string' ? value : null
 }
 
 /**
- * 编辑器当前显示的语言：原文，或工程里有值表的一种语言和它的值表。字幕的原文（`CaptionClip.text`）不跟着
- * 语言变。
+ * 编辑器当前展示语言状态：原文，或工程内已存在的语言代码及其值表（字幕原文 `CaptionClip.text` 保持不变）。
  */
 export type ShownLocale =
   { code: typeof SOURCE_LOCALE; values: null } | { code: LocaleCode; values: LocaleValues }
@@ -77,8 +76,8 @@ export type ShownLocale =
 export const SOURCE_SHOWN: ShownLocale = { code: SOURCE_LOCALE, values: null }
 
 /**
- * 一句字幕在 `shown` 这种语言下的样子：`text` 是要编辑的字（其它语言里还没翻时是空的），`untranslated` 是其它
- * 语言里还没翻、显示的是原文。
+ * 计算字幕在当前展示语言 `shown` 下的编辑态：`text` 为待编辑内容（未翻译时为空串），
+ * `untranslated` 标识当前是否因尚未翻译而回退显示原文。
  */
 export const captionIn = (
   shown: ShownLocale,
@@ -89,7 +88,7 @@ export const captionIn = (
   return { text: translation ?? '', untranslated: translation === null }
 }
 
-/** 值表的内容：一个 JSON 对象。不是这样时说明原因。 */
+/** 解析语言值表 JSON 字符串，校验其为普通 JSON 对象，否则抛出面向用户的格式错误。 */
 export function parseLocaleValues(content: string, code: LocaleCode): Record<string, unknown> {
   let parsed: unknown
   try {
@@ -108,7 +107,7 @@ export function parseLocaleValues(content: string, code: LocaleCode): Record<str
   return { ...(parsed as Record<string, unknown>) }
 }
 
-/** 值表存出的样子：缩进 2 格，键按字符编码排，结尾换行；同样的值总是写出同样的字。 */
+/** 序列化语言值表：2 空格缩进、按键码点排序、末尾换行，保证相同数据输出确定性文本。 */
 export function localeValuesFile(values: LocaleValues): string {
   const entries = Object.entries(values).toSorted(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0,
@@ -123,7 +122,7 @@ export function localeValuesFile(values: LocaleValues): string {
 
 const pointer = (id: string) => `/${id.replaceAll('~', '~0').replaceAll('/', '~1')}`
 
-/** 值表补丁的路径 `path` 改的是哪个变量；不是顶层的键时抛错。 */
+/** 从 JSON Patch 路径提取顶层变量 ID；非顶层路径时抛出错误。 */
 export const valueIdOf = (path: string): string => {
   if (!path.startsWith('/') || path.indexOf('/', 1) !== -1)
     throw new Error(`值表的补丁只改顶层的键：${path}`)
@@ -131,12 +130,12 @@ export const valueIdOf = (path: string): string => {
 }
 
 /**
- * 打开着的一份值表，和 SDK 会话一样用补丁记改动：`set` 每改一个键报一次 `onChange`（补丁和反向补丁，只动顶层的键），
- * `applyPatches` 应用撤销重做的补丁、不报。`batch` 里抛出时值退回进去之前的样子。
+ * 打开的语言值表会话（与 SDK 会话采用相同的 JSON Patch 变更模型）：`set` 每次修改顶层键触发 `onChange`（含正向与反向补丁），
+ * `applyPatches` 静默应用撤销/重做补丁，`batch` 在回调抛错时回滚至进入前快照。
  */
 export type ValueTable = {
   values: () => LocaleValues
-  /** 把 `id` 的值改成 `value`，null 是从值表里去掉；没变时什么都不报。 */
+  /** 设置 `id` 对应值为 `value`（传入 `null` 表示删除该键）；无变更时不触发回调。 */
   set: (id: string, value: string | null) => void
   batch: (change: () => void) => void
   applyPatches: (patches: readonly JsonPatchOp[]) => void

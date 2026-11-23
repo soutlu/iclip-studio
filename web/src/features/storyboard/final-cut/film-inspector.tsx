@@ -55,55 +55,55 @@ type CaptionStyleChange = (
 ) => void
 
 type Props = {
-  /** 时间线上选中的片段。 */
+  /** 时间线上当前选中的片段列表。 */
   selected: readonly FilmClip[]
-  /** final-cut 里所有的片段：改时间时按它们算落在哪。 */
+  /** 工程内的全部片段，用于调整时长时计算邻接边界。 */
   clips: readonly FilmClip[]
   catalog: ComponentCatalog
-  /** 画面尺寸：字幕的默认字号和能设的范围按它算。 */
+  /** 画布尺寸，用于计算字幕默认字号与可选字号范围。 */
   canvas: Canvas
   sourceMs: SourceLength
-  /** 视频素材的镜头读取状态：「原片截取」在素材总长读到之前写它读到哪了。 */
+  /** 视频素材关键帧读取状态，「原片截取」在素材总时长就绪前据此展示加载状态。 */
   keyframes: KeyframeStates
-  /** 音频片段素材的波形读取状态。 */
+  /** 音频片段素材波形读取状态。 */
   audioPeaks: ReadonlyMap<string, PeaksState>
-  /** 这个地址的素材确认没有声音；有声音、还不知道时是 false。 */
+  /** 指定素材地址是否已确认无音轨；有声或尚未检测完成时返回 `false`。 */
   silentSource: (src: string) => boolean
-  /** 这个地址的出片叫什么（镜头组、原作、版本）；不是出片时是 undefined。 */
+  /** 根据素材地址查询出片显示名（镜头组、原作与版本）；非出片素材返回 `undefined`。 */
   sourceName: (src: string) => string | undefined
   onHide: (id: string, hidden: boolean) => void
-  /** 删掉选中的片段，和按 Delete 一样。 */
+  /** 删除当前选中片段（等效快捷键 Delete）。 */
   onRemove: () => void
-  /** 取消选中，和按 Esc、点时间线空白处一样。 */
+  /** 取消选中（等效按 Esc 或点击时间线空白处）。 */
   onDeselect: () => void
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
-  /** 「原片截取」开始或结束拖动：拖动中的 Esc 归它（只取消这一次拖动），快捷键先不接。 */
+  /** 「原片截取」拖拽起止通知：拖拽期间 Esc 交由其取消手势，暂不触发全局快捷键。 */
   onGesture: (active: boolean) => void
-  /** 把组件或块的片段 `id` 的可填项取值整个换成 `values`。 */
+  /** 整体替换组件或场景片段 `id` 的可填项取值。 */
   onValues: (id: string, values: Values) => void
-  /** 改片段 `id` 上的几个属性（null 是去掉），算一步撤销。 */
+  /** 更新片段 `id` 的属性集合（传入 `null` 表示移除属性），记为一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
-  /** 显示着的语言：字幕的「内容」改的是这种语言的字。 */
+  /** 当前展示语言：字幕「内容」输入框编辑该语言对应文本。 */
   locale: ShownLocale
-  /** 把字幕 `id` 在一种语言里的字改成 `text`，算一步撤销。 */
+  /** 修改字幕 `id` 在指定语言下的文本，记为一步撤销。 */
   onCaptionText: CaptionTextChange
-  /** 改字幕 `id` 的字体、字色、字号（null 是回到默认），所有语言共用，算一步撤销。 */
+  /** 修改字幕 `id` 的字体、字色或字号（`null` 表示恢复默认），所有语言共用并记为一步撤销。 */
   onCaptionStyle: CaptionStyleChange
-  /** 组件或块的片段的文字字段分语言（「内容与样式」用），`bindings` 是各片段随语言的字段。 */
+  /** 组件或场景片段的多语言文字配置（供「内容与样式」使用），`bindings` 记录各片段跟随语言的字段映射。 */
   texts: Omit<TextLocale, 'locale' | 'bindings'> & {
     bindings: ReadonlyMap<string, LocaleBindings>
   }
-  /** 分离音频、合并回视频、联动、对齐口型、选中另一段。 */
+  /** 音画分离、合并、联动、口型对齐与定位控制。 */
   soundControls: SoundControls
-  /** 焦点进出「属性」里输数值的框：在里面时 Esc 归输入框，放弃刚输入的。 */
+  /** 「属性」内数值输入框焦点状态变更：输入态下 Esc 交由输入框放弃当前草稿。 */
   onTextEditing: (editing: boolean) => void
-  /** 选中的是一个有声片段时它的「智能调音」；别的时候是 undefined。 */
+  /** 选中单个有声片段时的「智能调音」状态与操作；其余情况为 `undefined`。 */
   smartMix: SmartMix | undefined
-  /** 点「内容与样式」标题右边的语言小块：打开「字幕」页签。 */
+  /** 点击「内容与样式」标题右侧语言标签时切换至「字幕」页签。 */
   onOpenCaptions: () => void
 }
 
-/** 片段的种类；配音片段（含旁白）写「AI 配音」，组件或块的片段按条目在组件库里的种类写，「其他」片段不写。 */
+/** 获取片段类型展示名：配音（含旁白）记作「AI 配音」，贴片/场景按组件库分类名展示，「其他」类型不展示。 */
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
   if (isDubClip(clip)) return 'AI 配音'
@@ -121,7 +121,7 @@ function KindLabel({ clip, catalog }: { clip: FilmClip; catalog: ComponentCatalo
 
 type EmblemTone = 'dark' | 'music' | 'original' | 'dub' | 'caption'
 
-/** 头部左边的图标方块：图标和底色按片段的种类，和导航、轨道头的图标一致。 */
+/** 属性头部左侧的片段类型徽标配置（图标与底色与侧栏导航及轨道行头保持一致）。 */
 const emblemOf = (
   clip: FilmClip,
   catalog: ComponentCatalog,
@@ -161,22 +161,21 @@ const NO_PEAKS: PeaksState = { kind: 'loading' }
 const NO_BINDINGS: LocaleBindings = {}
 
 /**
- * 侧栏「属性」页签的内容：选中一个片段时显示它的名字、种类和可以改的几张卡片；选中多个时有一块说明；没选中时是
- * 一句怎么用的说明。
+ * 侧栏「属性」页签：单选片段时展示名称、类型与各属性编辑卡；多选时展示选中清单提示；未选中时展示引导空态。
  */
 export function FilmInspector({ selected, ...rest }: Props) {
   const [only] = selected
-  // 倍速浮层挂在这里：浮层里按的键和「属性」里别的控件一样不当快捷键
+  // 倍速浮层挂载于此节点内，使浮层按键与「属性」内其余控件一致不触发编辑器快捷键
   const [root, setRoot] = useState<HTMLDivElement | null>(null)
   return (
-    // data-inspector：编辑器按它认出「属性」里的控件，那里按的键不当快捷键
+    // data-inspector 供编辑器键盘分派识别「属性」区域控件，避免误触发快捷键
     <div className="wf-inspector" data-inspector ref={setRoot}>
       {only === undefined ? (
         <div className="wf-inspector-empty">
           <span aria-hidden="true" className="wf-inspector-empty-icon">
             <Icon decorative name="final-cut-cursor-select" size="md" />
           </span>
-          <p>点选时间线上的片段，调整画面、声音或字幕</p>
+          <p>点选时间线上的片段，可调整画面、声音或字幕</p>
         </div>
       ) : selected.length > 1 ? (
         <>
@@ -206,11 +205,10 @@ export function FilmInspector({ selected, ...rest }: Props) {
 }
 
 /**
- * 选中一个片段：头部是种类图标、名字、种类和时长（字幕写起止），右边隐藏、删除、取消选中，视频片段还有「分离音频」，
- * 分离出来的原声有「合并回视频」；字幕没有隐藏（只能在行头上整行隐藏）。下面一张卡一件事。视频片段、音频片段是「原片截取」
- * 和「声音与节奏」，组件或块的片段是「显示时长」和「内容与样式」，字幕是「显示时长」和「内容与样式」，「其他」片段
- * 只有「显示时长」。分离过原声的视频片段把「声音与节奏」换成「画面变速」和原声去处的一张，分离出来的原声最上面多
- * 一张同步卡。有声片段最下面是「智能调音」。
+ * 单片段属性面板：顶栏包含类型徽标、名称、类型、时长（字幕显示起止时刻）及隐藏/静音、删除、取消选中与音画分离/合并操作
+ * （字幕无单句隐藏，需通过轨道行头整行隐藏）。主体按片段类型组合卡片：
+ * 音视频展示「原片截取」「声音与节奏」（已分离原声的视频改为「画面变速」与原声去向卡，分离原声顶部额外展示同步卡），
+ * 有声片段底部附「智能调音」；贴片、场景与字幕展示「显示时长」与「内容与样式」；「其他」类型仅展示「显示时长」。
  */
 function ClipInspector({
   clip,
@@ -347,7 +345,7 @@ function ClipInspector({
                 clip={clip}
                 onChange={(changes) => onAttributes(clip.id, changes)}
                 onEditing={onTextEditing}
-                // 分离出来的原声：右上是「静音此段」，和头部的静音按钮是同一个隐藏标记
+                // 分离原声右上角的「静音此段」与顶栏静音按钮共享同一隐藏标记
                 onMute={isDetachedAudio(clip) ? (muted) => onHide(clip.id, muted) : undefined}
                 popupContainer={popupContainer}
                 silent={clip.kind === 'video' && silentSource(clip.src)}
@@ -396,8 +394,7 @@ function ClipInspector({
 }
 
 /**
- * 字幕的「内容与样式」：这句的字（和「字幕」页签里那条同一个文字框，改的是显示着的语言的字），这句的字体（组件库里
- * 的字体，「默认」是字幕的默认字体）、字号和字色。字体、字号、字色所有语言共用，改了各算一步撤销。
+ * 字幕「内容与样式」卡片：编辑当前展示语言下的字幕文本（与「字幕」页签共用输入框）以及跨语言共享的字体、字号与字色（各项修改各记一步撤销）。
  */
 function CaptionContent({
   clip,
@@ -449,7 +446,7 @@ function CaptionContent({
             { value: '', label: '默认' },
             ...fonts.map((font) => ({ value: font, label: font })),
           ]}
-          // 组件库里没有的字体名和没设一样显示「默认」
+          // 不在组件库可选列表中的字体名按未设置处理，回退展示「默认」
           value={clip.font !== null && fonts.includes(clip.font) ? clip.font : ''}
         />
       </div>
@@ -478,8 +475,8 @@ function CaptionContent({
 const pixelsText = (size: number) => `${size} px`
 
 /**
- * 「字号」滑杆：从默认字号的 0.5 倍到 2 倍，默认处画一道刻度，双击回到默认；没设时显示默认字号。
- * 输入的数超出范围时收进范围。写成默认字号就是回到默认（null）。
+ * 「字号」滑杆：范围为默认字号的 0.5–2 倍，默认处标注刻度并支持双击恢复默认；未单独设置时显示默认字号。
+ * 超出范围的输入自动钳制；输入值等于默认字号时归置为 `null`（恢复默认）。
  */
 function CaptionFontSize({
   canvas,
@@ -488,7 +485,7 @@ function CaptionFontSize({
   onEditing,
 }: {
   canvas: Canvas
-  /** 这句设的字号；没设时是 null。 */
+  /** 当前句独立设置的字号；未设置时为 `null`。 */
   size: number | null
   onChange: (size: number | null) => void
   onEditing: (editing: boolean) => void
@@ -522,7 +519,7 @@ function CaptionFontSize({
   )
 }
 
-/** 带字的小按钮；`blocked` 时置灰、仍能聚焦，点了说明原因。`tone` 是要先做的那一步（深色实底）。 */
+/** 属性卡片内嵌操作按钮：`blocked` 非空时置灰但保持可聚焦，点击弹出原因；`tone="soft"` 用于主推荐动作。 */
 function PropAction({
   blocked,
   tone,
@@ -550,7 +547,7 @@ function PropAction({
   )
 }
 
-/** 头部的「分离音频」（视频片段）或「合并回视频」（分离出来的原声）。 */
+/** 顶栏的「分离音频」（视频片段）或「合并回视频」（分离原声）按钮。 */
 function SoundButton({
   action,
   controls,
@@ -566,7 +563,7 @@ function SoundButton({
   )
 }
 
-/** 一对的联动开关和它的名字。 */
+/** 音画配对联动开关及标签。 */
 function LinkSwitch({
   label,
   pair,
@@ -589,7 +586,7 @@ function LinkSwitch({
   )
 }
 
-/** 对齐口型的按钮：错开时才有；对不了时置灰说明原因。 */
+/** 口型对齐按钮：仅在音画错位时呈现；无法对齐时置灰并说明原因。 */
 function ResyncAction({
   pair,
   clips,
@@ -614,7 +611,7 @@ function ResyncAction({
   )
 }
 
-/** 一对现在同步没有：口型同步、错开多少、倍速不同。 */
+/** 格式化音画配对同步状态：口型同步、错开时长或倍速不一致。 */
 const syncText = (offsetMs: number | null, unit: string) =>
   offsetMs === null
     ? '倍速不同'
@@ -622,7 +619,7 @@ const syncText = (offsetMs: number | null, unit: string) =>
       ? '口型同步'
       : `错开 ${offsetText(offsetMs, unit)}`
 
-/** 同步状态：前面一个小圆点，同步时主色、错开时提示色。 */
+/** 同步状态指示标签：前缀圆点按同步态与错位态区分语义色。 */
 function SyncStatus({ pair, children }: { pair: SoundPair; children: ReactNode }) {
   return (
     <span
@@ -636,7 +633,7 @@ function SyncStatus({ pair, children }: { pair: SoundPair; children: ReactNode }
 }
 
 /**
- * 分离过原声的视频片段：原声去了「原声」行，同步状态，「定位分离原声」、错开时「对齐口型」、「合并」。
+ * 已分离原声的视频片段去向卡：说明原声已移至「原声」行并展示同步状态，提供「定位分离原声」「对齐口型」（错位时）及「合并」入口。
  */
 function DetachedCard({
   pair,
@@ -671,8 +668,8 @@ function DetachedCard({
 }
 
 /**
- * 分离出来的原声最上面的同步卡：同步时主色浅底、错开时提示色浅底。上面一行是和画面同步没有、联动开关，下面是错开时
- * 「对齐画面」和「定位画面」（分两行：右栏窄时错开多少也不会被省略掉）。
+ * 分离原声顶部的同步状态卡：按同步态与错位态区分浅底色。
+ * 分两行排布（首行为同步状态与联动开关，次行为「对齐画面」与「定位画面」），避免右栏较窄时截断错位读数。
  */
 function SyncCard({
   pair,
@@ -701,10 +698,10 @@ function SyncCard({
   )
 }
 
-// 「显示时长」的「−」「+」一次改多少
+// 「显示时长」步进按钮单次增减步长（毫秒）
 const DURATION_STEP_MS = 500
 
-/** 输入框里的秒数（可带「秒」或 s）换成毫秒，按两位小数取整；不是数字时是 null。 */
+/** 将输入的秒数文本（允许带「秒」或 `s` 后缀）解析为毫秒并保留两位小数精度；非法输入返回 `null`。 */
 const parseSeconds = (text: string): number | null => {
   const cleaned = text
     .trim()
@@ -716,8 +713,8 @@ const parseSeconds = (text: string): number | null => {
 }
 
 /**
- * 「显示时长」：标题在左，右边一条「−」、秒数框、「+」。加减一次 0.5 秒；框里回车或失焦提交，Esc 放弃，不是数字时
- * 显示回原来的值。改的是结尾，按裁结尾的规则收住：不压到同一行后面的片段，不短于最短长度。
+ * 「显示时长」卡片：右侧提供 0.5 秒步进按钮与秒数输入框（回车或失焦提交，Esc 放弃，非法值还原）。
+ * 调整作用于片段右端并遵循右端裁切边界：不侵占同行后续片段，且不短于最短片段时长。
  */
 function DisplayDuration({
   clip,
@@ -739,13 +736,13 @@ function DisplayDuration({
     if (timing.duration !== clip.duration) onRetime(new Map([[clip.id, timing]]))
   }
   const [draft, setDraft] = useState<string | null>(null)
-  // 按 Esc 时先放弃再失焦，失焦的处理读这里，不等重新渲染
+  // 按 Esc 时先清空草稿再触发失焦，onBlur 直接读取该 ref，避免等待重新渲染
   const draftRef = useRef<string | null>(null)
   const edit = (next: string | null) => {
     draftRef.current = next
     setDraft(next)
   }
-  // 框还聚焦着就被卸掉（final-cut 被换成别处存的一版）时收不到失焦，这里补一下
+  // 输入框聚焦期间若因外部重载被卸载，不会触发 onBlur，需在卸载清理中复位编辑态
   useEffect(() => () => onEditing(false), [onEditing])
   const end = clip.start + clip.duration
   return (

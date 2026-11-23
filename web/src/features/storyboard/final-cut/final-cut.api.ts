@@ -46,10 +46,10 @@ import {
   type LocaleCode,
 } from './locales'
 
-/** final-cut 工程在对话工作区里的目录。 */
+/** final-cut 工程在对话工作区中的根目录。 */
 export const PROJECT_DIR = 'final-cut'
 
-/** 主文件在工作区里的路径。 */
+/** 主文件在对话工作区中的相对路径。 */
 export const PROJECT_MAIN_PATH = `${PROJECT_DIR}/${PROJECT_MAIN}`
 
 const READ_FAILED = 'final-cut 读取失败'
@@ -57,11 +57,11 @@ const SAVE_FAILED = 'final-cut 保存失败'
 const ITEM_FILES_FAILED = '贴片和场景读取失败'
 
 export const wholeFilmQueryKeys = {
-  // 不挂在工作区文件下面：工作台宿主每次文件变化都让工作区文件的查询失效，挂在下面的话一存就会重读
+  // 独立于工作区文件查询键：工作台宿主在任意文件变更时均会使工作区文件查询失效，挂在其下会导致每次保存后触发重读
   project: (conversationId: string) => ['final-cut', 'project', conversationId] as const,
   latestExport: (conversationId: string) =>
     ['whole-film', 'export', 'latest', conversationId] as const,
-  // 挂在对话的生成记录下面：生成记录有变化时跟着刷新
+  // 归属对话生成记录键树：生成记录变更时自动联动刷新
   music: (conversationId: string) =>
     [...storyboardQueryKeys.conversation(conversationId), 'audio'] as const,
   subtitles: (conversationId: string, sourceJobId: string) =>
@@ -74,13 +74,13 @@ export const wholeFilmQueryKeys = {
   task: (conversationId: string) => ['whole-film', 'task', conversationId] as const,
 }
 
-/** 工作区里的一个工程文件：内容和版本号。 */
+/** 工作区中的单个工程文件：文本内容与版本号。 */
 export type StoredFile = { content: string; version: number }
 
 const conversationPath = (conversationId: string) =>
   `/conversations/${encodeURIComponent(conversationId)}`
 
-/** 读工程里的一个文件（`path` 相对工程根）；文件不存在时是 null，主文件不存在就是还没有工程。 */
+/** 读取工程内单个文件（`path` 相对工程根目录）；文件不存在时返回 `null`（主文件缺失即表示尚无工程）。 */
 export const readProjectFile = async (
   conversationId: string,
   path: string,
@@ -100,8 +100,8 @@ export const readProjectFile = async (
 }
 
 /**
- * 在工程里新建一个文件（`path` 相对工程根），答复工作区里的版本号；已经有这个文件时是 409。
- * `failureText` 是失败时说明的开头（服务端给了原因时接在它后面），缺省是保存失败。
+ * 在工程内新建文件（`path` 相对工程根目录），返回工作区版本号；文件已存在时抛出 409。
+ * `failureText` 用作错误兜底前缀（服务端返回具体原因时拼接在后），默认为保存失败。
  */
 export const createProjectFile = async (
   conversationId: string,
@@ -117,7 +117,7 @@ export const createProjectFile = async (
     })
   ).version
 
-/** 按读到的版本整份写工程里的一个文件（`path` 相对工程根），答复新的版本号；版本对不上时是 409。 */
+/** 按乐观锁版本号整份覆写工程文件（`path` 相对工程根目录），返回新版本号；版本冲突时抛出 409。 */
 export const writeProjectFile = async (
   conversationId: string,
   path: string,
@@ -137,8 +137,8 @@ export const writeProjectFile = async (
   ).file.version
 
 /**
- * 把组件库条目的文件按原路径拷进工程（`files` 见目录），逐个新建；工程里已经有的（409）跳过，
- * 已经拷进来的就属于这个工程，不再跟着组件库变。
+ * 将组件库条目声明的依赖文件按原相对路径逐一拷贝至工程（工程内已存在时跳过 409）；
+ * 拷贝后文件归属当前工程所有，不再随组件库更新而变动。
  */
 export const copyItemFiles = async (
   conversationId: string,
@@ -157,12 +157,12 @@ export const copyItemFiles = async (
   }
 }
 
-// 编辑器卸载时还没存完的保存，按对话记着，存完就去掉
+// 记录编辑器卸载时尚未落盘的保存任务（按对话索引），完成后自动清理
 const closingSaves = new Map<string, Promise<void>>()
 
 /**
- * 编辑器卸载时调用：`saving` 结束之前，这段对话的编辑器再打开也先不读工程文件。
- * 不等的话会读到存之前的一版，随后的保存因版本号过期被拒，刚才的改动跟着丢掉。
+ * 在编辑器卸载时登记在途保存：`saving` 结束前阻塞该对话后续重新打开时的工程读取，
+ * 避免读到落盘前的旧版本导致后续保存因版本冲突被拒而丢失改动。
  */
 export const holdProjectReads = (conversationId: string, saving: Promise<unknown>) => {
   const previous = closingSaves.get(conversationId)
@@ -174,9 +174,9 @@ export const holdProjectReads = (conversationId: string, saving: Promise<unknown
 }
 
 /**
- * 工作区里存着的工程：主文件，和字幕场景文件（`captions`，不存在时是 null）。`captionsPath` 是字幕场景文件的
- * 路径：主文件里字幕宿主挂载的那个，没有宿主时是编辑器新建它的位置；`hosted` 是主文件里有没有字幕宿主。
- * `locales` 是工程里有的各语言的值表（语言 → 文件），按 `LOCALES` 的先后。
+ * 工作区中已持久化的工程快照：主文件、字幕场景文件（`captions`，不存在时为 `null`）及语言值表集合。
+ * `captionsPath` 取主文件字幕宿主挂载路径（无宿主时回退至默认创建路径）；`hosted` 标识主文件是否存在字幕宿主；
+ * `locales` 按 `LOCALES` 顺序收录工程内已存在的各语言值表文件。
  */
 export type StoredProject = {
   main: StoredFile
@@ -186,7 +186,7 @@ export type StoredProject = {
   locales: ReadonlyMap<LocaleCode, StoredFile>
 }
 
-/** 工程里有值表的语言：`final-cut/locales/` 下认识的语言的值表，按 `LOCALES` 的先后。 */
+/** 扫描 `final-cut/locales/` 下受支持的语言值表列表，按 `LOCALES` 顺序返回语言代码。 */
 const storedLocales = async (conversationId: string, signal?: AbortSignal) => {
   const { files } = await apiFetch(
     `${conversationPath(conversationId)}/workspace/files`,
@@ -197,11 +197,11 @@ const storedLocales = async (conversationId: string, signal?: AbortSignal) => {
   return LOCALES.flatMap(({ code }) => (found.has(code) ? [code] : []))
 }
 
-/** 工作区里的路径 `path` 是不是工程里哪种语言的值表（见 `localeOfPath`）。 */
+/** 判断工作区路径 `path` 是否对应受支持的工程语言值表（见 `localeOfPath`）。 */
 export const projectLocaleOf = (path: string): LocaleCode | undefined =>
   path.startsWith(`${PROJECT_DIR}/`) ? localeOfPath(path.slice(PROJECT_DIR.length + 1)) : undefined
 
-/** 读工程里语言 `code` 的值表，写法不对时说明原因；文件不存在时是 null。 */
+/** 读取工程内指定语言 `code` 的值表并校验 JSON 结构；文件不存在时返回 `null`。 */
 export const readLocaleFile = async (
   conversationId: string,
   code: LocaleCode,
@@ -227,9 +227,9 @@ const captionsSource = (html: string): string | undefined => {
 }
 
 /**
- * 读工作区里的工程，没有工程（主文件不在了）时是 null。字幕场景文件按
- * 主文件里字幕宿主挂载的路径读；没有宿主时也读编辑器新建它的位置（加了又撤销会留下空的场景文件）。语言值表
- * 按工作区的文件列表找，不认识的语言不读；值表写法不对时说明原因。
+ * 读取工作区中的完整工程，主文件缺失时返回 `null`。
+ * 字幕场景文件按主文件字幕宿主路径读取（无宿主时仍尝试读取默认路径，以兼容新增字幕后撤销遗留的空场景文件）；
+ * 语言值表根据工作区文件列表按需读取并校验格式，忽略未登记的语言文件。
  */
 export const readProject = async (
   conversationId: string,
@@ -265,14 +265,14 @@ export const useProjectQuery = (conversationId: string) =>
     refetchOnWindowFocus: false,
   })
 
-/** 预览令牌 1 小时过期：每 50 分钟取一张新的。 */
+/** 预览令牌有效期 1 小时，每 50 分钟轮换一次。 */
 export const PREVIEW_TOKEN_REFRESH_MS = 50 * 60_000
 
 /**
- * 预览令牌：预览页在预览域名 `origin` 下，凭令牌运行。
+ * 获取并定时刷新预览令牌：预览页在独立预览域名 `origin` 下凭令牌运行。
  *
- * `page` 是编辑器打开后取到的第一张：预览页的地址固定用它（预览页按这个地址认身份，换了就要重新加载）。
- * `latest` 是最新取到的一张，只用来取工程文件；令牌隔一段时间换一张，换令牌不重新加载预览页。
+ * `page` 锁定编辑器打开后获取的首张令牌以固定预览页 iframe URL（变更 URL 会导致重载并重验身份）；
+ * `latest` 为最新轮换令牌，专用于拉取工程资源，刷新令牌时不重载预览页。
  */
 export const useFinalCutPreviewTokens = (conversationId: string) => {
   const query = useQuery({
@@ -294,7 +294,7 @@ export const useFinalCutPreviewTokens = (conversationId: string) => {
   return { query, page: page ?? query.data, latest: query.data }
 }
 
-/** 预览里取工程文件的基准地址：凭令牌取工作区里的 `final-cut/` 目录。 */
+/** 预览页拉取工作区 `final-cut/` 工程资源的基准 URL。 */
 export const projectFilesBase = (origin: string, token: string): string =>
   `${origin}/api/final-cut/preview/${encodeURIComponent(token)}/files/`
 
@@ -302,8 +302,8 @@ const exportsPath = (conversationId: string) =>
   `${conversationPath(conversationId)}/whole-film/exports`
 
 /**
- * 按工作区里现在的 final-cut 发起一次导出，导出 `locale` 这种语言（原文是 null）的版本，答复导出 id。`resolution`
- * 是导出分辨率档位，按画面尺寸导出时是 null，请求里不带这个键。
+ * 基于工作区当前 final-cut 工程发起指定语言 `locale`（原文传 `null`）的成片导出，返回导出任务 ID。
+ * `resolution` 为导出分辨率档位，按画布原尺寸导出时传 `null`（请求体省略该字段）。
  */
 export const startWholeFilmExport = (
   conversationId: string,
@@ -332,7 +332,7 @@ export const cancelWholeFilmExport = (conversationId: string, exportId: string) 
     method: 'DELETE',
   })
 
-/** 这段对话的音频（生成的音乐和挂在这段对话上的音频上传），新的在前；有没生成完的就隔一会儿再读。 */
+/** 查询本对话音频列表（生成音乐与上传音频，按创建时间倒序）；存在进行中任务时自动轮询。 */
 export const useConversationMusic = (conversationId: string) =>
   useQuery({
     queryKey: wholeFilmQueryKeys.music(conversationId),
@@ -346,10 +346,10 @@ export const useConversationMusic = (conversationId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 参考音频库里的全部音色，建立晚的在前：「字幕」页签里选配音的音色用；`enabled` 为假时不读。 */
+/** 查询参考音频库全部音色（按创建时间倒序，供「字幕」页签配音选择）；`enabled` 为假时不发起请求。 */
 export const useLibraryVoices = (enabled: boolean) => useQuery({ ...voicesQuery(), enabled })
 
-/** 参考音频库里的配乐或音效，按 `q` 搜（匹配标题、备注），一页一页读：「配乐」页签的「音频库」用。 */
+/** 分页查询参考音频库配乐或音效（按 `q` 匹配标题与备注，供「配乐」页签音频库使用）。 */
 export const useLibraryAudios = (audioKind: 'bgm' | 'sfx', q: string) =>
   useInfiniteQuery(referenceAudiosQuery({ audioKind, q: q.trim() }))
 
@@ -375,7 +375,7 @@ export const submitMusic = async (body: MusicIn): Promise<GenerationJob> =>
     })
   ).generation
 
-/** 一条素材片（`sourceJobId`）的字幕识别记录，新的在前；有没识别完的就隔一会儿再读。 */
+/** 查询单条素材片（`sourceJobId`）的字幕识别记录（按时间倒序）；存在进行中任务时自动轮询。 */
 export const subtitleJobsQuery = (conversationId: string, sourceJobId: string) =>
   queryOptions({
     queryKey: wholeFilmQueryKeys.subtitles(conversationId, sourceJobId),
@@ -388,7 +388,7 @@ export const subtitleJobsQuery = (conversationId: string, sourceJobId: string) =
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 发起识别一条素材片的字幕（付费的上游服务），答复排队中的字幕识别记录。 */
+/** 提交单条素材片的字幕识别任务（付费上游服务），返回排队中的任务记录。 */
 export const submitSubtitles = async (body: SubtitleIn): Promise<GenerationJob> =>
   (
     await apiFetch('/generations/subtitles', zGenerationEnvelope, {
@@ -398,7 +398,7 @@ export const submitSubtitles = async (body: SubtitleIn): Promise<GenerationJob> 
     })
   ).generation
 
-/** 一条素材片（`sourceJobId`）的配音记录，新的在前；有没配完的就隔一会儿再读。 */
+/** 查询单条素材片（`sourceJobId`）的配音任务记录（按时间倒序）；存在进行中任务时自动轮询。 */
 export const dubbingJobsQuery = (conversationId: string, sourceJobId: string) =>
   queryOptions({
     queryKey: wholeFilmQueryKeys.dubbings(conversationId, sourceJobId),
@@ -411,7 +411,7 @@ export const dubbingJobsQuery = (conversationId: string, sourceJobId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 发起给一条素材片配一种语言（付费的上游服务），答复排队中的配音记录。 */
+/** 提交单条素材片的指定语言配音任务（付费上游服务），返回排队中的任务记录。 */
 export const submitDubbing = async (body: DubbingIn): Promise<GenerationJob> =>
   (
     await apiFetch('/generations/dubbings', zGenerationEnvelope, {
@@ -421,7 +421,7 @@ export const submitDubbing = async (body: DubbingIn): Promise<GenerationJob> =>
     })
   ).generation
 
-/** 这段对话按文字合成的语音（旁白配音）记录，新的在前；有没合成完的就隔一会儿再读。 */
+/** 查询本对话文本转语音（旁白配音）任务记录（按时间倒序）；存在进行中任务时自动轮询。 */
 export const speechJobsQuery = (conversationId: string) =>
   queryOptions({
     queryKey: wholeFilmQueryKeys.speeches(conversationId),
@@ -430,7 +430,7 @@ export const speechJobsQuery = (conversationId: string) =>
     refetchInterval: ({ state }) => generationsRefetchInterval(state.data ?? []),
   })
 
-/** 发起按文字合成一段语音（付费的上游服务），答复排队中的记录。 */
+/** 提交文本转语音任务（付费上游服务），返回排队中的任务记录。 */
 export const submitSpeech = async (body: SpeechIn): Promise<GenerationJob> =>
   (
     await apiFetch('/generations/speeches', zGenerationEnvelope, {
@@ -447,8 +447,8 @@ const TRANSLATE_FAILED_TEXT = {
 } as const
 
 /**
- * 把一批原文翻成一种语言（付费的上游服务，一次请求一次模型调用），答复每条的译文。失败时按接口答的 `code`
- * 说明能不能重试；别的失败不把服务端的说明给用户看。
+ * 批量将原文翻译为目标语言（付费上游服务，单次请求触发一次模型调用），返回各条译文。
+ * 失败时按接口返回的 `code` 映射面向用户的提示，不透出服务端原始报错细节。
  */
 export const translateTexts = async (
   conversationId: string,
@@ -467,7 +467,7 @@ export const translateTexts = async (
       },
     )
   } catch (error) {
-    // 状态 0 是没连上、答复不对，说明是客户端写的，照原样
+    // status === 0 表示网络或响应格式异常，客户端已封装可读文案，直接透传
     if (!(error instanceof ApiError) || error.status === 0) throw error
     const failure = zFinalCutTranslationErrorOut.safeParse(error.body)
     throw new UserFacingError(
@@ -477,7 +477,7 @@ export const translateTexts = async (
   }
 }
 
-/** 重新读这段对话的音频；给了 `job` 先把它放到列表最前面，不用等读回来就看得到。 */
+/** 刷新本对话音频列表；传入新提交的 `job` 时先行乐观插入列表首位。 */
 export const refreshConversationMusic = (
   queryClient: QueryClient,
   conversationId: string,

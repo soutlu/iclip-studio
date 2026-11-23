@@ -10,11 +10,11 @@ type UsersToolbarProps = {
   onQueryChange: (query: string) => void
 }
 
-/** 控制栏：左边按角色筛选的分段（外层 `TabsRoot` 管选中值），右边搜索框占满剩下的宽度，放不下时换到下一行。 */
+/** 成员工具栏：左侧为角色筛选分段控件（受外层 `TabsRoot` 控制），右侧搜索框自适应剩余宽度，空间不足时折行排列。 */
 export function UsersToolbar({ onQueryChange, query }: UsersToolbarProps) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-      {/* 深色下这条槽坐在更深的托盘上，槽底再压一档才看得出凹 */}
+      {/* 深色模式下外层托盘底色已较深，凹槽需进一步压暗一档以维持内凹层次 */}
       <TabsList aria-label="按角色筛选" className="dark:bg-control-well" variant="segmented">
         {ROLE_FILTERS.map((filter) => (
           <TabsTrigger key={filter.value} value={filter.value}>
@@ -39,7 +39,7 @@ function SearchField({ onChange, value }: { onChange: (value: string) => void; v
       <Icon className="shrink-0 text-on-surface-faint" decorative name="search" size="sm" />
       <input
         aria-label="搜索用户"
-        // 外框的墨色细线就是焦点指示；浏览器自带的清除按钮藏起来，只留下面这一个 ×
+        // 焦点指示由外层容器的墨色描边承担；隐藏浏览器原生清除按钮，统一使用右侧自定义清除按钮
         className="field-nested-input h-full min-w-0 flex-1 bg-transparent text-ui text-on-surface placeholder:text-on-surface-faint [&::-webkit-search-cancel-button]:appearance-none"
         onChange={(event) => onChange(event.currentTarget.value)}
         placeholder="搜索姓名、用户名、邮箱或部门"

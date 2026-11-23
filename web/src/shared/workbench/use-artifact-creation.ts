@@ -11,19 +11,18 @@ import { workspaceQueryKeys } from './workspace.api'
 type ArtifactCreationOptions = {
   conversationId: string
   artifacts: readonly Artifact[]
-  /** 工作区文件列表读到了没有：读到第一份之前谁都不算「新出现」。 */
+  /** 工作区文件列表是否已完成首次加载：首次加载完成前不将任何产物判定为新增。 */
   filesLoaded: boolean
   readOnly: boolean
 }
 
 /**
- * 工作台里新建产物（见 `ArtifactEntry.create`）：
- * - `creatable`：现在能新建的类型——对话不是只读、这类产物还没有；
- * - `create(entry)`：建好后刷新工作区文件、直接切到它的页签（工作台收着时展开）；失败时提示
- *   「<label> 新建失败」和服务端给的原因；
- * - `creating`：正在建的类型；
- * - `arrived(id)`：这件产物是不是打开对话以后才出现的（本页建的或 agent 建的），页签出现时按它播一下动画。
- * 对话开着时这类产物从无到有、又不是本页建的（agent 建的），切到它的页签并提示；刚打开对话时已有的不算。
+ * 管理工作台内可新建产物的创建流程与新增检测（见 `ArtifactEntry.create`）：
+ * - `creatable`：当前可新建的类型列表（非只读对话且尚未存在该产物）；
+ * - `create(entry)`：创建完成后刷新工作区文件并切换至对应页签（工作台收起时自动展开）；失败时提示「<label> 新建失败」及服务端原因；
+ * - `creating`：当前正在创建中的产物类型；
+ * - `arrived(id)`：判断产物是否在打开对话后新增（由本页或 Agent 创建），用于触发页签入场动效。
+ * 对话打开期间若该类产物由 Agent 从无到有创建，则自动切换至其页签并弹出提示；打开对话时已存在的产物不触发。
  */
 export const useArtifactCreation = ({
   conversationId,
@@ -35,10 +34,10 @@ export const useArtifactCreation = ({
   const queryClient = useQueryClient()
   const openArtifact = useOpenArtifact()
   const { requestOpen } = useWorkbenchOpenRequest()
-  // 本页在建、建好后还没在文件列表里出现过的类型：它们出现时不当成 agent 建的。
-  // 建之前就记下：工作区通知触发的那次刷新可能比新建的答复先到
+  // 记录本页发起创建、尚未在文件列表中观察到的产物类型，避免将其误判为 Agent 创建。
+  // 须在发起请求前登记：文件变更推送触发的列表刷新可能早于创建接口响应到达。
   const ownRef = useRef(new Set<string>())
-  // 上一次文件列表里有的这类产物；null 是还没读到过列表
+  // 上一次文件列表中已观测到的可新建产物 ID 集合；null 表示尚未完成首次加载。
   const seenRef = useRef<ReadonlySet<string> | null>(null)
 
   const mutation = useMutation({
@@ -66,7 +65,7 @@ export const useArtifactCreation = ({
 
   const present = artifacts.filter((artifact) => registry.resolve(artifact.type)?.create)
   const presentKey = present.map((artifact) => artifact.id).join('\n')
-  // 第一次读到文件列表时已有的这类产物：之后出现的都算新出现
+  // 首次加载文件列表时已存在的产物 ID 集合；此后新增的均视为新到达
   const [initialIds, setInitialIds] = useState<ReadonlySet<string> | null>(null)
   if (filesLoaded && initialIds === null) {
     setInitialIds(new Set(present.map((artifact) => artifact.id)))

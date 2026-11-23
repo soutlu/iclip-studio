@@ -16,16 +16,16 @@ import { FilePreview } from './file-preview'
 import { FileTreeView } from './file-tree-view'
 import { PanelNotice } from './panel-notice'
 
-// 工作台至少这么宽才左树右预览并排（左栏最窄 218、间距 10、两边外边距各 12，预览还剩 300 多）；
-// 再窄就是「列表 → 点进去看，返回」
+// 切换为「左树右预览」双栏布局的最小工作台宽度（左栏最小 218px、栏间距 10px、左右外边距各 12px，预览区留余 340px 以上）；
+// 低于此阈值时退化为单栏「列表 → 预览」切换视图。
 const TWO_COLUMNS_MIN_WIDTH = 600
 
-// final-cut 主文件，没选文件时默认显示它；和 storyboard/final-cut 的 PROJECT_MAIN_PATH 同值（功能模块之间不互相导入）
+// final-cut 工程主文件路径，未选中文件时默认预览；与 storyboard/final-cut 的 PROJECT_MAIN_PATH 保持一致（跨 feature 模块不直接互相导入）
 const FINAL_CUT_MAIN = 'final-cut/index.html'
 
 const NO_DIRS: ReadonlySet<string> = new Set()
 
-/** 没选文件时宽屏右边先显示哪份：final-cut 主文件，没有就按名字排第一的顶层文件，再没有就第一份。 */
+/** 计算宽屏未指定文件时的默认预览项：优先 final-cut 主文件，其次按名称排序的首个顶层文件，否则取首份文件。 */
 const defaultFileOf = (files: readonly ConversationFileOut[]): string | undefined => {
   if (files.some((file) => file.path === FINAL_CUT_MAIN)) return FINAL_CUT_MAIN
   const paths = files.map((file) => file.path).sort((left, right) => left.localeCompare(right))
@@ -44,8 +44,8 @@ function FloatPanel({ children, label }: { children: ReactNode; label?: string }
 }
 
 /**
- * 「文件」页签：宽时左边目录树、右边预览两块浮起面板；窄时先列目录树，点进去看一份，返回再回到树。
- * 看哪份文件记在地址的 `file` 参数里，对话里的文件链接也靠它定位。
+ * 「文件」页签：宽屏下分左右两块浮起面板展示目录树与文件预览；窄屏下在目录树与预览视图间切换。
+ * 当前查看的文件路径记录在 URL 的 `file` 查询参数中，对话消息内的文件链接亦通过该参数定位。
  */
 export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRendererProps) {
   const files = useWorkspaceFiles(conversationId)
@@ -64,7 +64,7 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
   const [measure, size] = useElementSize<HTMLDivElement>()
   const wide = size.width >= TWO_COLUMNS_MIN_WIDTH
   const [query, setQuery] = useState('')
-  // 收起的目录：平时一份；筛选时另记一份，换筛选词就清空，筛选出来的目录默认全展开
+  // 目录收起状态分两份维护：常规态独立保存；筛选态在关键词变化时重置为空，确保命中目录默认展开
   const [collapsed, setCollapsed] = useState(NO_DIRS)
   const [filterCollapsed, setFilterCollapsed] = useState(NO_DIRS)
   const filtering = query.trim() !== ''
@@ -73,7 +73,7 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
   const [lastOpened, setLastOpened] = useState<string>()
   if (reading !== undefined && reading !== lastOpened) {
     setLastOpened(reading)
-    // 打开的文件所在的目录都展开，目录树里才看得到它
+    // 自动展开所打开文件的所有祖先目录，确保该节点在目录树中可见
     const opened = new Set(ancestorDirIds(reading))
     if ([...collapsed].some((id) => opened.has(id))) {
       setCollapsed(new Set([...collapsed].filter((id) => !opened.has(id))))
@@ -81,7 +81,7 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
   }
 
   const list = files.data?.files
-  // 工作台里现在有的页签（工具帧来的不归任何文件，不用算）
+  // 当前工作台已存在的产物页签 ID 集合（工具帧产物不关联工作区文件，无需传入）
   const tabs = useMemo(
     () =>
       new Set(composeArtifacts(registry, list ?? [], [], readOnly).map((artifact) => artifact.id)),
@@ -148,7 +148,7 @@ export function WorkspaceFilesPanel({ conversationId, readOnly }: ArtifactRender
   } else if (files.data.files.length === 0) {
     body = (
       <FloatPanel>
-        <PanelNotice hint="agent 写入的所有文件都将显示在此处" text="暂无文件" />
+        <PanelNotice hint="Agent 写入的所有文件都将显示在此处" text="暂无文件" />
       </FloatPanel>
     )
   } else if (wide) {

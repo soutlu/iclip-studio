@@ -36,7 +36,7 @@ _MANAGE = "model:manage"
 
 
 class ModelGroupsOut(BaseModel):
-    """``config.yaml`` 里配置的组名，按配置里的先后；没配时为空。"""
+    """``config.yaml`` 中可分配的配置组名列表（不含保留组 ``default``），按配置顺序排列；未配置时为空列表。"""
 
     groups: list[str]
 
@@ -44,7 +44,7 @@ class ModelGroupsOut(BaseModel):
 def create_model_providers_router(
     runtime: RuntimeClient, *, model_groups: Sequence[str]
 ) -> APIRouter:
-    """``model_groups`` 是部署配置里的组名（按配置顺序），密钥只能归进这些组。"""
+    """``model_groups`` 为部署配置中可分配的配置组名（不含保留组 ``default``，按配置顺序排列），密钥仅可归属其中的组。"""
 
     router = APIRouter(prefix="/model-providers", tags=["model-providers"])
     configured = tuple(model_groups)
@@ -53,14 +53,14 @@ def create_model_providers_router(
         if group is not None and group not in configured:
             choices = "、".join(configured) or "无"
             raise ValidationFailed(
-                f"配置组 {group} 不在部署配置的 model_groups 里，可选的组：{choices}"
+                f"配置组 {group} 不在部署配置的 model_groups 中，可选配置组：{choices}"
             )
 
     @router.get("/groups", response_model=ModelGroupsOut)
     async def model_groups_configured(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> ModelGroupsOut:
-        """部署配置里的配置组名，按配置里的先后；密钥可以归进其中一个组，不归组即默认组。"""
+        """返回部署配置中可分配的配置组名列表（不含保留组 ``default``，按配置顺序排列）；密钥可归属其中任意一组，未归组时归属默认组。"""
 
         return ModelGroupsOut(groups=list(configured))
 

@@ -9,24 +9,24 @@ export type TreeNode = {
   name: string
   icon: IconName
   tone: Tone
-  /** 顶层文件里排在目录后面的第一个：前面画一条分隔线。 */
+  /** 是否为目录之后的首个顶层文件：为 `true` 时在其上方渲染分隔线。 */
   afterDirs: boolean
 } & ({ kind: 'dir'; children: string[] } | { kind: 'file'; file: ConversationFileOut })
 
 export type FileTree = {
   nodes: ReadonlyMap<string, TreeNode>
-  /** 所有目录的 id，按显示顺序。 */
+  /** 全部目录节点 ID，按展示顺序排列。 */
   dirIds: string[]
-  /** 树里的文件路径，按显示顺序。 */
+  /** 全部文件路径，按展示顺序排列。 */
   filePaths: string[]
 }
 
 type Folder = { dirs: Map<string, Folder>; files: ConversationFileOut[] }
 
-// 目录 id 是目录路径加结尾的 /，和文件路径分开
+// 目录 ID 以末尾 `/` 区分于同前缀文件路径
 const dirIdOf = (dir: string): string => `${dir}/`
 
-/** 文件所在的各级目录 id，由近到远。 */
+/** 返回文件所属的全部祖先目录 ID，按由近及远排列。 */
 export const ancestorDirIds = (path: string): string[] => {
   const ids: string[] = []
   for (let dir = dirName(path); dir !== ''; dir = dirName(dir)) ids.push(dirIdOf(dir))
@@ -36,10 +36,10 @@ export const ancestorDirIds = (path: string): string[] => {
 const byName = (left: string, right: string) => left.localeCompare(right)
 
 /**
- * 把工作区文件排成目录树：目录在前、文件在后，同级按名字排。
- * `query` 非空时只留路径里含它的文件（不分大小写）和它们的上级目录。
- * `toneOf` 给某份文件另定色调（例如它本身就是某个页签的文档），没有就按类型；
- * 目录的色调跟它自己的第一个文件，只有子目录时跟第一个子目录。
+ * 将工作区文件列表构建为目录树：同级目录在前、文件在后，分别按名称排序。
+ * `query` 非空时仅保留路径匹配该关键词（不区分大小写）的文件及其祖先目录。
+ * `toneOf` 可为特定文件覆写色调（如页签主文档），未指定时按文件类型取色；
+ * 目录色调优先取其首个直接文件的色调，无直接文件时取首个子目录的色调。
  */
 export const buildFileTree = (
   files: readonly ConversationFileOut[],
@@ -66,8 +66,8 @@ export const buildFileTree = (
   const dirIds: string[] = []
   const filePaths: string[] = []
 
-  // 按显示顺序深度优先走一遍；返回子项 id 和这个目录的色调：
-  // 取它自己的第一个文件（final-cut/ 跟 index.html 走，不跟排在前面的 beats/），没有文件才取第一个子目录的
+  // 按展示顺序深度优先遍历，返回子节点 ID 列表与目录色调：
+  // 优先采用首个直接文件的色调（使 final-cut/ 跟随 index.html，而非排在前面的 beats/），无直接文件时回退至首个子目录。
   const walk = (folder: Folder, prefix: string): { children: string[]; tone: Tone | undefined } => {
     const children: string[] = []
     let firstSubdir: Tone | undefined
@@ -78,7 +78,7 @@ export const buildFileTree = (
       dirIds.push(id)
       const inner = walk(sub, id)
       firstSubdir ??= inner.tone
-      // 目录只因里面有文件才存在，inner.tone 总有值
+      // 目录仅在包含文件时才被构建，正常情况下 inner.tone 非空
       const tone = inner.tone ?? fileLookOf(id).tone
       nodes.set(id, {
         afterDirs: false,

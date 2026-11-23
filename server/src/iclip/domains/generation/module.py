@@ -69,7 +69,7 @@ class QwenServiceConfig:
 
 @dataclass(frozen=True, slots=True)
 class DubbingSetup:
-    """配音的装配：语音合成服务，以及配音队列每个进程同时跑几条。不给就是没开通。"""
+    """配音模块装配配置：语音合成器与单进程配音队列并发数；为 ``None`` 表示未启用。"""
 
     synthesizer: SpeechSynthesizer
     concurrency: int
@@ -115,14 +115,14 @@ def build_generation_module(
     music_transport: httpx.AsyncBaseTransport | None = None,
 ) -> GenerationModule:
     if not image_models:
-        raise RuntimeError("媒体生成开着却一家图片模型都没声明")
+        raise RuntimeError("媒体生成已启用，但未声明任何图片模型")
     declared = [model.name for model in image_models]
     if image_default_model not in declared:
         raise RuntimeError(
-            f"默认图片模型 {image_default_model} 不在声明的那几家里（{'、'.join(declared)}）"
+            f"默认图片模型 {image_default_model} 不在已声明的图片模型列表中（{'、'.join(declared)}）"
         )
     if (video.enhance_submit_url is None) != (video_enhance is None):
-        raise RuntimeError("高清版的提交地址与模型、档位要一起给：缺一样超分就提交不出去")
+        raise RuntimeError("高清版（超分）的提交地址与模型规格须同时配置，缺一不可")
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
     video_provider = HttpVideoProvider(video, model_groups=model_groups, transport=video_transport)

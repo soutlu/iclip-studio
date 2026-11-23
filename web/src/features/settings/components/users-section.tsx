@@ -23,8 +23,8 @@ const searchText = (user: ManagedUser) =>
     .toLowerCase()
 
 /**
- * 「用户」分区：控制栏（按角色筛选、搜索）、成员表白卡、底栏人数。分区名是弹窗头部的「用户」（`labelledBy`）。
- * 两个筛选条件同时生效：角色看每人最高的那个角色，搜索按显示名、用户名、邮箱、部门名，不分大小写。
+ * 「用户」设置分区：包含工具栏（角色筛选、关键词搜索）、成员表卡片与底栏统计，无障碍名称关联弹窗头部「用户」（`labelledBy`）。
+ * 角色筛选与关键词搜索叠加生效：角色按成员最高角色匹配，搜索不区分大小写匹配显示名、用户名、邮箱与部门名。
  */
 export function UsersSection({ labelledBy }: { labelledBy: string }) {
   const me = useUser().data
@@ -104,7 +104,7 @@ function Centered({ children }: { children: ReactNode }) {
   return <div className="m-auto">{children}</div>
 }
 
-/** 底栏：左边人数（读取中、读取失败时不显示），右边「即时生效」。 */
+/** 分区底栏：左侧显示成员与配置组统计（加载中与失败态留空），右侧展示「即时生效」提示。 */
 function UsersFooter({ summary }: { summary: string | null }) {
   return (
     <footer className="flex shrink-0 items-center justify-between gap-4 text-label text-on-surface-faint tabular-nums">

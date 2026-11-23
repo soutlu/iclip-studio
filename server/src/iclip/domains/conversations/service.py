@@ -112,7 +112,7 @@ LatestMasterUrls = Callable[[Sequence[uuid.UUID]], Awaitable[Mapping[uuid.UUID, 
 
 VideoProgressOf = Callable[[uuid.UUID | None], Awaitable[Mapping[uuid.UUID, VideoPhase]]]
 
-# (用户这轮说的话, 配置组) → 标题；配置组为空即默认组，起不出标题答 None。
+# (本轮用户输入, 配置组) → 对话标题；配置组为 None 时使用默认组，无法生成标题时返回 None。
 GenerateTitle = Callable[[str, str | None], Awaitable[str | None]]
 
 AnnounceTitle = Callable[[uuid.UUID, uuid.UUID, str], None]
@@ -255,8 +255,8 @@ class WholeFilmExports(Protocol):
         locale: TargetLocale | None,
         resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id。``locale`` 是导出哪种语言，None 是原文；
-        ``resolution`` 是导出分辨率档位，None 按画面尺寸导出。"""
+        """按 final-cut 主文件创建成片导出记录并入队，返回导出 ID。``locale`` 为目标导出语言，``None``
+        表示原文；``resolution`` 为导出分辨率档位，``None`` 表示按画面尺寸导出。"""
         ...
 
     async def latest(
@@ -601,9 +601,9 @@ class ConversationService:
         locale: TargetLocale | None,
         resolution: ExportResolution | None,
     ) -> uuid.UUID:
-        """按 final-cut 主文件记一条导出排队，答复导出 id；``locale`` 是导出哪种语言，None 是原文；
-        ``resolution`` 是导出分辨率档位，None 按画面尺寸导出，不在这里判断画面能不能导这一档。
-        还没有主文件、工程里没有这种语言的值表都抛 ``ValidationFailed``。"""
+        """按 final-cut 主文件创建成片导出记录并入队，返回导出 ID。``locale`` 为目标导出语言，``None``
+        表示原文；``resolution`` 为导出分辨率档位，``None`` 表示按画面尺寸导出（画布是否支持该档位由渲染服务判定）。
+        缺少主文件或目标语言值表时均抛出 ``ValidationFailed``。"""
 
         conversation = await self._workspace_writable(principal, conversation_id)
         exports = self._require_exports()

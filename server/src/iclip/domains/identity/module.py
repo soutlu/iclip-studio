@@ -60,7 +60,7 @@ def build_identity_module(
     sso_verifier: SsoVerifier | None = None,
     pms_client: PmsUserClient | None = None,
 ) -> IdentityModule:
-    """``model_groups`` 是部署配置里的配置组名，按配置里的先后。"""
+    """``model_groups`` 为部署配置中可分配的配置组名（不含保留组 ``default``），按配置顺序排列。"""
     users = SqlUserRepository(sessions)
     api_keys = SqlApiKeyRepository(sessions)
     service = IdentityService(users, api_keys)

@@ -63,7 +63,7 @@ _MOVED_TO_RUNTIME: Final[Mapping[str, str]] = {
 }
 
 _RETIRED_SECTIONS: Final[Mapping[str, str]] = {
-    "video": "视频理解在运行时总是登记，模型写在代码里，连接用配置页的火山方舟",
+    "video": "视频理解已由运行时固定注册，模型固化在代码中，凭证复用管理后台的火山方舟供应商",
 }
 
 
@@ -228,7 +228,7 @@ class ImageGenerationSection(ConfigSection):
     @model_validator(mode="after")
     def _default_is_declared(self) -> ImageGenerationSection:
         if self.default not in self.models:
-            raise ValueError("image.default 必须是 image.models 里的一个键")
+            raise ValueError("image.default 必须包含在 image.models 的键集合中")
         return self
 
 
@@ -265,10 +265,10 @@ class MediaGenerationSection(ConfigSection):
 
 
 class ModelGroupSection(ConfigSection):
-    """一个配置组的媒体 key 与网关 model_id；谁在哪个组由 root 在网页上选，存在数据库里。
+    """单个配置组的媒体生成密钥与网关 model_id 映射；用户所属配置组由 root 在管理后台分配并持久化至数据库。
 
-    key 的值放在环境变量里，这里只写变量名；``video_models`` 是「产品模型名 → 该组网关 model_id」。
-    组名 ``default`` 是保留名：没选组的人用它，开了媒体生成就必须有，不能选给人。
+    各密钥字段仅声明对应的环境变量名；``video_models`` 为「产品模型名 → 该组网关 model_id」映射。
+    ``default`` 为保留组名，供未分组用户使用，启用媒体生成时必填，且不可分配给用户。
     """
 
     video_api_key_env: NonEmptyText
@@ -351,7 +351,7 @@ class RuntimeConfig(BaseSettings):
         for name in value:
             if _MODEL_GROUP_NAME.fullmatch(name) is None:
                 raise ValueError(
-                    f"model_groups 的组名 {name!r} 不合规：以小写字母开头，只用小写字母、数字和下划线"
+                    f"model_groups 的组名 {name!r} 格式无效：须以小写字母开头，仅允许小写字母、数字和下划线"
                 )
         return value
 
@@ -364,17 +364,17 @@ class RuntimeConfig(BaseSettings):
         for name, moved_to in _MOVED_TO_RUNTIME.items():
             if name in sections:
                 raise ValueError(
-                    f"{name} 段已搬到运行时服务的配置（configs/runtime.yaml 的 {moved_to}），"
-                    "从后端的配置文件里删掉它"
+                    f"{name} 配置段已迁移至运行时配置文件（configs/runtime.yaml 的 {moved_to}），"
+                    "请将其从后端配置文件中移除"
                 )
         for name, why in _RETIRED_SECTIONS.items():
             if name in sections:
-                raise ValueError(f"{name} 段已不用（{why}），从后端的配置文件里删掉它")
+                raise ValueError(f"{name} 配置段已废弃（{why}），请将其从后端配置文件中移除")
         shot_video = sections.get("shot_video")
         if isinstance(shot_video, Mapping) and shot_video:
             raise ValueError(
-                "shot_video 段的出图重试策略已搬到运行时服务的配置（configs/runtime.yaml 的 "
-                "plugins.config.shot_video），后端这一段只留 shot_video: {}"
+                "shot_video 配置段的出图重试策略已迁移至运行时配置文件（configs/runtime.yaml 的 "
+                "plugins.config.shot_video），后端配置请仅保留 shot_video: {}"
             )
         return data
 
@@ -454,7 +454,7 @@ class ResolvedVideoEnhance:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedMediaModelGroup:
-    """配置组在媒体生成里用的 key 与网关 model_id；字幕、配乐、配音没开通时对应的 key 为 ``None``。"""
+    """配置组在媒体生成中使用的密钥与网关 model_id；字幕、配乐或配音未启用时对应密钥为 ``None``。"""
 
     name: str
     video_api_key: str
@@ -483,9 +483,9 @@ class ResolvedMediaGeneration:
     music: ResolvedQwenService | None
     speech: ResolvedQwenService | None
     default_model_group: ResolvedMediaModelGroup
-    """``model_groups.default``：没选组的人用的 key 与 model_id。"""
+    """``model_groups.default``：未分组用户使用的密钥与 model_id 映射。"""
     model_groups: tuple[ResolvedMediaModelGroup, ...]
-    """其余配置组，按配置里的先后。"""
+    """其余配置组，按配置文件中的声明顺序排列。"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,7 +519,7 @@ class ResolvedSettings:
     object_store: ResolvedObjectStore | None
     media_generation: ResolvedMediaGeneration | None
     model_groups: tuple[str, ...]
-    """部署配置里能选给人的配置组名（不含 ``default``），按配置里的先后。"""
+    """部署配置中可分配给用户的配置组名（不含保留组 ``default``），按配置顺序排列。"""
     shot_video: bool
     iclip_studio: ResolvedIclipStudio | None
     product_catalog: ResolvedProductCatalog | None
@@ -566,7 +566,7 @@ def _env_has_value(env_name: str) -> bool:
 
 def _reject_moved_env() -> None:
     left = [
-        f"环境变量 {name} 已搬到 config.yaml 的 {path}，从 .env 里删掉它"
+        f"环境变量 {name} 已迁移至 config.yaml 的 {path}，请将其从 .env 中移除"
         for name, path in _MOVED_TO_CONFIG.items()
         if _env_has_value(name)
     ]
@@ -611,13 +611,13 @@ def _resolve_media_generation(
         return None
     if not object_store_on:
         raise RuntimeError(
-            "写了 media_generation 段但没写 object_store 段：图片生成结果要转存成自己的公开"
-            "对象，否则库里存的是几天后就失效的签名地址。补上 object_store 段"
+            "已配置 media_generation 段但缺失 object_store 段：图片生成结果须转存为本系统公开"
+            "对象，避免落库上游短期失效的签名地址。请补充 object_store 配置段"
         )
     if _DEFAULT_MODEL_GROUP not in model_groups:
         raise RuntimeError(
-            f"model_groups 里没有 {_DEFAULT_MODEL_GROUP}：开了媒体生成，没选组的人要用这一组的 "
-            "key 与 model_id，补上它"
+            f"model_groups 中缺少 {_DEFAULT_MODEL_GROUP}：启用媒体生成时，未分组用户依赖该组的密钥与 "
+            "model_id，请补充该配置组"
         )
     enhance = _resolve_video_enhance(section.video.enhance)
     subtitle = _resolve_qwen_service(section.subtitle)
@@ -679,15 +679,15 @@ def _resolve_media_model_group(
 ) -> ResolvedMediaModelGroup:
     where = f"model_groups.{name}"
     expected = video_models if enhance_model is None else video_models | {enhance_model}
-    which = "allowed_models 里的每个模型" + ("与高清版模型 enhance.model" if enhance_model else "")
+    which = "allowed_models 中的全部模型" + ("及高清版模型 enhance.model" if enhance_model else "")
     missing = sorted(expected - group.video_models.keys())
     if missing:
         raise RuntimeError(
-            f"{where}.video_models 缺 {'、'.join(missing)}：要给{which}写上该组的 model_id"
+            f"{where}.video_models 缺少 {'、'.join(missing)}：须为{which}配置对应的网关 model_id"
         )
     extra = sorted(group.video_models.keys() - expected)
     if extra:
-        raise RuntimeError(f"{where}.video_models 多了 {'、'.join(extra)}：只写{which}")
+        raise RuntimeError(f"{where}.video_models 包含多余项 {'、'.join(extra)}：仅允许声明{which}")
     return ResolvedMediaModelGroup(
         name=name,
         video_api_key=_group_key(where, "video_api_key_env", group.video_api_key_env),
@@ -706,10 +706,12 @@ def _resolve_media_model_group(
 
 def _group_key(where: str, field: str, env_name: str | None) -> str:
     if env_name is None:
-        raise RuntimeError(f"{where}.{field} 没写：这项功能开通了，每个组都要指定自己的 key 变量名")
+        raise RuntimeError(
+            f"{where}.{field} 未配置：该功能已启用，各配置组均须指定对应的密钥环境变量名"
+        )
     value = os.environ.get(env_name, "").strip()
     if not value:
-        raise RuntimeError(f"{where}.{field} 指定的环境变量 {env_name} 没有值")
+        raise RuntimeError(f"{where}.{field} 指定的环境变量 {env_name} 未设置或为空")
     return value
 
 
@@ -746,8 +748,9 @@ def _resolve_product_catalog(
     if section is None:
         if _env_has_value(PRODUCT_CATALOG_DATABASE_URL_ENV):
             raise RuntimeError(
-                f"环境变量 {PRODUCT_CATALOG_DATABASE_URL_ENV} 有值但 config.yaml 没写 product_catalog "
-                "段：要开产品资料查询就写 product_catalog: {}，不开就从 .env 里删掉这个变量"
+                f"环境变量 {PRODUCT_CATALOG_DATABASE_URL_ENV} 已设置但 config.yaml 未配置 "
+                "product_catalog 段：如需启用产品资料查询请添加 product_catalog: {}，"
+                "否则请从 .env 中移除该变量"
             )
         return None
     return ResolvedProductCatalog(database_url=_from_env(ProductCatalogEnv).database_url)
@@ -765,8 +768,8 @@ def _resolve_final_cut_render(
         missing.append("media_generation 段")
     if missing:
         raise RuntimeError(
-            f"写了 final_cut.render_url 但没写{'与'.join(missing)}：每次导出是一条生成记录，"
-            "由生成队列交给渲染服务，成片上传进桶。补上它们"
+            f"已配置 final_cut.render_url 但缺失{'与'.join(missing)}：每次成片导出需作为生成记录"
+            "经由生成队列提交至渲染服务，并将成片上传至对象存储。请补充相关配置段"
         )
     return ResolvedFinalCutRender(url=render_url)
 

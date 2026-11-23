@@ -753,7 +753,7 @@ test('每条原作可以换版本：点版本分段直接切；换了之后这�
   const editor = await createFinalCut(panel)
   const materials = editor.getByRole('region', { name: '视频素材区' })
 
-  const versions = materials.getByRole('group', { name: '出片 A的版本' })
+  const versions = materials.getByRole('group', { name: '出片 A 的版本' })
   const original = versions.getByRole('button', { name: 'V1 原片' })
   await expect(versions.getByRole('button', { name: 'V2' })).toHaveAttribute('aria-pressed', 'true')
   await expect(original).toHaveAttribute('aria-pressed', 'false')

@@ -146,7 +146,7 @@ export type SaveState = { kind: 'idle' } | { kind: 'saving' } | { kind: 'failed'
 export type FilmView = {
   html: string
   canvas: Canvas
-  /** 画面底色：根上行内写的；没写时是 `<head>` 里给根写的（见 `headBackground`），也读不出时是 null。 */
+  /** 画布底色：优先取根节点行内样式，未设置时回退至 `<head>` 模板底色（见 `headBackground`），均无法解析时为 `null`。 */
   background: string | null
   /**
    * 主文件根下所有带时间的元素（字幕宿主除外），按它们在文件里的先后；后面跟着字幕场景里的各句字幕，
@@ -295,8 +295,8 @@ const openDoc = async (
 }
 
 /**
- * 会话打开着的一个工程文件：`version` 是工作区里的版本号（打开的文件都已在工作区里，保存都按它写），
- * `saved` 是最近一次存下或读到的内容（刚打开、还没对上时是 null）。
+ * 会话打开的单个工程文件：`version` 为工作区最新版本号（打开的文件均已落盘，保存按此版本号校验），
+ * `saved` 为最近一次保存或加载时的文件内容快照（刚打开尚未同步快照前为 `null`）。
  */
 type OpenFile = { doc: FileDoc; version: number; saved: string | null }
 
@@ -376,9 +376,9 @@ const canvasOf = (main: Composition): Canvas => {
 }
 
 /**
- * 文件 `engine` 的根改成 `canvas` 的宽高（SDK 的 `setCompositionMetadata`：改 `data-width` / `data-height`，运行库按
- * 它们定根的大小）。SDK 改宽高时总在根上写行内宽高，撤销时只把它改回旧值、不去掉；根上原来没写行内宽高时先写上、
- * 改完再去掉，撤销时三步倒着退回，根逐字回到原样。
+ * 将文档 `engine` 根节点尺寸修改为 `canvas`（调用 SDK `setCompositionMetadata` 更新 `data-width` / `data-height`，
+ * 运行库据此确定合成画幅）。SDK 修改尺寸时会向根节点写入行内 `width` / `height`，撤销时仅还原为旧值而不移除属性；
+ * 若根节点原本无行内宽高，则先显式写入再于变更后置空移除，确保撤销时三步逆序回放使根节点逐字还原至原状。
  */
 const resizeRoot = (engine: Composition, canvas: Canvas) => {
   const root = rootOf(engine)
@@ -390,12 +390,12 @@ const resizeRoot = (engine: Composition, canvas: Canvas) => {
 }
 
 /**
- * 在一批操作里把画面尺寸改成 `canvas`，只改画面本身：主文件和字幕场景的根改成新的宽高（见 `resizeRoot`；主文件
- * `<head>` 里写死的尺寸、字幕场景统一样式里的默认字号存出时跟着根重算，见 `viewOf`）。时间线上已有的内容（贴片和
- * 场景宿主的摆放、一句单独设过的字号）一律不换算，各自写着的值不变。
+ * 在同一事务批次内将工程画布尺寸修改为 `canvas`（仅修改画布本身）：同步更新主文件与字幕场景的根节点宽高（见 `resizeRoot`；
+ * 主文件 `<head>` 中的模板尺寸与字幕场景统一样式的默认字号在序列化时随根节点重算，见 `viewOf`）。
+ * 既有内容（贴片/场景宿主的定位与单句自定义字号）均不按比例换算，保持原有声明值不变。
  *
- * 字幕宿主上写的宽高不改：SDK 不让改宿主的 `data-width` / `data-height`（保留属性），运行库挂载字幕场景时按场景根的
- * 宽高重写宿主，宿主本身铺满画面。
+ * 字幕宿主节点的 `data-width` / `data-height` 保持不改：SDK 将其视作保留属性禁止直接写入，
+ * 运行库挂载字幕场景时会自动按场景根节点宽高覆写宿主，且宿主本身通过样式铺满画布。
  */
 const resizeCanvas = (main: Composition, scene: Composition | undefined, canvas: Canvas) => {
   resizeRoot(main, canvas)
@@ -557,11 +557,10 @@ const writeTotal = (main: Composition, scene: Composition | undefined) => {
 }
 
 /**
- * 工程现在的样子（显示语言 `locale` 的字），和各文件现在的内容（路径 → 内容）：主文件只重算 `<head>` 里的
- * 字体块和写死的画面尺寸（SDK 改不了 `<head>`）。字体块的字按原文和所有值表里的字一起算，存出的内容和显示哪种语言
- * 无关；画面尺寸按根上的算，撤销根的改动时跟着回去。字幕场景统一样式里的默认字号也按根上的画面尺寸重算（见
- * `withCaptionDefaults`）。别的文件照各自存出的写。`change` 是这一份的序号和从上一份来的
- * 那一步（见 `FilmView`）。
+ * 构造当前工程视图（按展示语言 `locale` 映射显示文本）及各打开文件的最新序列化内容（路径 → 内容）：
+ * 主文件额外重算 `<head>` 中的字体块与模板画布尺寸（SDK 不负责改写 `<head>`），其中字体块汇总原文与全部语言值表字符，
+ * 确保落盘结果与当前展示语言无关；模板尺寸与字幕场景统一样式默认字号均随根节点画布尺寸重算（见 `withCaptionDefaults`），
+ * 撤销根节点变更时自动还原。其余文件直接采用各自序列化结果。`change` 携带本版递增序号与增量步骤（见 `FilmView`）。
  */
 const viewOf = (
   project: Project,
@@ -913,16 +912,15 @@ function splitHalves(
 type Options = {
   debounceMs?: number | undefined
   onNotice: (message: string) => void
-  /** 工作区里的主文件没了（别处删掉了）：会话已放下工程、不再保存，由调用方回到没有工程的样子。 */
+  /** 工作区主文件已被外部删除：会话已卸载工程并停止保存，通知调用方退回无工程态。 */
   onMissing: () => void
 }
 
 /**
- * 编辑对话工作区里的 final-cut 工程：打开读到的主文件 `final-cut/index.html`、它的字幕场景文件和各语言的值表
- * （`initial` 见 `readProject`），改动停下 `debounceMs` 毫秒后把改了的文件按版本号整份保存（别的文件先存，
- * 主文件最后存）。`film` 是 null 时还在打开。打开着的文件有一个在别处被改了、或保存时版本对不上，就都换上
- * 工作区里的那一份、放弃本地没存的改动；那时主文件已经没了就交给 `onMissing`。工程里主文件、字幕场景和值表
- * 以外的文件变了时 `filesRevision` 加 1，预览据此重新加载。当前显示的语言打开时是原文。
+ * 管理对话工作区 final-cut 工程编辑会话：加载主文件 `final-cut/index.html`、关联字幕场景文件及各语言值表（`initial` 见 `readProject`），
+ * 编辑停手 `debounceMs` 毫秒后按乐观锁版本号整份保存变更文件（先存附属文件、最后存主文件）。初始化未完成期间 `film` 为 `null`。
+ * 若任一已打开文件被外部修改或保存返回版本冲突，则重载工作区最新版本并放弃未保存改动；若主文件已缺失则触发 `onMissing`。
+ * 工程内其余资产文件变更时递增 `filesRevision` 以触发预览重载。会话初始展示语言为原文。
  */
 export function useFilmSession(
   conversationId: string,
@@ -1002,8 +1000,8 @@ export function useFilmSession(
   )
 
   /**
-   * 换上一份工程，撤销记录清空；`stored` 为真时各文件现在的内容就是工作区里存着的那一份。
-   * 当前语言的值表不在新的工程里时回到原文。
+   * 切换当前会话持有的工程实例并清空撤销栈；`stored` 为真时将各文件当前序列化内容标记为已同步基线。
+   * 若当前展示语言在新工程中无对应值表，自动回退至原文。
    */
   const install = useCallback(
     (project: Project, stored: boolean) => {
@@ -1022,8 +1020,8 @@ export function useFilmSession(
   )
 
   /**
-   * 打开工作区里存着的工程 `stored`（见 `readProject`）：主文件、字幕场景文件和各语言的值表。
-   * 有字幕宿主但场景文件不存在时按没有字幕打开，提示一句。
+   * 打开工作区已落盘的工程快照 `stored`（见 `readProject`）：依次加载主文件、字幕场景文件与各语言值表；
+   * 若主文件存在字幕宿主但场景文件缺失，则按无字幕状态打开并给出提示。
    */
   const openStored = useCallback(
     async (stored: StoredProject): Promise<Project> => {
@@ -1063,8 +1061,8 @@ export function useFilmSession(
   }, [])
 
   /**
-   * 换上工作区里现在的那一份 `stored`，放弃本地没存的改动并提示。主文件已经没了（`stored` 是 null）时放下工程
-   * （之后不再保存，卸载时也不补存），交给 `onMissing`。
+   * 采纳工作区最新快照 `stored`，放弃本地未保存改动并提示用户。
+   * 若主文件已被删除（`stored === null`），则彻底卸载工程（停止后续及卸载补存）并回调 `onMissing`。
    */
   const adoptStored = useCallback(
     async (stored: StoredProject | null) => {
@@ -1130,9 +1128,9 @@ export function useFilmSession(
   }, [adoptStored, conversationId, settled])
 
   /**
-   * 打开着的文件（还没打开时算主文件）或语言值表变了：通知不带版本号，自己的保存也会通知。等在途的保存结束再读，
-   * 读回来以后再等一次（读的时候可能又存了一版），有一个文件在工作区里的版本比自己知道的新（或文件出现、
-   * 消失了，含别处加的语言）才算别处改的。
+   * 响应工作区已打开文件（初始化前视作主文件）或语言值表变更通知：通知不含版本号且自身保存也会触发。
+   * 先等待在途保存结束再读取远端快照，读取完成后再次确认无并发保存落盘；
+   * 仅当某文件远端版本号新于本地已知版本（或文件新增/删除，含外部新增语言值表）时认定为外部修改。
    */
   const checkStored = useCallback(async () => {
     try {
@@ -1221,10 +1219,10 @@ export function useFilmSession(
   useEffect(() => () => disposeAll(projectRef.current), [])
 
   /**
-   * 把几段素材一段接一段放进画面区：给了 `at` 就从那一行的那个时间放起（调用方保证那里空着），
-   * 没给就接在主轨（画面区最上面那一行）的末尾。`renumber` 是为它新开一行时别的片段要换成的行号。
-   * 每段都叠在最上面，写在根下第一个。给了 `canvas` 时画面尺寸同一步改成它（只改画面本身，见 `resizeCanvas`），
-   * 一次撤销片段和尺寸一起回去。工程还没打开、放不下时不动工程。
+   * 将多段视频素材首尾相接加入画面区：传入 `at` 时从指定轨道与时刻起排（由调用方保证区间空闲），
+   * 否则追加至主轨（画面区首行）末尾；`renumber` 用于新建轨道行时重排其余片段行号。
+   * 新片段默认置顶并插至根节点首位；传入 `canvas` 时在同一批次同步调整画布尺寸（仅改画布本身，见 `resizeCanvas`），
+   * 撤销时片段与画布尺寸一并回退。工程尚未就绪时忽略操作。
    */
   const addVideos = useCallback(
     (
@@ -1280,10 +1278,9 @@ export function useFilmSession(
   )
 
   /**
-   * 把组件库的一个条目放进工程：先把条目的文件拷进工程，再从 `at` 那一行的那个时间放起（调用方保证那里空着），
-   * 可填项取 `values`，时长取条目的时长，尺寸按工程的画面。工程里加了语言时，文字字段都随语言（见
-   * `followingByDefault`）。`renumber` 同 `addVideos`。
-   * 叠在最上面，写在根下第一个。文件拷不进来时提示原因，不动工程；工程还没打开时也不动。
+   * 将组件库条目加入工程：先将条目依赖文件拷贝至工程目录，再按 `at` 指定轨道与时刻创建宿主元素（调用方保证区间空闲），
+   * 可填项取值取 `values`、时长取条目默认时长、尺寸匹配当前画布。若工程已启用多语言，文字字段默认跟随语言（见 `followingByDefault`）；
+   * `renumber` 用法同 `addVideos`。宿主置顶并插至根节点首位；依赖文件拷贝失败时提示错误，工程尚未就绪或拷贝失败时均不修改工程。
    */
   const addItem = useCallback(
     async (
@@ -1340,8 +1337,8 @@ export function useFilmSession(
   )
 
   /**
-   * 把一段音频放进声音区：从 `at` 那一行的那个时间放起（调用方保证那里空着）。
-   * 写在根下第一个，不带叠放顺序。`renumber` 同 `addVideos`。工程还没打开时不动工程。
+   * 将单段音频加入声音区：自 `at` 指定轨道与时刻起排（调用方保证区间空闲），插至根节点首位且不写 `z-index`。
+   * `renumber` 用法同 `addVideos`。工程尚未就绪时忽略操作。
    */
   const addAudio = useCallback(
     (audio: NewAudio, at: Landing, renumber: Renumbering = NO_RENUMBERING): boolean => {
@@ -1380,10 +1377,10 @@ export function useFilmSession(
   )
 
   /**
-   * 改工程里已有的东西：`change` 拿到主文件、字幕场景（没有时是 undefined）和各语言的值表，里面的几步和工程总长
-   * 一起算一步撤销。字幕在同一步里跟着挪了的视频片段、配音片段走（见 `followClips`）；跟着挪做不到时整步
-   * 不做，提示原因。挪了、裁了开头、改了入点或速度的有声片段，曲线在同一步里跟着改（见 `curvesFollowing`）。
-   * 答复这一步做了没有：工程还没打开、整步不做时是 false。
+   * 执行工程编辑事务：`change` 接收主文件、字幕场景（可能为 `undefined`）与各语言值表，所有变更连同总时长重算合并为一步撤销。
+   * 关联字幕随视频或配音片段同步位移（见 `followClips`，无法跟随时回滚整步并提示原因）；
+   * 发生位移、裁切起点、调整入点或变速的有声片段同步修正音量曲线（见 `curvesFollowing`）。
+   * 返回本次事务是否成功生效（工程未就绪或整步回滚时返回 `false`）。
    */
   const edit = useCallback(
     (
@@ -1528,9 +1525,7 @@ export function useFilmSession(
     [edit],
   )
 
-  /**
-   * 把画面尺寸改成 `canvas`，算一步撤销，只改画面本身（见 `resizeCanvas`）。和现在一样、工程还没打开时不动工程。
-   */
+  /** 修改工程画布尺寸为 `canvas` 并记为一步撤销（仅改画布本身，见 `resizeCanvas`）；尺寸未变或工程未就绪时忽略。 */
   const resize = useCallback(
     (canvas: Canvas) => {
       const project = projectRef.current
@@ -1543,9 +1538,9 @@ export function useFilmSession(
   )
 
   /**
-   * 把画面底色改成 `color`，算一步撤销：写在主文件根的行内样式上，盖过 `<head>` 里的底色（预览、导出读的都是这份
-   * 主文件）。
-   * 总是写上、不去掉：去掉的行内样式撤销时排到最后，文件回不到原样。根上写着的就是它、工程还没打开时不动工程。
+   * 修改画布底色为 `color` 并记为一步撤销：写入主文件根节点行内样式以覆盖 `<head>` 模板底色（预览与导出均读取该主文件）。
+   * 始终显式写入而不移除属性：移除行内样式在撤销重放时会被追加至样式末尾，导致序列化文本无法还原原貌。
+   * 当前行内底色相同或工程未就绪时忽略。
    */
   const setBackground = useCallback(
     (color: string) => {
@@ -1982,11 +1977,10 @@ export function useFilmSession(
   )
 
   /**
-   * 加几句字幕，一起算一步撤销：先准备好字幕场景文件（还没有时建一份空的），再按那时工程里的片段（含字幕）
-   * 用 `captionsFor` 算出要加的句子，场景里各按开始时间排进它的元素，主文件根上各声明一个变量；主文件里还没有
-   * 字幕宿主时加在根下最后。给了 `narration` 时每句再加一个和它对齐的旁白片段（原文下的配音片段，地址、名字、
-   * 音色是给的），放进「配音」行（见 `addDubElements`），同一步撤销。答复新字幕的编号（按 `captionsFor` 给的先后；
-   * 一句都没有时是空的、不动工程）；工程还没打开、场景文件建不了时不动工程（建不了时提示原因），答复 undefined。
+   * 批量添加字幕并记为一步撤销：按需预先创建空字幕场景文件，再基于当前全部片段调用 `captionsFor` 生成字幕项，
+   * 按起始时间插入场景节点并在主文件根节点声明对应变量（尚无字幕宿主时追加至根节点末尾）。
+   * 传入 `narration` 时同步为每句在「配音」行创建对齐的旁白音频片段（见 `addDubElements`），同属一步撤销。
+   * 返回新建字幕 ID 列表（无新增项时返回空数组且不修改工程）；工程未就绪或字幕场景文件创建失败（已提示原因）时返回 `undefined`。
    */
   const addCaptions = useCallback(
     async (

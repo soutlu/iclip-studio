@@ -790,7 +790,7 @@ def test_the_iclip_studio_section_alone_turns_breakdown_on(
 def test_an_old_video_section_says_to_delete_it(tmp_path: Path) -> None:
     path = write(tmp_path, VALID + "video:\n  understanding_model: seed-vision\n")
 
-    with pytest.raises(ValidationError, match=r"video 段已不用.*从后端的配置文件里删掉它"):
+    with pytest.raises(ValidationError, match=r"video 配置段已废弃.*请将其从后端配置文件中移除"):
         load_runtime_config(path)
 
 
@@ -883,7 +883,7 @@ def test_media_generation_without_the_default_group_fails_at_startup(
     config = load_runtime_config(write(tmp_path, MEDIA_ON + written))
     _group_env(monkeypatch)
 
-    with pytest.raises(RuntimeError, match="model_groups 里没有 default"):
+    with pytest.raises(RuntimeError, match="model_groups 中缺少 default"):
         resolve_settings(config)
 
 
@@ -924,19 +924,19 @@ def test_malformed_model_groups_are_refused_naming_what_is_wrong(
     [
         (
             ("      seedance-other: ecom-seedance-other\n", ""),
-            "model_groups.ecom.video_models 缺 seedance-other",
+            "model_groups.ecom.video_models 缺少 seedance-other",
         ),
         (
             ("seedance-other: ecom-seedance-other\n", "seedance-other: x\n      wan: y\n"),
-            "model_groups.ecom.video_models 多了 wan",
+            "model_groups.ecom.video_models 包含多余项 wan",
         ),
         (
             ("      seedance-other: default-seedance-other\n", ""),
-            "model_groups.default.video_models 缺 seedance-other",
+            "model_groups.default.video_models 缺少 seedance-other",
         ),
         (
             ("seedance-other: default-seedance-other\n", "seedance-other: x\n      wan: y\n"),
-            "model_groups.default.video_models 多了 wan",
+            "model_groups.default.video_models 包含多余项 wan",
         ),
     ],
     ids=["missing_model", "unknown_model", "default_missing_model", "default_unknown_model"],
@@ -959,7 +959,9 @@ def test_video_models_must_also_name_the_enhance_model_once_enhance_is_on(
     assert resolve_settings(config).media_generation is not None, "高清版没开，不要求"
 
     config = load_runtime_config(write(tmp_path, _with_enhance() + GROUPS))
-    with pytest.raises(RuntimeError, match=r"model_groups\.default\.video_models 缺 video-enhance"):
+    with pytest.raises(
+        RuntimeError, match=r"model_groups\.default\.video_models 缺少 video-enhance"
+    ):
         resolve_settings(config)
 
     default_with_enhance = GROUPS.replace(
@@ -967,7 +969,7 @@ def test_video_models_must_also_name_the_enhance_model_once_enhance_is_on(
         "seedance-other: default-seedance-other\n      video-enhance: default-enhance\n",
     )
     config = load_runtime_config(write(tmp_path, _with_enhance() + default_with_enhance))
-    with pytest.raises(RuntimeError, match=r"model_groups\.mkt\.video_models 缺 video-enhance"):
+    with pytest.raises(RuntimeError, match=r"model_groups\.mkt\.video_models 缺少 video-enhance"):
         resolve_settings(config)
 
     with_enhance = default_with_enhance.replace(
@@ -1025,7 +1027,7 @@ def test_once_a_qwen_service_is_on_every_group_needs_its_key(
 
     no_default_key = DEFAULT_GROUP.replace(f"    {field}: {default_env}\n", "")
     config = load_runtime_config(write(tmp_path, media_on + groups(no_default_key)))
-    with pytest.raises(RuntimeError, match=f"model_groups.default.{field} 没写"):
+    with pytest.raises(RuntimeError, match=f"model_groups.default.{field} 未配置"):
         resolve_settings(config)
 
     config = load_runtime_config(write(tmp_path, media_on + groups(DEFAULT_GROUP)))
@@ -1035,7 +1037,7 @@ def test_once_a_qwen_service_is_on_every_group_needs_its_key(
 
     monkeypatch.setenv(default_env, "sk-default")
     config = load_runtime_config(write(tmp_path, media_on + GROUPS))
-    with pytest.raises(RuntimeError, match=f"model_groups.ecom.{field} 没写"):
+    with pytest.raises(RuntimeError, match=f"model_groups.ecom.{field} 未配置"):
         resolve_settings(config)
 
     config = load_runtime_config(write(tmp_path, media_on + groups(DEFAULT_GROUP, MKT_GROUP)))

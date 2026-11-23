@@ -307,7 +307,7 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
   it('有几个版本时是一排分段，点一下直接切：没在看的版本入了轨时标着，看的这版入了轨时写「已入轨」', async () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
-    const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A的版本' })
+    const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A 的版本' })
     const original = within(versions).getByRole('button', { name: 'V1 原片，已入轨' })
     const edited = within(versions).getByRole('button', { name: 'V2' })
     expect(edited).toHaveAttribute('aria-pressed', 'true')
@@ -363,7 +363,7 @@ describe('final-cut 编辑器 · 时间线', () => {
 
   it('空的 final-cut：留一行空的，提示把镜头拖进来', async () => {
     await openEditor()
-    expect(within(timeline()).getByText('将「镜头」页签里的镜头拖到此处可加入轨道')).toBeVisible()
+    expect(within(timeline()).getByText('将「镜头」页签中的镜头拖到此处可加入轨道')).toBeVisible()
     expect(screen.queryByRole('group', { name: '画面 2' })).toBeNull()
   })
 

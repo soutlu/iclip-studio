@@ -277,7 +277,7 @@ describe('WorkbenchHost 收起态', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
 
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     const shots = within(chooser).getByRole('button', { name: /分镜/ })
     expect(shots).toHaveAttribute('aria-disabled', 'true')
     expect(shots).toHaveTextContent('分镜暂无')
@@ -296,7 +296,7 @@ describe('WorkbenchHost 收起态', () => {
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
     await userEvent.click(screen.getByRole('button', { name: '展开工作台' }))
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     expect(screen.queryByText('画着文件')).not.toBeInTheDocument()
 
     await userEvent.click(within(chooser).getByRole('button', { name: '文件' }))
@@ -313,7 +313,7 @@ describe('WorkbenchHost 收起态', () => {
     socket.deliver(delegationReset('running'))
 
     await userEvent.click(screen.getByRole('button', { name: '展开工作台' }))
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     await userEvent.click(within(chooser).getByRole('button', { name: '委派任务 · 拆解' }))
 
     expect(await screen.findByText('画着委派任务 · 拆解')).toBeVisible()
@@ -331,7 +331,7 @@ describe('WorkbenchHost 收起态', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
 
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     await waitFor(() =>
       expect(
         within(chooser)
@@ -347,7 +347,7 @@ describe('WorkbenchHost 收起态', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
 
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     const canvas = within(chooser).getByRole('button', { name: /画布/ })
     expect(canvas).toHaveAttribute('aria-disabled', 'true')
     expect(canvas).toHaveTextContent('还没有画布')
@@ -362,7 +362,7 @@ describe('WorkbenchHost 收起态', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
 
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     await waitFor(() =>
       expect(
         within(chooser)
@@ -611,7 +611,7 @@ describe('WorkbenchHost · 只读时不显示的页签', () => {
     await renderHost(ROOMY, registry(), `/c/${CONVERSATION_ID}`)
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     await waitFor(() =>
       expect(
         within(chooser)
@@ -788,7 +788,7 @@ describe('WorkbenchHost · 新建', () => {
     await renderHost(ROOMY, withCreatable(), `/c/${CONVERSATION_ID}`)
 
     await userEvent.click(await screen.findByRole('button', { name: '展开工作台' }))
-    const chooser = await screen.findByRole('navigation', { name: '能打开的产物' })
+    const chooser = await screen.findByRole('navigation', { name: '可打开的产物' })
     await userEvent.click(within(chooser).getByRole('button', { name: '新建 剪辑' }))
 
     expect(await screen.findByText('画着剪辑')).toBeVisible()
@@ -870,6 +870,6 @@ describe('WorkbenchHost · 委派任务页签', () => {
     tab.focus()
     await userEvent.keyboard('{Delete}')
 
-    expect(await screen.findByRole('navigation', { name: '能打开的产物' })).toBeVisible()
+    expect(await screen.findByRole('navigation', { name: '可打开的产物' })).toBeVisible()
   })
 })

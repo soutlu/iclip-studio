@@ -7,7 +7,7 @@ import type { MediaSpan } from './materials'
 
 const loadReader = () => import('../editing/media-file')
 
-/** 这个地址的视频有没有音轨。读不出来时查询失败，当作不知道。 */
+/** 检测指定视频 URL 是否包含音轨；解析失败时查询报错，视为音轨状态未知。 */
 export const videoAudioQuery = (url: string) =>
   queryOptions({
     queryKey: ['whole-film', 'video-audio', url],
@@ -24,7 +24,7 @@ export const videoAudioQuery = (url: string) =>
     retry: false,
   })
 
-/** 这个地址的视频画面的宽高；没有画面、宽高不是正数时是 null，读不出来时查询失败。 */
+/** 读取指定视频 URL 的显示宽高；无视频轨或宽高非正数时返回 `null`，解析失败时查询报错。 */
 export const videoSizeQuery = (url: string) =>
   queryOptions({
     queryKey: ['whole-film', 'video-size', url],
@@ -47,7 +47,7 @@ export const videoSizeQuery = (url: string) =>
     retry: false,
   })
 
-/** 几条视频各自有没有音轨：读出来的才在表里，还在读、读不出来的不在。 */
+/** 批量查询视频是否包含音轨：仅将已成功解析的 URL 写入结果映射，加载中或失败项省略。 */
 export const useVideoAudio = (urls: readonly string[]): ReadonlyMap<string, boolean> =>
   useQueries({
     queries: urls.map((url) => videoAudioQuery(url)),
@@ -66,11 +66,11 @@ export type KeyframeState =
 
 export type KeyframeStates = ReadonlyMap<string, KeyframeState>
 
-/** 原作的总长（毫秒），镜头读好了才有。 */
+/** 获取原作总时长（毫秒），关键帧索引就绪后可用。 */
 export const takeDurationMs = (state: KeyframeState | undefined): number | undefined =>
   state?.kind === 'ready' ? Math.round(state.index.duration * 1000) : undefined
 
-/** 原作的各个镜头（毫秒），镜头读好了才有。 */
+/** 获取原作的分镜镜头区间列表（毫秒），关键帧索引就绪后可用。 */
 export const takeShots = (state: KeyframeState | undefined): MediaSpan[] =>
   state?.kind === 'ready'
     ? keyframeRanges(state.index).map((shot) => ({

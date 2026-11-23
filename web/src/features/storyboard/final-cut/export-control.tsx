@@ -10,15 +10,14 @@ import { phraseAround, phraseWith, SOURCE_LOCALE, type Language } from './locale
 import type { ExportVersion, ExportView } from './use-whole-film-export'
 
 /**
- * 点「导出」导出的是什么：编辑器当前显示的语言，这种语言里还没翻的文字条数（原文时是 0），和导出分辨率档位（按画面
- * 尺寸导出时是 null）。
+ * 导出目标配置：当前展示语言、该语言下尚未翻译的文本条数（原文恒为 0）以及导出分辨率档位（按画布原尺寸导出时为 `null`）。
  */
 type ExportTarget = { locale: Language; untranslated: number; resolution: ExportTier | null }
 
 type ExportControlProps = {
   view: ExportView
   target: ExportTarget
-  /** 为什么现在不能发起导出：给了就把「导出」「重新导出」都禁用，点了说明它。 */
+  /** 禁止发起导出时的原因说明；非空时禁用「导出」与「重新导出」并在点击时提示。 */
   blocked: string | undefined
   onStart: () => void
   onCancel: () => void
@@ -27,8 +26,8 @@ type ExportControlProps = {
 type Status = { text: string; tone: 'normal' | 'busy' | 'error' }
 
 /**
- * 状态里的一句话，`before` 和 `after` 之间写导出的是哪个版本：哪种语言（「English 版」「中文版」，原文不写）、哪一档
- * （「720P」，按画面尺寸导出不写）。
+ * 拼装包含目标版本信息的状态文案：在 `before` 与 `after` 之间插入语言版本（如「English 版」「中文版」，原文省略）
+ * 与分辨率档位（如「720P」，按画布原尺寸导出省略）。
  */
 const withVersion = (before: string, { locale, resolution }: ExportVersion, after: string) => {
   const tiered = (head: string) =>
@@ -72,14 +71,14 @@ const exportStatus = (view: ExportView): Status | undefined => {
   }
 }
 
-/** 完成后状态里写导出的是哪个版本；原文、按画面尺寸导出时不写。高清版在做或失败时先说高清版。 */
+/** 导出完成时的版本状态说明；原文且按画布原尺寸导出时省略。 */
 const doneStatus = (view: ExportView): Status | undefined =>
   view.kind === 'done' && (view.locale !== SOURCE_LOCALE || view.resolution !== null)
     ? { text: withVersion('已导出', view, ''), tone: 'normal' }
     : undefined
 
 /**
- * 「导出」「重新导出」的提示：说导出哪个版本，其它语言还有没翻的文字时提醒一句；原文、按画面尺寸导出时没有。
+ * 「导出」与「重新导出」按钮的悬停提示：说明目标版本并在存在未翻译文本时提示条数；原文且按画布原尺寸导出时省略。
  */
 const startHint = ({ locale, untranslated, resolution }: ExportTarget): string | undefined => {
   if (locale === SOURCE_LOCALE && resolution === null) return undefined
@@ -89,7 +88,7 @@ const startHint = ({ locale, untranslated, resolution }: ExportTarget): string |
     : `${version}；有 ${untranslated} 条文字未翻译，导出后显示原文`
 }
 
-/** 被拦时说明原因（点了才出）；没被拦、有提示时悬停或聚焦显示提示。 */
+/** 禁用时在点击后展示阻断原因；可用且存在提示时在悬停或聚焦时展示提示。 */
 function StartTip({
   blocked,
   hint,

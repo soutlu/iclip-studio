@@ -65,7 +65,7 @@
         --color-on-error: var(--e100);
         --color-error-container: var(--e90);
         --color-on-error-container: var(--e10);
-        /* 中性实心主动作：高优确认（如「加入 final-cut」「生成音乐」），与全页唯一品牌绿主交付拉开层级 */
+        /* 中性实心主动作：高优确认（如「加入轨道」「生成音乐」），与全页唯一品牌绿主交付拉开层级 */
         --color-action-neutral: var(--n10);
         --color-on-action-neutral: var(--n100);
         /* 表面层级与文字 */
@@ -272,7 +272,7 @@
         /* 圆角（严守 4px 同心嵌套步进） */
         --radius-none:0; --radius-xs:4px; --radius-sm:8px; --radius-md:12px; --radius-lg:16px;
         --radius-xl:20px; --radius-2xl:28px; --radius-3xl:32px; --radius-4xl:48px; --radius-full:9999px;
-        /* 工作台浮起面板与其中控件专用；18 / 9 不在 4px 步进上，是设计稿定的取值 */
+        /* 浮起面板（panel: 18px）与凹槽控件（control: 9px）专用取值（非 4px 步进） */
         --radius-panel: 18px;
         --radius-control: 9px;
         /* 断点（M3 窗口分级） */
@@ -374,7 +374,7 @@
         --shadow-float:
           0 12px 42px color-mix(in srgb, var(--n0) 68%, transparent), 0 0 0 1px var(--color-panel-line-strong);
         --shadow-specular: inset 0 1px 0 color-mix(in srgb, var(--n100) 6%, transparent);
-        /* 低饱和分类/媒体语义色（深色卡面 #202020 上全员 ≥ 5.4:1，配字转纯中性深墨 n10） */
+        /* 低饱和分类/媒体语义色（深色容器底 #202020 与卡片底 #1c1c1c 上全员 ≥ 5.4:1，配字转纯中性深墨 n10） */
         --color-tone-slate: #6d9ab8;
         --color-tone-teal: #56b39f;
         --color-tone-umber: #c49c78;
@@ -548,7 +548,7 @@
                   <div class="mp-title">三层动作优先级</div>
                   <div class="mp-actions">
                     <span class="mp-btn mp-btn-p">导出成片</span>
-                    <span class="mp-btn mp-btn-n">+ 加入 final-cut</span>
+                    <span class="mp-btn mp-btn-n">+ 加入轨道</span>
                     <span class="mp-btn mp-btn-g">更多风格</span>
                   </div>
                 </div>
@@ -585,7 +585,7 @@
             </li>
             <li>
               <strong>图标着色边界</strong>
-              通用操作与配置资源图标使用单色 <code>on-surface</code>（24px 网格）；复杂创作工作台（如 final-cut 编辑器）的媒体导航与轨道头允许以双色（Duotone）内填充绑定 <code>--color-tone-*</code>，描边仍保持克制。
+              通用操作与配置资源图标使用单色 <code>on-surface</code>（24px 网格）；工作台产物、文件目录树、设置弹窗头部及 <code>final-cut</code> 编辑器导航与轨道头允许以双色（Duotone）内填充绑定 <code>--color-tone-*</code>，描边仍保持克制。
             </li>
             <li>
               <strong>状态色</strong>
@@ -768,7 +768,7 @@
               <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-panel)"></i><span>18px · 浮起面板</span><code>--radius-panel</code></div></div>
               <div class="radius-item"><div><i class="radius-shape" style="border-radius: var(--radius-control)"></i><span>9px · 工作台控件</span><code>--radius-control</code></div></div>
             </div>
-            <p class="type-source-note">嵌套遵循同心递减：面板 <code>16</code> → 卡片 <code>12</code> → 按钮/凹槽 <code>8</code> → 标签 <code>4</code>。工作台浮起面板 <code>panel</code> 与其中控件 <code>control</code> 是设计稿定的专用取值，不在 4px 步进上，只用在工作台。</p>
+            <p class="type-source-note">嵌套遵循同心递减：面板 <code>16</code> → 卡片 <code>12</code> → 按钮/凹槽 <code>8</code> → 标签 <code>4</code>。浮起面板 <code>panel</code>（18px）与凹槽控件 <code>control</code>（9px）为专用取值（非 4px 步进），用于工作台、分段控件及同类浮起面板场景。</p>
           </div>
 
           <div class="scale-group">
@@ -798,7 +798,7 @@
 
           <div class="scale-group">
             <div class="scale-group-head">
-              <h3>Elevation · 海拔与降影</h3>
+              <h3>Elevation · 海拔与投影</h3>
             </div>
             <div class="motion-list">
               <div class="motion-row"><code>静态表面</code><i class="elevation-swatch flat"></i><b>0</b></div>
@@ -813,7 +813,7 @@
               <div class="motion-row"><code>--shadow-pill</code><i class="elevation-swatch" style="box-shadow: var(--shadow-pill), var(--shadow-specular)"></i><b>选中格</b></div>
               <div class="motion-row"><code>--shadow-float</code><i class="elevation-swatch" style="box-shadow: var(--shadow-float)"></i><b>浮层</b></div>
             </div>
-            <p class="type-source-note">深色下卡片取消投影并转为 <code>7%</code> 极细边，仅浮层菜单与弹窗保留投影。<code>panel</code> 到 <code>float</code> 四档是工作台浮起面板材质，自带一圈 <code>--color-panel-line</code> 细线，深色下也保留投影。</p>
+            <p class="type-source-note">深色下卡片取消投影并转为 <code>7%</code> 极细边，仅浮层菜单与弹窗保留投影。<code>panel</code> 到 <code>float</code> 四档为浮起面板材质（自带外圈细线，可叠加 <code>--shadow-specular</code> 顶部 1px 高光），深色主题下亦保留投影。</p>
           </div>
 
           <div class="scale-group">

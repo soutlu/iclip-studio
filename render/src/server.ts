@@ -8,14 +8,14 @@ import { disallowedMediaHosts, parseRequest, zExportRequest } from './request'
 
 export interface ServerContext {
   queue: ExportQueue
-  /** 公共目录（组件库根下的 `vendor/`）：渲染时工程里的 `vendor` 指向它。 */
+  /** 公共资源目录（组件库根下的 `vendor/`）：渲染时拷贝至工程根目录下的 `vendor/`。 */
   vendorDir: string
   allowedHosts: Set<string>
   logger: Logger
   health: () => { gpu: 'hardware' | 'software'; chrome: string }
 }
 
-// 工作区一段对话最多 20 MB；按 JSON 转义最坏翻倍，再给素材表和上传地址留出余量
+// 单对话工作区上限为 20 MB；考虑 JSON 转义最坏翻倍体积，并为素材映射与上传参数预留余量
 const MAX_BODY = 48 * 1024 * 1024
 
 class BodyTooLarge extends Error {}
@@ -47,7 +47,7 @@ function send(res: ServerResponse, status: number, body?: unknown): void {
 const fail = (res: ServerResponse, status: number, code: string, message: string) =>
   send(res, status, { code, message })
 
-/** 读请求体并按 `schema` 校验；不合格时已经答复了 400，返回 null。 */
+/** 读取请求体并按 `schema` 校验；校验失败时直接响应 400 并返回 null。 */
 async function readRequest<T>(
   req: IncomingMessage,
   res: ServerResponse,
@@ -69,12 +69,12 @@ async function readRequest<T>(
   return parsed.request
 }
 
-/** 请求体的类型是不是 JSON（不看 charset 等参数）。 */
+/** 判断请求体 Content-Type 是否为 JSON（忽略 charset 等参数）。 */
 const isJson = (req: IncomingMessage) =>
   req.headers['content-type']?.split(';')[0]?.trim().toLowerCase() === 'application/json'
 
 async function createExport(req: IncomingMessage, res: ServerResponse, context: ServerContext) {
-  // 渲染页面里的脚本能访问回环地址上的本服务；只收 JSON 类型，浏览器的跨源请求就得先过预检，页面发不出导出
+  // 渲染页面脚本可访问本机回环地址；仅接收 JSON 类型可确保浏览器跨源请求触发预检，防止页面擅自发起导出
   if (!isJson(req)) {
     fail(res, 415, 'unsupported-media-type', '请求体须为 application/json')
     return
@@ -92,14 +92,14 @@ async function createExport(req: IncomingMessage, res: ServerResponse, context: 
     return
   }
   const { files, variables, dropped } = localized.value
-  // 只记条数：值表里的字不进日志
+  // 仅记录剔除条数，禁止将语言值表文本写入日志
   if (dropped > 0)
     context.logger.warn('值表里有主文件没声明的变量，已去掉', {
       exportId: request.id,
       locale: request.locale,
       count: dropped,
     })
-  // 按导出的那种语言的主文件取素材：别的语言的配音不用下载
+  // 基于目标语言改写后的主文件提取所需素材，跳过其他语种配音下载
   const main = files.find((file) => file.path === MAIN_FILE)?.content ?? ''
   const downloads = new Map<string, string>()
   for (const address of mediaAddresses(main)) {

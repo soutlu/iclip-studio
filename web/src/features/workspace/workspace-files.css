@@ -1,5 +1,5 @@
-/* 目录树按层缩进：每深一层 21px，每层在上一层图标中线下（13px 处）画一道竖线。
-   行与行之间的 1px 空隙也算在行里，竖线才能连成一条。层数由行上的 --tree-depth 给。 */
+/* 目录树层级缩进：每层递进 21px，并在父级图标中线位置（13px 处）绘制纵向参考线。
+   行间 1px 间距通过 padding-bottom 纳入行高内以保持参考线连续；层级深度由行内 --tree-depth 提供。 */
 .files-tree-row {
   --tree-indent: 21px;
   padding-bottom: 1px;
@@ -13,7 +13,7 @@
     0 0 / calc(var(--tree-depth) * var(--tree-indent)) 100% no-repeat;
 }
 
-/* 图标的淡填充层跟着行的色调（见 shared/icons/final-cut-glyphs.css） */
+/* 双色图标填充层跟随当前行色调（见 shared/icons/final-cut-glyphs.css） */
 .files-tone {
   --icon-fill-opacity: 0.26;
   --icon-fill-color: var(--files-tone);

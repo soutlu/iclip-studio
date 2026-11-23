@@ -37,7 +37,7 @@ class ModelUnavailable(Conflict):
 
 
 class ModelGroupUnavailable(Conflict):
-    """用户存的配置组已不在部署配置里；不回退默认组，等管理员改组。"""
+    """用户绑定的配置组已从部署配置中移除；不自动回退至默认组，须由管理员重新分配。"""
 
     code = "model_group_unavailable"
 

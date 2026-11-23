@@ -26,7 +26,7 @@ export interface WorkspaceArtifactSource {
   fileCount: number
 }
 
-/** 按 `{ anyPath }` 认领的产物：`paths` 是工作区里在的那几份。 */
+/** 按 `{ anyPath }` 规则匹配的产物来源：`paths` 为工作区中实际存在的匹配文件路径集合。 */
 export interface PathsArtifactSource {
   kind: 'paths'
   paths: readonly string[]
@@ -48,28 +48,28 @@ export interface ArtifactRendererProps {
   readOnly: boolean
 }
 
-/** 用户能在工作台里新建的产物类型怎么建（见 `ArtifactEntry.create`）。 */
+/** 用户可在工作台内新建的产物创建配置（见 `ArtifactEntry.create`）。 */
 export interface ArtifactCreate {
   /**
-   * 建这类产物，答复建出来、由这一项认领的那份文件在工作区里的路径（宿主按它找页签）。别处刚建好时当已建好；
-   * 失败时抛错，宿主提示 `errorMessageOf(错误, '<label> 新建失败')`。
+   * 创建该类产物，返回新建并归属此登记项的工作区文件路径（宿主据此定位页签）。若已由他处创建则按成功处理；
+   * 失败时抛出异常，宿主通过 `errorMessageOf(error, '<label> 新建失败')` 提示用户。
    */
   run: (conversationId: string, queryClient: QueryClient) => Promise<string>
-  /** 对话开着时 agent 建好了这类产物：工作台切过去时给的提示。 */
+  /** 对话打开期间由 Agent 创建该类产物时，工作台自动切换页签并展示的提示文案。 */
   agentCreatedNotice: string
 }
 
 /**
- * 一类产物的登记项。`match` 决定它认领什么：
- * - `{ path }` / `{ pattern }`：每份路径命中的文件一件，id 是 `file:<path>`；
- * - `{ anyPath }`：工作区里有其中任一份文件时一件，id 是 `type`；给了 `dir` 时，这个目录下的其他文件也归它
- *   （文件页给它们「打开 X」直达按钮），但只有 `anyPath` 里的文件让它出现；
- * - `{ workspace: true }`：工作区里有文件时一件，id 是 `workspace`；
- * - `{ displayKind }`：每个展示类型命中的工具调用一件，id 是 `frame:<toolCallId>`。
- * 除 `displayKind` 外都是常驻类型，有产物时总占着页签。`hiddenWhenReadOnly` 为真时，只读查看的
- * 对话里没有这类产物，带着地址也选不中。
- * `create` 给了时，还没有这类产物、对话又不是只读，工作台的「+」、空态和收起的竖条里能新建它。
- * 页签内容默认放进宿主的浮起面板外框（连同四周的边距）；`frameless` 为真的渲染器自己画面板和边距，宿主原样放它。
+ * 产物类型登记项。`match` 定义匹配规则：
+ * - `{ path }` / `{ pattern }`：每个命中路径的文件对应一件产物，ID 为 `file:<path>`；
+ * - `{ anyPath }`：工作区存在列表中任一文件时生成一件产物，ID 为 `type`；配置 `dir` 后，该目录下的其余文件也归属此产物
+ *   （文件页展示「打开 X」直达按钮），但仅 `anyPath` 中的文件决定产物是否存在；
+ * - `{ workspace: true }`：工作区非空时生成一件产物，ID 为 `workspace`；
+ * - `{ displayKind }`：每个匹配展示类型的工具调用对应一件产物，ID 为 `frame:<toolCallId>`。
+ * 除 `displayKind` 外均为常驻类型，存在产物时固定占用页签。`hiddenWhenReadOnly` 为 `true` 时，
+ * 只读对话中不生成该类产物，携带 URL 参数亦无法选中。
+ * 配置 `create` 后，在非只读对话且尚未存在该产物时，工作台顶栏「+」、空态选择器与收起竖轨均提供新建入口。
+ * 页签内容默认包裹在宿主的浮起面板与外边距中；`frameless` 为 `true` 时由渲染器自行绘制面板与边距，宿主直接挂载。
  */
 export interface ArtifactEntry {
   type: string
@@ -91,7 +91,7 @@ export interface ArtifactEntry {
   frameless?: boolean
 }
 
-/** 登记了 `create` 的登记项。 */
+/** 已配置 `create` 的产物登记项。 */
 export type CreatableEntry = ArtifactEntry & { create: ArtifactCreate }
 
 export interface WorkbenchFile {
