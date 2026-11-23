@@ -31,6 +31,7 @@ from agent_runtime.harness.transcript.subagents import SubAgentMirror
 from agent_runtime.harness.usage_ledger import UsageLedger
 from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import (
+    MAIN_AGENT_ID,
     PromptContent,
     StepUsage,
     TextContent,
@@ -428,6 +429,17 @@ async def awaits(queue: JobQueue, prompt_id: str, *, tries: int = 200) -> JobRow
     raise AssertionError("这条 prompt 没停在审批上")
 
 
+async def approval_shown(
+    store: TranscriptStore, conversation_id: str, interaction_id: str, *, tries: int = 200
+) -> None:
+    for _ in range(tries):
+        pending = store.pending_interactions(conversation_id, MAIN_AGENT_ID)
+        if any(item.interaction_id == interaction_id for item in pending):
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError("审批卡没显示出来")
+
+
 def prompt_text(turn: TranscriptTurn) -> str:
     return "".join(part.text for part in turn.content if part.type == "text")
 
@@ -449,6 +461,7 @@ __all__ = [
     "OWNER",
     "FixedAgents",
     "approval_runner",
+    "approval_shown",
     "awaits",
     "build_runner",
     "calls_then_says",

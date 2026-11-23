@@ -90,7 +90,7 @@
 | `video_breakdown` | 在 `runtime.yaml` 配置 `video_breakdown` 段 | `workspace` | 提供 `breakdown_video` **后台异步工具（`BackgroundTools`）**：通过内部接口调用后端 `app/reference_breakdown.py` 查询或触发参考视频拆解队列 |
 
 - **运行时镜像与启动期双向检查**：生产运行时镜像安装组合包 [deploy/runtime-video](../deploy/runtime-video/pyproject.toml)（打包 `runtime` 与 `plugins/video`）。启用 `shot_video` 或 `video_breakdown` 时，运行时启动阶段自动请求后端 `/internal/runtime/plugins/services` 核对图片模型、OSS、ffmpeg 与拆解服务是否就绪，未配齐则拒绝启动。
-- **后台异步工具收尾（`BackgroundTools`）**：`breakdown_video` 调用后立即返回「已启动」回执，拆解完成后将结果作为新消息送回模型；若拆解未完对话即中止或异常结束，下次开跑前自动将原回执替换为 `interrupted` 标记。
+- **后台异步工具收尾（`BackgroundTools`）**：`breakdown_video` 调用后立即返回「已启动」回执，拆解完成后将结果作为新消息送回模型；拆解未完时又调用了需要审批的工具，运行先等拆解完成、结果记入历史，再停下等待审批（审批卡在等待期间即可回应）；若拆解未完对话即中止或异常结束，下次开跑前自动将原回执替换为 `interrupted` 标记。
 
 ### 身份与模块协作
 
