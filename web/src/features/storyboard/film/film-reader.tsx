@@ -397,8 +397,11 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
                   ? undefined
                   : {
                       actions: takeActionsOf(selectedTake, { readOnly, refillable: false }),
+                      onConvertDraft: () =>
+                        void video.completeDraft(group.index, selectedTake.job.id),
                       onEditVideo: () => go({ video: selectedTake.job.id }),
                       onRefill: () => {},
+                      onSelectTake: stage.selectTake,
                       take: selectedTake,
                     }
               }
@@ -445,7 +448,7 @@ function FilmWorkspace({ conversationId, readOnly }: ArtifactRendererProps) {
             value: group.aspectRatio,
           }}
           blocker={generateBlocker}
-          models={{ items: video.models, status: video.modelsStatus }}
+          models={{ draft: video.draftSupport, items: video.models, status: video.modelsStatus }}
           notice={generateNotice}
           onChange={video.setOptions}
           onGenerate={() => void generate()}

@@ -2,8 +2,13 @@ import { queryOptions, useQuery } from '@tanstack/react-query'
 import { type z } from 'zod'
 import { ApiError, apiFetch } from '@/shared/api/client'
 import { drainPages } from '@/shared/api/paging'
-import type { VideoGenerationIn, VideoShotIn } from '@/shared/api/generated/types.gen'
+import type {
+  VideoDraftCompletionIn,
+  VideoGenerationIn,
+  VideoShotIn,
+} from '@/shared/api/generated/types.gen'
 import {
+  zGenerationEnvelope,
   zGenerationsPageOut,
   zVideoModelsOut,
   zVideoShotIn,
@@ -12,7 +17,7 @@ import {
 import type { zGenerationOut } from '@/shared/api/generated/zod.gen'
 import type { Shot } from './shot-document'
 import { isRunningStatus } from './shots'
-import type { VideoResolution } from './video-generation-options'
+import type { VideoChoice } from './video-generation-options'
 
 export type GenerationJob = z.infer<typeof zGenerationOut>
 
@@ -44,12 +49,9 @@ export const useVideoModels = () =>
     staleTime: Infinity,
   })
 
-export type VideoGenerationInput = {
+export type VideoGenerationInput = VideoChoice & {
   conversationId: string
   aspectRatio: string
-  model: string
-  resolution: VideoResolution
-  generateAudio: boolean
   shot: Shot
 }
 
@@ -70,6 +72,7 @@ export const submitVideoGeneration = async (input: VideoGenerationInput): Promis
     seconds: input.shot.seconds,
     shot,
     shot_index: input.shot.index,
+    ...(input.draft ? { provider_options: { draft: true } } : {}),
   }
   const receipt = await apiFetch('/generations/video', zVideoSubmitOut, {
     body,
@@ -77,6 +80,17 @@ export const submitVideoGeneration = async (input: VideoGenerationInput): Promis
     method: 'POST',
   })
   return receipt.task_id
+}
+
+export const DRAFT_COMPLETION_FAILED = '转 1080p 提交失败'
+
+export const submitVideoDraftCompletion = async (body: VideoDraftCompletionIn) => {
+  const { generation } = await apiFetch(
+    '/generations/video-draft-completions',
+    zGenerationEnvelope,
+    { body, fallbackErrorMessage: DRAFT_COMPLETION_FAILED, method: 'POST' },
+  )
+  return generation
 }
 
 export const generationsRefetchInterval = (

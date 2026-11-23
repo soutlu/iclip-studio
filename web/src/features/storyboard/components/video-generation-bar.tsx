@@ -5,10 +5,14 @@ import { SubmitButton, type SubmitPhase } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
+  DRAFT_LABEL,
+  DRAFT_QUALITY,
   MODELS_PENDING_TEXT,
   VIDEO_RESOLUTIONS,
+  type DraftSupport,
   type VideoGenerationOptions,
   type VideoModelsStatus,
+  type VideoQuality,
 } from '../video-generation-options'
 import {
   generationStatusOf,
@@ -17,6 +21,7 @@ import {
 } from '../generation-blocker'
 import { supportsAspectRatio } from '../video-model-support'
 import { AspectGlyph } from './aspect-glyph'
+import { BlockedReason } from './blocked-reason'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
 import { useHorizontalWheel } from './use-horizontal-wheel'
 import { useScrollFade } from './use-scroll-fade'
@@ -30,7 +35,7 @@ type AspectControl = {
 
 type VideoGenerationBarProps = {
   shotIndex: number
-  models: { items: readonly string[]; status: VideoModelsStatus }
+  models: { items: readonly string[]; status: VideoModelsStatus; draft: DraftSupport }
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
   aspect: AspectControl
@@ -90,28 +95,11 @@ export function VideoGenerationBar({
             text={modelLabel}
             value={value.model ?? ''}
           />
-          <ChipGroup
-            aria-label="分辨率"
-            className="storyboard-bar-segmented"
-            onValueChange={(next) => {
-              const resolution = VIDEO_RESOLUTIONS.find((item) => item === next)
-              if (resolution !== undefined) onChange({ ...value, resolution })
-            }}
-            type="single"
-            value={value.resolution}
-            variant="segmented"
-          >
-            {VIDEO_RESOLUTIONS.map((resolution) => (
-              <FilterChip
-                className="storyboard-bar-segment"
-                key={resolution}
-                value={resolution}
-                variant="segmented"
-              >
-                {resolution}
-              </FilterChip>
-            ))}
-          </ChipGroup>
+          <QualityPicker
+            draft={models.draft}
+            onChange={(quality) => onChange({ ...value, quality })}
+            value={value.quality}
+          />
           <TooltipRoot>
             <TooltipTrigger asChild>
               <button
@@ -160,6 +148,55 @@ function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLin
       <Icon decorative name={error ? 'alert' : 'info'} size="xs" />
       <span className="truncate">{status.text}</span>
     </p>
+  )
+}
+
+function QualityPicker({
+  draft,
+  onChange,
+  value,
+}: {
+  draft: DraftSupport
+  onChange: (quality: VideoQuality) => void
+  value: VideoQuality
+}) {
+  const qualities: readonly VideoQuality[] =
+    draft === 'off' ? VIDEO_RESOLUTIONS : [...VIDEO_RESOLUTIONS, DRAFT_QUALITY]
+  const blocked = (quality: VideoQuality) => quality === DRAFT_QUALITY && draft === 'unsupported'
+  return (
+    <ChipGroup
+      aria-label="分辨率"
+      className="storyboard-bar-segmented"
+      onValueChange={(next) => {
+        const quality = qualities.find((item) => item === next)
+        if (quality !== undefined && !blocked(quality)) onChange(quality)
+      }}
+      type="single"
+      value={value}
+      variant="segmented"
+    >
+      {qualities.map((quality) => {
+        const segment = (
+          <FilterChip
+            aria-disabled={blocked(quality) ? true : undefined}
+            className="storyboard-bar-segment"
+            key={quality}
+            value={quality}
+            variant="segmented"
+          >
+            {quality === DRAFT_QUALITY ? DRAFT_LABEL : quality}
+          </FilterChip>
+        )
+        // 提示的触发器会把自己的 data-state 盖到分段上，选中态靠它显示，所以只包置灰的那一格。
+        return blocked(quality) ? (
+          <BlockedReason key={quality} reason="该模型不支持样片">
+            {segment}
+          </BlockedReason>
+        ) : (
+          segment
+        )
+      })}
+    </ChipGroup>
   )
 }
 

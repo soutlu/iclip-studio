@@ -35,6 +35,8 @@ export type TakeView = {
   actions: TakeActions
   onEditVideo: () => void
   onRefill: () => void
+  onConvertDraft: () => void
+  onSelectTake: (jobId: string) => void
 }
 
 type ShotStageProps = {
@@ -124,8 +126,10 @@ function TakeStage({ drop, view }: { drop: ShotStageProps['drop']; view: TakeVie
       overlay={
         <TakeStageBar
           actions={view.actions}
+          onConvertDraft={view.onConvertDraft}
           onEditVideo={view.onEditVideo}
           onRefill={view.onRefill}
+          onSelectTake={view.onSelectTake}
           take={view.take}
         />
       }

@@ -2,7 +2,7 @@ import { Icon } from '@/shared/icons'
 import { formatShortTime } from '@/shared/lib/date-time'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import { formatDuration } from '@/shared/ui/media-preview'
-import type { Take } from '../takes'
+import { qualityLabelOf, type Take } from '../takes'
 import { useElapsed } from '@/shared/ui/media-preview'
 
 const POSTER_WIDTH = 640
@@ -20,6 +20,7 @@ type TakeCardProps = {
 export function TakeCard({ now, onSelect, selected, size, take }: TakeCardProps) {
   const { job } = take
   const time = formatShortTime(job.createdAt, now)
+  const quality = qualityLabelOf(take)
   return (
     <li className="storyboard-take-item">
       <button
@@ -40,8 +41,8 @@ export function TakeCard({ now, onSelect, selected, size, take }: TakeCardProps)
         ) : (
           <CompletedFace url={take.outputUrl} />
         )}
-        {take.resolution === undefined ? null : (
-          <span className="storyboard-take-pill storyboard-take-resolution">{take.resolution}</span>
+        {quality === undefined ? null : (
+          <span className="storyboard-take-pill storyboard-take-resolution">{quality}</span>
         )}
         {take.editCount > 0 ? (
           <span

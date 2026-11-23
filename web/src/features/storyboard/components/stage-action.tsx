@@ -1,6 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { BusyRing } from '@/shared/ui/busy-ring'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from './blocked-reason'
 import { useCollapsedTextHint } from './use-collapsed-text-hint'
@@ -11,12 +12,14 @@ type StageActionProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'
   label: string
   text?: string | undefined
   blocker?: string | undefined
+  busy?: boolean
 }
 
 const TOOLTIP_SIDE = 'bottom'
 
 export function StageAction({
   blocker,
+  busy = false,
   className,
   icon,
   label,
@@ -24,9 +27,10 @@ export function StageAction({
   text,
   ...props
 }: StageActionProps) {
-  const { bindText, tooltip } = useCollapsedTextHint()
+  const { bindText, tooltip } = useCollapsedTextHint(busy)
   const button = (
     <button
+      aria-busy={busy || undefined}
       aria-disabled={blocker === undefined ? undefined : true}
       aria-label={label}
       className={cn(stageActionClass, className)}
@@ -42,6 +46,7 @@ export function StageAction({
           {text}
         </span>
       )}
+      {busy ? <BusyRing /> : null}
     </button>
   )
   if (blocker !== undefined)

@@ -15,6 +15,7 @@ import {
   zFinalCutTranslationsIn,
   zSpeechIn,
   zSubtitleIn,
+  zVideoDraftCompletionIn,
 } from '@/shared/api/generated/zod.gen'
 // ?no-inline 阻止 Vite 将小体积媒体资源内联为 data URI。
 import sampleEditedUrl from '../fixtures/sample-edited.mp4?no-inline'
@@ -269,6 +270,13 @@ const isFinishedTake = (record: MockRecord): boolean =>
   record.outputUrl !== null &&
   ((record.operation === 'compose' && record.sourceJobId !== null) ||
     (record.operation === 'generate' && record.sourceJobId === null))
+
+const isMockDraft = (record: MockRecord): boolean => {
+  const options = record.request?.['provider_options']
+  return (
+    typeof options === 'object' && options !== null && 'draft' in options && options.draft === true
+  )
+}
 
 const VIDEO_DONE_MS = 3000
 
@@ -1026,6 +1034,40 @@ export const workspaceHandlers = [
           : { outputUrl: VIDEO_URL, watermarkOutputUrl: VIDEO_URL, durationMs: VIDEO_MS }),
     })
     return HttpResponse.json({ task_id: created.id }, { status: 202 })
+  }),
+
+  // 转 1080p：同一条样片已有没失败的 1080p 时给回那一条，否则照出片的节奏做一条新的
+  http.post('*/api/generations/video-draft-completions', async ({ request }) => {
+    const parsed = zVideoDraftCompletionIn.safeParse(await request.json())
+    if (!parsed.success) {
+      return HttpResponse.json({ detail: '转 1080p 参数无效' }, { status: 422 })
+    }
+    const { conversationId, draftJobId } = parsed.data
+    const draft = findJob(conversationId, draftJobId)
+    if (draft === undefined || !isFinishedTake(draft) || !isMockDraft(draft)) {
+      return HttpResponse.json({ detail: '只有做好的样片能转 1080p' }, { status: 422 })
+    }
+    const existing = generations
+      .get(conversationId ?? '')
+      ?.find((item) => item.request?.['draft_job_id'] === draft.id && item.status !== 'failed')
+    if (existing !== undefined) return HttpResponse.json({ generation: existing }, { status: 202 })
+    const created = acceptGeneration({
+      kind: 'video',
+      prompt: '',
+      request: {
+        ...draft.request,
+        draft_job_id: draft.id,
+        provider_options: null,
+        resolution: '1080p',
+      },
+      conversationId: conversationId ?? null,
+      metadata: draft.metadata,
+      shotIndex: draft.shotIndex,
+      outputUrl: VIDEO_URL,
+      watermarkOutputUrl: VIDEO_URL,
+      durationMs: VIDEO_MS,
+    })
+    return HttpResponse.json({ generation: created }, { status: 202 })
   }),
 
   http.post('*/api/generations/video-edits', async ({ request }) => {

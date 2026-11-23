@@ -16,6 +16,7 @@ import {
 import { markEnhancementsSeen, useSeenEnhancements } from '@/shared/api/video-enhancements-seen'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { BusyRing } from '@/shared/ui/busy-ring'
 import { Button, IconButton } from '@/shared/ui/button'
 import { useElapsed } from '@/shared/ui/media-preview'
 import { MenuItem, MenuRoot, MenuSeparator, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
@@ -50,7 +51,7 @@ const FALLBACK_NAME = '生成的视频'
 
 function EnhanceBadgeMark({ badge }: { badge: EnhanceBadge }) {
   if (badge === 'running') {
-    return <span aria-hidden className="video-download-ring" data-enhance-ring="" />
+    return <BusyRing data-enhance-ring="" />
   }
   return (
     <span
