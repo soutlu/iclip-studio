@@ -210,10 +210,10 @@ const approvalTurn = () => ({
     {
       frames: [
         {
-          display: { kind: 'skill_call', skill_name: '分镜脚本', args: '镜头节奏.md' },
+          display: { kind: 'skill_call', skill_name: '分镜脚本', args: 'references/镜头节奏.md' },
           frameId: `${APPROVAL_STEP_ID}.f1`,
           kind: 'tool',
-          name: 'get_skill_reference',
+          name: 'read_skill_file',
           output: '一条镜头一个动作；封面取全片最亮的那一帧。',
           state: 'done',
           toolCallId: 'call_skill',
