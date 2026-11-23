@@ -219,6 +219,7 @@ def build_generation_module(
         music=music_target,
         render=None if render is None else render.client,
         enhance=video_enhance,
+        drafts=video.draft_complete_url is not None,
         model_groups=model_groups,
     )
     return GenerationModule(

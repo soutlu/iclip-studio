@@ -25,4 +25,5 @@ export const VIDEO_MODELS: VideoModelsOut = {
   default: 'vendor-a-seedance-2-5',
   items: VIDEO_CLIP_MODELS.map((model) => model.id),
   clipModels: VIDEO_CLIP_MODELS,
+  draftModels: [],
 }

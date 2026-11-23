@@ -82,6 +82,7 @@ const provide = (document = fixture) => {
         items: ['seedance_2.0'],
         default: 'seedance_2.0',
         clipModels: [],
+        draftModels: [],
       }),
     ),
     http.post('*/api/generations/video', async ({ request }) => {

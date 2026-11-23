@@ -342,6 +342,7 @@ async def send_video02(made: Page, *, film_version: int, run_version: int) -> uu
         model="vendor-a-seedance-2-5",
         resolution="720p",
         generate_audio=True,
+        draft=False,
         film_version=film_version,
         run_version=run_version,
     )
@@ -525,15 +526,18 @@ async def test_generating_on_a_stale_version_is_a_conflict() -> None:
     assert made.jobs.jobs == {}
 
 
-async def send(made: Page, video: str) -> uuid.UUID:
+async def send(
+    made: Page, video: str, *, draft: bool = False, resolution: str = "720p"
+) -> uuid.UUID:
     return await made.adapter.generate_video(
         PRINCIPAL,
         OWNER,
         CONVERSATION,
         video=video,
         model="vendor-a-seedance-2-5",
-        resolution="720p",
+        resolution=resolution,
         generate_audio=True,
+        draft=draft,
         film_version=1,
         run_version=1,
     )
@@ -556,6 +560,18 @@ async def test_a_group_is_sent_as_its_shot_with_the_group_number() -> None:
     ]
     assert "{这一双，走起来很轻。}" in sent["prompt"]
     assert sorted(made.probe.asked) == sorted(set(expected["images"]))
+    assert sent["provider_options"] is None, "不出样片时不带上游专属参数"
+
+
+async def test_a_group_sent_as_a_draft_asks_upstream_for_one_at_the_given_resolution() -> None:
+    made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
+
+    job = made.submitted(await send(made, "video01", draft=True, resolution="480p"))
+
+    assert job.request is not None
+    sent = job.request.model_dump()
+    assert (sent["provider_options"], sent["resolution"]) == ({"draft": True}, "480p")
+    assert (job.kind, job.operation, job.shot_index) == (KIND_VIDEO, "generate", 1)
 
 
 async def test_a_group_whose_reference_does_not_open_is_not_sent() -> None:

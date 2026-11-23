@@ -59,7 +59,8 @@ _VIDEOS: Final = f"""
                AS downloaded,
            g.shot_index AS shot,
            u.username AS user_name,
-           c.task_id
+           c.task_id,
+           g.request ->> 'draft_job_id' IS NOT NULL AS from_draft
     {_VIDEO_JOBS}"""
 
 _PERSON: Final = f"""
@@ -79,10 +80,10 @@ _PERSON: Final = f"""
 
 _SHOTS: Final = """
     SELECT v.conversation_id, v.shot, v.task_id,
-           count(*) AS attempts,
+           count(*) FILTER (WHERE NOT v.from_draft) AS attempts,
            min(v.finished_at) AS first_at,
            max(v.finished_at) AS last_at,
-           count(*) = 1 AS one_take,
+           count(*) FILTER (WHERE NOT v.from_draft) = 1 AS one_take,
            bool_or(v.downloaded) AS effective,
            (array_agg(v.user_name ORDER BY v.finished_at, v.id))[1] AS user_name
     FROM videos v

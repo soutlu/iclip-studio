@@ -78,15 +78,15 @@ def config_with_media() -> RuntimeConfig:
                     subtitle_api_key_env="QWEN_SUBTITLE_API_KEY",
                     music_api_key_env="QWEN_MUSIC_API_KEY",
                     speech_api_key_env="QWEN_SPEECH_API_KEY",
-                    video_models={"seedance": "seedance"},
+                    video_models={"seedance-2-5": "seedance-2-5"},
                 )
             },
             "media_generation": MediaGenerationSection(
                 video=VideoGenerationSection(
                     submit_url="https://video.test/generate",
                     status_base_url="https://video.test/tasks",
-                    model="seedance",
-                    allowed_models=("seedance",),
+                    model="seedance-2-5",
+                    allowed_models=("seedance-2-5",),
                 ),
                 image=ImageGenerationSection(
                     api_base="https://image.test/gateway",
@@ -252,6 +252,27 @@ async def test_startup_says_when_music_is_off_and_the_route_is_mounted_either_wa
     off = [log for log in logs if log["event"] == "音乐生成未启用"]
     assert len(off) == (0 if configured else 1)
     assert response.status_code == 401, "入口挂着，没登录先 401"
+
+
+@pytest.mark.parametrize(
+    ("address", "draft_models"),
+    [("https://video.test/draft/complete", ["seedance-2-5"]), (None, [])],
+    ids=["开通", "没开通"],
+)
+def test_the_draft_completion_address_switches_drafts_on(
+    local_media_env: None, address: str | None, draft_models: list[str]
+) -> None:
+    config = config_with_media()
+    media = config.media_generation
+    assert media is not None
+    video = media.video.model_copy(update={"draft_complete_url": address})
+    config = config.model_copy(
+        update={"media_generation": media.model_copy(update={"video": video})}
+    )
+
+    app = build_app(config, engine=engine(), object_store=MemoryObjectStore(), media_codec=SOFTWARE)
+
+    assert app.state.generation.service.video_models().draft_models == draft_models
 
 
 PRINCIPAL = Principal(

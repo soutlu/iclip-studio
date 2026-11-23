@@ -605,6 +605,19 @@ class InMemoryGenerationRepository:
         rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
         return tuple(rows)
 
+    async def draft_completions_of(
+        self, draft_job_id: uuid.UUID, *, conversation_id: uuid.UUID | None
+    ) -> tuple[GenerationJob, ...]:
+        rows = [
+            job
+            for job in self.jobs.values()
+            if job.conversation_id == conversation_id
+            and isinstance(job.request, VideoGenerationIn)
+            and job.request.draft_job_id == draft_job_id
+        ]
+        rows.sort(key=lambda job: (job.created_at, job.id), reverse=True)
+        return tuple(rows)
+
     def _replace(self, job_id: uuid.UUID, **values: Any) -> GenerationJob:
         from dataclasses import replace
 

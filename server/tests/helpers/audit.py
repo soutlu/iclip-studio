@@ -245,8 +245,12 @@ class Plant:
         submitted_at: datetime | None = None,
         status: str = STATUS_COMPLETED,
         duration_ms: int | None = None,
+        draft_of: uuid.UUID | None = None,
     ) -> uuid.UUID:
         video_id = uuid.uuid4()
+        request: dict[str, Any] = {"model": "m", "prompt": "p", "user_name": self._names[owner]}
+        if draft_of is not None:
+            request |= {"draft_job_id": str(draft_of), "draft_task_id": f"up-{draft_of}"}
         await self._conn.execute(
             text(
                 "INSERT INTO iclip.generation_jobs (id, owner_user_id, conversation_id, kind,"
@@ -262,9 +266,7 @@ class Plant:
                 "conversation_id": conversation_id,
                 "kind": KIND_VIDEO,
                 "operation": OPERATION_GENERATE,
-                "request": json.dumps(
-                    {"model": "m", "prompt": "p", "user_name": self._names[owner]}
-                ),
+                "request": json.dumps(request),
                 "status": status,
                 "shot": shot,
                 "output": None if duration_ms is None else json.dumps({"duration_ms": duration_ms}),

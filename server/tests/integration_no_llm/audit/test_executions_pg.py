@@ -225,6 +225,50 @@ async def test_only_successful_takes_count_on_the_row(
     assert (row.metrics.shots, row.metrics.attempts, row.metrics.one_take_shots) == (1, 1, 1)
 
 
+async def test_a_1080p_made_from_a_draft_is_a_take_but_not_another_attempt(
+    engine: AsyncEngine, service: AuditService, reports: FreshReports
+) -> None:
+    async with engine.begin() as conn:
+        plant = Plant(conn)
+        sara = await plant.user(SARA)
+        conversation_id = await plant.conversation(sara, at=ago(hours=5))
+        at = ago(hours=4)
+        draft = await plant.video(
+            conversation_id, owner=sara, shot=1, created_at=at, finished_at=at, duration_ms=5000
+        )
+        later = at + timedelta(minutes=5)
+        full = await plant.video(
+            conversation_id,
+            owner=sara,
+            shot=1,
+            created_at=later,
+            finished_at=later,
+            duration_ms=5000,
+            draft_of=draft,
+        )
+        await plant.download(full, user_id=sara)
+        for minute in (10, 20):
+            take = at + timedelta(minutes=minute)
+            await plant.video(
+                conversation_id, owner=sara, shot=2, created_at=take, finished_at=take
+            )
+
+    [row] = (await service.executions(since=SINCE)).items
+    overall = await reports.overall(Scope(since=SINCE))
+
+    assert [(s.shot, s.attempts, s.one_take, s.effective) for s in row.shots] == [
+        (1, 1, True, True),
+        (2, 2, False, False),
+    ], "只下载了转出的 1080p，这一镜也算有效"
+    assert (overall.shots, overall.attempts, overall.one_take_shots, overall.effective_shots) == (
+        2,
+        3,
+        1,
+        1,
+    )
+    assert (overall.completed_videos, overall.length_seconds) == (4, 10.0), "1080p 照常算出片与片长"
+
+
 async def test_retry_and_stuck_flag_on_their_thresholds(
     engine: AsyncEngine, service: AuditService
 ) -> None:

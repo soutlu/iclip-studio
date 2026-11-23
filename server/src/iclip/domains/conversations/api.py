@@ -462,7 +462,8 @@ def create_conversations_router(
         body: FilmVideoGenerationIn,
         principal: Annotated[Principal, require_permission("agent:run")],
     ) -> FilmJobOut:
-        """给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。"""
+        """给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。``draft`` 为真时出样片，做好后用
+        ``POST /generations/video-draft-completions`` 转 1080p。"""
 
         job_id = await service.generate_film_video(
             principal,
@@ -471,6 +472,7 @@ def create_conversations_router(
             model=body.model,
             resolution=body.resolution,
             generate_audio=body.generate_audio,
+            draft=body.draft,
             film_version=body.film_version,
             run_version=body.run_version,
         )

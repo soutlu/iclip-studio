@@ -2690,9 +2690,14 @@ export type FilmTextEditsIn = {
 /**
  * FilmVideoGenerationIn
  *
- * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。
+ * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。``draft`` 为真时
+ * 出样片（发给上游 ``provider_options.draft: true``），清晰度仍按传来的发。
  */
 export type FilmVideoGenerationIn = {
+  /**
+   * Draft
+   */
+  draft?: boolean
   /**
    * Filmversion
    */
@@ -7537,6 +7542,29 @@ export type VideoContent = {
 }
 
 /**
+ * VideoDraftCompletionIn
+ *
+ * 把一条做好的样片转成 1080p 的受理输入。
+ *
+ * ``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的
+ * ``user_name`` 始终是样片上的那个。
+ */
+export type VideoDraftCompletionIn = {
+  /**
+   * Conversationid
+   */
+  conversationId?: string | null
+  /**
+   * Draftjobid
+   */
+  draftJobId: string
+  /**
+   * Username
+   */
+  userName?: string | null
+}
+
+/**
  * VideoEditIn
  *
  * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
@@ -7666,6 +7694,9 @@ export type VideoEnhancementsOut = {
  * 自身对得上（图片引用不越界、编号与正文一致）。画幅、分辨率、时长范围、素材规格由上游
  * 按模型判，这里不复制一份。``reference_ids`` 是这次用到的参考资产，受理时核对都在资料库里、
  * 没移除，只记进请求快照，不发给上游。
+ *
+ * ``draft_job_id`` / ``draft_task_id`` 只出现在样片转出的 1080p 上（样片在本系统的记录 id 与它在
+ * 上游的任务号，同有同无），只由转 1080p 入口填写；提交出片时传了 422。
  */
 export type VideoGenerationIn = {
   /**
@@ -7676,6 +7707,14 @@ export type VideoGenerationIn = {
    * Conversation Id
    */
   conversation_id?: string | null
+  /**
+   * Draft Job Id
+   */
+  draft_job_id?: string | null
+  /**
+   * Draft Task Id
+   */
+  draft_task_id?: string | null
   /**
    * Generate Audio
    */
@@ -7742,7 +7781,8 @@ export type VideoGenerationIn = {
 /**
  * VideoModelsOut
  *
- * 配置允许的视频模型，以及片段入口已接入的模型能力。
+ * 配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，
+ * 样片没开通时为空。
  */
 export type VideoModelsOut = {
   /**
@@ -7753,6 +7793,10 @@ export type VideoModelsOut = {
    * Default
    */
   default: string
+  /**
+   * Draftmodels
+   */
+  draftModels: Array<string>
   /**
    * Items
    */
@@ -10913,6 +10957,33 @@ export type SubmitVideoCompositeGenerationsVideoCompositesPostResponses = {
 
 export type SubmitVideoCompositeGenerationsVideoCompositesPostResponse =
   SubmitVideoCompositeGenerationsVideoCompositesPostResponses[keyof SubmitVideoCompositeGenerationsVideoCompositesPostResponses]
+
+export type SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostData = {
+  body: VideoDraftCompletionIn
+  path?: never
+  query?: never
+  url: '/generations/video-draft-completions'
+}
+
+export type SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostError =
+  SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostErrors[keyof SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostErrors]
+
+export type SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostResponse =
+  SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostResponses[keyof SubmitVideoDraftCompletionGenerationsVideoDraftCompletionsPostResponses]
 
 export type SubmitVideoEditGenerationsVideoEditsPostData = {
   body: VideoEditIn

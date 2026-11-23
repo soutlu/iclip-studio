@@ -35,9 +35,11 @@ media_generation:
     model: vendor-b-seedance-2-5 # 默认模型，显式指定 vendor-b 前缀以固定供应商
     # 仅声明允许使用的模型白名单；模型是否支持视频编辑等能力由代码侧按模型名判定。
     allowed_models:
-      - vendor-b-seedance-2-0
+      - vendor-b-seedance-2-5-flash
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
+    # 配置即开通样片（先出 480p，做好后转 1080p）；能出样片的模型由代码侧按模型名判定，状态查询复用 status_base_url。
+    draft_complete_url: https://placeholder.invalid/video/draft/complete
     # 配置此段即启用高清版（超分）；状态查询复用 status_base_url，密钥与 model_id 取自各配置组。
     enhance:
       submit_url: https://placeholder.invalid/video/enhance
@@ -95,7 +97,7 @@ model_groups:
     music_api_key_env: QWEN_MUSIC_API_KEY
     speech_api_key_env: QWEN_SPEECH_API_KEY
     video_models:
-      vendor-b-seedance-2-0: vendor-b-seedance-2-0
+      vendor-b-seedance-2-5-flash: vendor-b-seedance-2-5-flash
       vendor-b-seedance-2-5: vendor-b-seedance-2-5
       wan3.0-video-prime: wan3.0-video-prime
       video-enhance: video-enhance

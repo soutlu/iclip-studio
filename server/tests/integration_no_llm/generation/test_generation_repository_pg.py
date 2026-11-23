@@ -982,7 +982,7 @@ async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old
         )
     )
     default = await repo.create(
-        make_job(video_request(model="vendor-a-seedance-2-0"), owner_user_id=owner)
+        make_job(video_request(model="vendor-a-seedance-2-5-flash"), owner_user_id=owner)
     )
     trial = await repo.create(make_job(trial_request(), owner_user_id=owner))
     for job in (grouped, default, trial):
@@ -1032,4 +1032,8 @@ async def test_the_model_group_is_stored_and_the_report_appends_it_after_the_old
         rows[default.id].model,
         rows[default.id].model_group,
         rows[default.id].upstream_model,
-    ) == ("vendor-a-seedance-2-0", None, "vendor-a-seedance-2-0"), "默认组发的就是原模型名"
+    ) == (
+        "vendor-a-seedance-2-5-flash",
+        None,
+        "vendor-a-seedance-2-5-flash",
+    ), "默认组发的就是原模型名"

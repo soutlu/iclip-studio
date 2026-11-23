@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Final, Literal
 
 from iclip.domains.generation.schemas import (
+    DRAFT_OPTION,
     KIND_VIDEO,
     OPERATION_COMPOSE,
     OPERATION_GENERATE,
@@ -21,6 +22,7 @@ from iclip.domains.generation.schemas import (
     GenerationStatus,
     SnakeModel,
     SubtitleSentence,
+    VideoGenerationIn,
 )
 from iclip.domains.generation.stored_requests import GenerationRequest
 
@@ -89,6 +91,19 @@ def is_base_master(job: GenerationJob) -> bool:
     )
 
 
+def finished_draft_request(job: GenerationJob) -> VideoGenerationIn | None:
+    request = job.request
+    if (
+        not is_base_master(job)
+        or job.operation != OPERATION_GENERATE
+        or type(request) is not VideoGenerationIn
+        or (request.provider_options or {}).get(DRAFT_OPTION) is not True
+        or job.provider_task_id is None
+    ):
+        return None
+    return request
+
+
 def is_finished_edit(job: GenerationJob) -> bool:
     return (
         job.kind == KIND_VIDEO
@@ -113,6 +128,7 @@ __all__ = [
     "GenerationStatus",
     "InFlightPhase",
     "Inheritance",
+    "finished_draft_request",
     "inherited_through",
     "is_base_master",
     "is_finished_edit",

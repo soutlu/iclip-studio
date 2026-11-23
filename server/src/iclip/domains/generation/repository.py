@@ -121,6 +121,10 @@ class GenerationRepository(Protocol):
 
     async def enhancements_of(self, source_job_id: uuid.UUID) -> tuple[GenerationJob, ...]: ...
 
+    async def draft_completions_of(
+        self, draft_job_id: uuid.UUID, *, conversation_id: uuid.UUID | None
+    ) -> tuple[GenerationJob, ...]: ...
+
 
 async def conversation_record(
     repo: GenerationRepository,

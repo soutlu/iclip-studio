@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -27,6 +27,7 @@ from iclip.domains.generation.schemas import (
     MAX_COMPOSE_SEGMENTS,
     MAX_METADATA_CHARS,
     VideoComposeRequest,
+    VideoGenerationIn,
     request_to_payload,
 )
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
@@ -43,6 +44,7 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     build_queue,
+    compose_request,
     edit_range,
     external_base,
     image_request,
@@ -51,13 +53,14 @@ from tests.helpers.generation import (
     make_edit,
     make_job,
     stored_request,
+    trial_request,
     video_request,
     video_shot,
 )
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.model_groups import default_only
 
-VIDEO_MODELS = ("vendor-a-seedance-2-0", "vendor-a-seedance-2-5", "wan3.0-video")
+VIDEO_MODELS = ("vendor-a-seedance-2-5-flash", "vendor-a-seedance-2-5", "wan3.0-video")
 
 VIDEO_BODY = {
     "model": "vendor-a-seedance-2-5",
@@ -132,6 +135,7 @@ def build_test_app(
     video_models: tuple[str, ...] = VIDEO_MODELS,
     clips: Collection[str] = (CLIP_URL,),
     listed: Collection[uuid.UUID] = (),
+    drafts: bool = False,
 ) -> FastAPI:
     app = app_with_principal(granted)
     cleared = ClearedCompletions()
@@ -159,6 +163,7 @@ def build_test_app(
         lineage=lineage or FixedLineage(),
         media_probe=probe,
         references=FakeReferenceAssets(clips, listed=listed),
+        drafts=drafts,
         model_groups=default_only(video_models),
     )
     app.include_router(
@@ -205,6 +210,41 @@ async def test_video_submit_rejects_other_models_before_persisting_or_queueing(m
 
     assert response.status_code == 422
     assert "vendor-a-seedance-2-5" in response.json()["detail"]
+    assert repo.jobs == {}
+
+
+async def test_a_draft_is_an_ordinary_take_whose_option_is_kept_as_sent() -> None:
+    repo = InMemoryGenerationRepository()
+    app = build_test_app(repo, granted=principal("generation:submit"), drafts=True)
+    body = {**VIDEO_BODY, "resolution": "480p", "provider_options": {"draft": True}}
+    async with client(app) as http:
+        response = await http.post("/generations/video", json=body)
+
+    assert response.status_code == 202, response.text
+    stored = only_job(repo)
+    assert (stored.kind, stored.operation, stored.source_job_id) == ("video", "generate", None)
+    request = stored_request(stored)
+    assert isinstance(request, VideoGenerationIn)
+    assert (request.provider_options, request.resolution) == ({"draft": True}, "480p")
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"draft_job_id": str(uuid.uuid4())},
+        {"draft_task_id": "up-draft-1"},
+        {"draft_job_id": str(uuid.uuid4()), "draft_task_id": "up-draft-1"},
+    ],
+    ids=["job_id", "task_id", "both"],
+)
+async def test_a_take_cannot_claim_to_come_from_a_draft(fields: dict[str, str]) -> None:
+    repo = InMemoryGenerationRepository()
+    app = build_test_app(repo, granted=principal("generation:submit"), drafts=True)
+    async with client(app) as http:
+        response = await http.post("/generations/video", json={**VIDEO_BODY, **fields})
+
+    assert response.status_code == 422, response.text
+    assert "转 1080p" in response.json()["detail"]
     assert repo.jobs == {}
 
 
@@ -362,14 +402,14 @@ async def test_video_submit_rejects_a_body_whose_text_does_not_hold_together(
 
 
 async def test_historical_video_models_are_read_without_rewriting() -> None:
-    job = replace(make_job(video_request(model="vendor-b-seedance-2-0")), provider="partner-app")
+    job = replace(make_job(video_request(model="vendor-b-retired-video")), provider="partner-app")
     repo = InMemoryGenerationRepository([job])
     owner = principal("generation:read", user_id=job.owner_user_id)
     async with client(build_test_app(repo, granted=owner)) as http:
         response = await http.get(f"/generations/{job.id}")
 
     assert response.status_code == 200
-    assert response.json()["generation"]["request"]["model"] == "vendor-b-seedance-2-0"
+    assert response.json()["generation"]["request"]["model"] == "vendor-b-retired-video"
 
 
 async def test_api_key_caller_must_name_its_user_and_is_taken_at_its_word() -> None:
@@ -844,10 +884,10 @@ async def test_video_models_endpoint_lists_the_configured_models() -> None:
         "items": list(VIDEO_MODELS),
         "clipModels": [
             {
-                "id": "vendor-a-seedance-2-0",
-                "maxReferenceImages": 9,
-                "image": {"minSeconds": 4, "maxSeconds": 15, "defaultSeconds": 5},
-                "edit": None,
+                "id": "vendor-a-seedance-2-5-flash",
+                "maxReferenceImages": 10,
+                "image": {"minSeconds": 4, "maxSeconds": 30, "defaultSeconds": 5},
+                "edit": {"minSeconds": 4, "maxSeconds": 30},
             },
             {
                 "id": "vendor-a-seedance-2-5",
@@ -862,9 +902,30 @@ async def test_video_models_endpoint_lists_the_configured_models() -> None:
                 "edit": {"minSeconds": 1, "maxSeconds": 15},
             },
         ],
+        "draftModels": [],
     }
     async with client(build_test_app(InMemoryGenerationRepository(), granted=principal())) as http:
         assert (await http.get("/generations/video-models")).status_code == 403
+
+
+async def test_draft_models_are_the_allowed_seedance_2_5_names_once_drafts_are_on() -> None:
+    allowed = ("mmt-seedance-2-5-flash", "mmt-seedance-2-0", "mmt-seedance-2-5", "wan3.0-video")
+    app = build_test_app(
+        InMemoryGenerationRepository(),
+        granted=principal("generation:read"),
+        video_models=allowed,
+        drafts=True,
+    )
+    async with client(app) as http:
+        body = (await http.get("/generations/video-models")).json()
+
+    assert body["draftModels"] == ["mmt-seedance-2-5"], "flash 不能出样片"
+    clips = {clip["id"]: clip["maxReferenceImages"] for clip in body["clipModels"]}
+    assert clips == {
+        "mmt-seedance-2-5-flash": 10,
+        "mmt-seedance-2-5": 30,
+        "wan3.0-video": 10,
+    }, "flash 的名字拿到 flash 的规格；2.0 已没有片段规格"
 
 
 async def test_image_model_and_channel_are_settled_at_intake() -> None:
@@ -948,13 +1009,16 @@ def seed_take(
     owner: uuid.UUID,
     conversation: uuid.UUID | None = None,
     shot_index: int | None = None,
+    request: VideoGenerationIn | None = None,
+    provider_task_id: str | None = None,
 ) -> GenerationJob:
     take = make_job(
-        video_request(),
+        request or video_request(),
         status=STATUS_COMPLETED,
         owner_user_id=owner,
         conversation_id=conversation,
         shot_index=shot_index,
+        provider_task_id=provider_task_id,
         output=GenerationOutput(url=BASE_URL, watermark_url="https://example.com/base-wm.mp4"),
         finished_at=datetime.now(UTC) - timedelta(minutes=10),
     )
@@ -1914,10 +1978,10 @@ async def test_a_cut_reads_back_without_a_request() -> None:
 @pytest.mark.parametrize(
     ("model", "seconds", "accepted"),
     [
-        ("vendor-a-seedance-2-0", 4, True),
-        ("vendor-a-seedance-2-0", 15, True),
-        ("vendor-a-seedance-2-0", 3, False),
-        ("vendor-a-seedance-2-0", 16, False),
+        ("vendor-a-seedance-2-5-flash", 4, True),
+        ("vendor-a-seedance-2-5-flash", 30, True),
+        ("vendor-a-seedance-2-5-flash", 3, False),
+        ("vendor-a-seedance-2-5-flash", 31, False),
         ("vendor-a-seedance-2-5", 4, True),
         ("vendor-a-seedance-2-5", 30, True),
         ("vendor-a-seedance-2-5", 3, False),
@@ -2134,7 +2198,8 @@ async def test_reference_images_are_rejected_when_the_original_has_no_concrete_r
         ("wan3.0-video", 15001, -1, False),
         ("wan3.0-video", 5000, 5, False),
         ("vendor-a-seedance-2-5", 5000, 5, False),
-        ("vendor-a-seedance-2-0", 5000, -1, False),
+        ("vendor-a-seedance-2-5-flash", 4000, -1, True),
+        ("vendor-a-seedance-2-5-flash", 3999, -1, False),
     ],
 )
 async def test_edit_clips_follow_model_duration_and_mode_support(
@@ -2194,6 +2259,7 @@ async def test_unknown_allowed_models_remain_available_for_normal_generation_onl
     [
         ("vendor-a-seedance-2-5", {"omni_reference_task_type": "reference"}),
         ("vendor-a-seedance-2-5", {"omni_reference_task_type": "extend"}),
+        ("vendor-a-seedance-2-5-flash", {"omni_reference_task_type": "reference"}),
     ],
 )
 async def test_edit_mode_cannot_be_changed_by_provider_options(
@@ -2281,7 +2347,8 @@ async def test_wan_edit_prompt_limit_includes_the_added_prefix(prompt: str, stat
 @pytest.mark.parametrize(
     ("model", "limit", "editing"),
     [
-        ("vendor-a-seedance-2-0", 9, False),
+        ("vendor-a-seedance-2-5-flash", 10, False),
+        ("vendor-a-seedance-2-5-flash", 10, True),
         ("vendor-a-seedance-2-5", 30, False),
         ("vendor-a-seedance-2-5", 30, True),
         ("wan3.0-video", 10, False),
@@ -2317,3 +2384,267 @@ async def test_clip_reference_images_follow_the_selected_model_limit(
     else:
         payload = stored_request(only_new(repo, seeded)).model_dump()
         assert payload["reference_image_urls"] == urls
+
+
+DRAFT_COMPLETIONS = "/generations/video-draft-completions"
+DRAFT_TASK = "up-draft-1"
+
+
+def draft_request(**overrides: object) -> VideoGenerationIn:
+    fields: dict[str, object] = {
+        "resolution": "480p",
+        "provider_options": {"draft": True},
+        "generate_audio": True,
+        "reference_image_urls": ["https://cdn.test/a.png"],
+    }
+    return video_request(**{**fields, **overrides})
+
+
+def completion_request(draft: GenerationJob) -> VideoGenerationIn:
+    return draft_request(
+        resolution="1080p", provider_options=None, draft_job_id=draft.id, draft_task_id=DRAFT_TASK
+    )
+
+
+def seed_draft(
+    repo: InMemoryGenerationRepository, *, owner: uuid.UUID, conversation: uuid.UUID
+) -> GenerationJob:
+    return seed_take(
+        repo,
+        owner=owner,
+        conversation=conversation,
+        shot_index=3,
+        request=draft_request(),
+        provider_task_id=DRAFT_TASK,
+    )
+
+
+def seed_completion(
+    repo: InMemoryGenerationRepository,
+    draft: GenerationJob,
+    *,
+    conversation: uuid.UUID,
+    status: GenerationStatus,
+) -> GenerationJob:
+    job = make_job(
+        completion_request(draft),
+        status=status,
+        owner_user_id=draft.owner_user_id,
+        conversation_id=conversation,
+    )
+    repo.jobs[job.id] = job
+    return job
+
+
+async def complete_draft(
+    app: FastAPI, draft: GenerationJob, conversation: uuid.UUID, **fields: str
+) -> httpx.Response:
+    async with client(app) as http:
+        return await http.post(
+            DRAFT_COMPLETIONS,
+            json={"draftJobId": str(draft.id), "conversationId": str(conversation), **fields},
+        )
+
+
+async def test_a_finished_draft_becomes_a_plain_1080p_take_in_the_same_shot_group() -> None:
+    owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = replace(
+        seed_draft(repo, owner=owner, conversation=conversation),
+        task_id=task,
+        metadata={"film_node": "video01"},
+        model_group="mkt",
+        upstream_model="mkt-seedance-2-5",
+    )
+    repo.jobs[draft.id] = draft
+    granted = principal("generation:submit", "generation:read", user_id=owner)
+    app = build_test_app(repo, granted=granted, drafts=True)
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 202, response.text
+    job = only_new(repo, {draft.id})
+    assert (job.kind, job.operation, job.status) == ("video", "generate", STATUS_PENDING)
+    assert (job.source_job_id, job.root_job_id) == (None, None), "不记来源：不是编辑段"
+    assert (job.conversation_id, job.task_id, job.metadata, job.shot_index) == (
+        conversation,
+        task,
+        {"film_node": "video01"},
+        3,
+    )
+    assert (job.model_group, job.upstream_model) == ("mkt", "mkt-seedance-2-5")
+    assert isinstance(draft.request, VideoGenerationIn)
+    assert job.request == draft.request.model_copy(
+        update={
+            "resolution": "1080p",
+            "provider_options": None,
+            "draft_job_id": draft.id,
+            "draft_task_id": DRAFT_TASK,
+        }
+    ), "提示词、参考图、画幅、时长、声音与 user_name 都随样片"
+    assert app.state.cleared_completions.calls == [(conversation, owner)]
+    sent = response.json()["generation"]["request"]
+    assert (sent["draft_job_id"], sent["resolution"], sent["provider_options"]) == (
+        str(draft.id),
+        "1080p",
+        None,
+    )
+    assert "draft_task_id" not in sent, "上游任务号不外露"
+    async with client(app) as http:
+        read = (await http.get(f"/generations/{draft.id}")).json()["generation"]["request"]
+    assert read["provider_options"] == {"draft": True}
+    assert "draft_job_id" not in read, "样片本身没有来源样片"
+
+
+async def test_draft_completion_is_refused_when_drafts_are_off() -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=owner, conversation=conversation)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 422
+    assert "没有开通" in response.json()["detail"]
+    assert list(repo.jobs) == [draft.id]
+
+
+NOT_FINISHED_DRAFTS: dict[str, Callable[[GenerationJob], GenerationJob]] = {
+    "plain_take": lambda d: replace(d, request=draft_request(provider_options=None)),
+    "draft_false": lambda d: replace(d, request=draft_request(provider_options={"draft": False})),
+    "unfinished": lambda d: replace(
+        d, status=STATUS_SUBMITTED, output=GenerationOutput(), finished_at=None
+    ),
+    "failed": lambda d: replace(d, status=STATUS_FAILED, output=GenerationOutput()),
+    "no_upstream_task": lambda d: replace(d, provider_task_id=None),
+    "trial": lambda d: replace(
+        d,
+        request=trial_request(resolution="480p", provider_options={"draft": True}),
+        operation="trial",
+    ),
+    "edit": lambda d: replace(d, source_job_id=uuid.uuid4(), root_job_id=uuid.uuid4()),
+    "composite": lambda d: replace(
+        d, operation="compose", request=compose_request(), source_job_id=uuid.uuid4()
+    ),
+    "a_1080p_already": lambda d: replace(d, request=completion_request(d)),
+}
+
+
+@pytest.mark.parametrize("unfinish", NOT_FINISHED_DRAFTS.values(), ids=NOT_FINISHED_DRAFTS.keys())
+async def test_only_a_finished_draft_can_be_completed(
+    unfinish: Callable[[GenerationJob], GenerationJob],
+) -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    source = unfinish(seed_draft(repo, owner=owner, conversation=conversation))
+    repo.jobs[source.id] = source
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner), drafts=True)
+
+    response = await complete_draft(app, source, conversation)
+
+    assert response.status_code == 422, response.text
+    assert "只有做好的样片能转 1080p" in response.json()["detail"]
+    assert list(repo.jobs) == [source.id]
+
+
+@pytest.mark.parametrize("elsewhere", ["conversation", "owner"])
+async def test_a_draft_outside_this_conversation_or_owner_is_refused(elsewhere: str) -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(
+        repo,
+        owner=uuid.uuid4() if elsewhere == "owner" else owner,
+        conversation=uuid.uuid4() if elsewhere == "conversation" else conversation,
+    )
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner), drafts=True)
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 422, response.text
+    assert list(repo.jobs) == [draft.id]
+
+
+async def test_an_inherited_draft_completes_into_the_fork_with_the_drafts_user_name() -> None:
+    owner, ancestor, fork = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=uuid.uuid4(), conversation=ancestor)
+    lineage = FixedLineage({fork: ((ancestor, datetime.now(UTC)),)})
+    app = build_test_app(
+        repo, granted=principal("generation:submit", user_id=owner), drafts=True, lineage=lineage
+    )
+
+    response = await complete_draft(app, draft, fork)
+
+    assert response.status_code == 202, response.text
+    job = only_new(repo, {draft.id})
+    assert (job.conversation_id, job.shot_index, job.owner_user_id) == (fork, 3, owner)
+    assert stored_request(job).model_dump()["user_name"] == "logan", (
+        "上游要求与样片同一个 user_name"
+    )
+
+
+@pytest.mark.parametrize("status", [STATUS_PENDING, STATUS_SUBMITTED, STATUS_COMPLETED])
+async def test_an_unfailed_completion_in_this_conversation_is_handed_back(
+    status: GenerationStatus,
+) -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=owner, conversation=conversation)
+    earlier = seed_completion(repo, draft, conversation=conversation, status=status)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner), drafts=True)
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 202, response.text
+    assert response.json()["generation"]["id"] == str(earlier.id)
+    assert set(repo.jobs) == {draft.id, earlier.id}
+
+
+async def test_failed_or_other_conversation_completions_do_not_block_a_new_one() -> None:
+    owner, ancestor, fork = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=owner, conversation=ancestor)
+    seed_completion(repo, draft, conversation=fork, status=STATUS_FAILED)
+    seed_completion(repo, draft, conversation=ancestor, status=STATUS_PENDING)
+    seeded = set(repo.jobs)
+    lineage = FixedLineage({fork: ((ancestor, datetime.now(UTC)),)})
+    app = build_test_app(
+        repo, granted=principal("generation:submit", user_id=owner), drafts=True, lineage=lineage
+    )
+
+    response = await complete_draft(app, draft, fork)
+
+    assert response.status_code == 202, response.text
+    job = only_new(repo, seeded)
+    assert (response.json()["generation"]["id"], job.conversation_id) == (str(job.id), fork)
+
+
+async def test_acting_for_someone_changes_the_owner_but_not_the_upstream_user_name() -> None:
+    users = InMemoryUserRepository()
+    sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
+    conversation = uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=sara, conversation=conversation)
+    key = api_key("generation:submit", ACT_AS_PERMISSION)
+    app = build_test_app(repo, granted=key, drafts=True, users=users)
+
+    nameless = await complete_draft(app, draft, conversation)
+    acting = await complete_draft(app, draft, conversation, userName="Sara.Hong")
+
+    assert nameless.status_code == 422, "API key 调用方必须报 userName"
+    assert acting.status_code == 202, acting.text
+    job = only_new(repo, {draft.id})
+    assert (job.owner_user_id, job.api_key_id) == (sara, key.api_key_id)
+    assert stored_request(job).model_dump()["user_name"] == "logan", "发上游的仍是样片上的"
+
+
+async def test_draft_completion_needs_the_submit_permission() -> None:
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    repo = InMemoryGenerationRepository()
+    draft = seed_draft(repo, owner=owner, conversation=conversation)
+    app = build_test_app(repo, granted=principal("generation:read", user_id=owner), drafts=True)
+
+    response = await complete_draft(app, draft, conversation)
+
+    assert response.status_code == 403
+    assert list(repo.jobs) == [draft.id]

@@ -24,7 +24,7 @@ from pydantic import ValidationError
 from iclip.app.film_images import FILM_NODE_KEY, FilmImagesAdapter
 from iclip.app.runtime_workspace import WorkspaceFiles
 from iclip.common.errors import Conflict, NotFound, ValidationFailed, validation_error_detail
-from iclip.domains.generation.schemas import VideoGenerationIn
+from iclip.domains.generation.schemas import DRAFT_OPTION, VideoGenerationIn
 from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.public import Principal, resolve_user_name
 from iclip.platform.outbound.media_check import UrlProber, bad_images
@@ -210,6 +210,7 @@ class ConversationFilmAdapter:
         model: str,
         resolution: str,
         generate_audio: bool,
+        draft: bool,
         film_version: int,
         run_version: int | None,
     ) -> uuid.UUID:
@@ -239,6 +240,7 @@ class ConversationFilmAdapter:
                     "reference_image_urls": row.image_urls,
                     "generate_audio": generate_audio,
                     "resolution": resolution,
+                    "provider_options": {DRAFT_OPTION: True} if draft else None,
                     "aspect_ratio": target.attrs["aspect-ratio"],
                     "seconds": row.seconds,
                     "user_name": resolve_user_name(principal, None),
