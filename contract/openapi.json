@@ -8035,7 +8035,7 @@
       },
       "ModelUpdateIn": {
         "additionalProperties": false,
-        "description": "不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。",
+        "description": "不给的项不动；``contextSize`` 给 ``null`` 即清掉。",
         "properties": {
           "api": {
             "anyOf": [

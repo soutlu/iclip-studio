@@ -1879,7 +1879,7 @@ export const zModelTestIn = z.object({
 /**
  * ModelUpdateIn
  *
- * 不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。
+ * 不给的项不动；``contextSize`` 给 ``null`` 即清掉。
  */
 export const zModelUpdateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
