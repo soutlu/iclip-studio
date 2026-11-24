@@ -143,6 +143,22 @@ describe('识别出来的句子换算成 final-cut 里的字幕', () => {
       ],
       skipped: 0,
       silent: [],
+      elsewhere: [],
+    })
+  })
+
+  it('后一个片段里只有跨过接缝那句的后半：列成有话、句子归别的片段，不算没有话；真的没话的只算没有话', () => {
+    const clips = [
+      video({ id: 'v1', start: 0, mediaStart: 0, duration: 2_000 }),
+      video({ id: 'v2', start: 2_000, mediaStart: 2_000, duration: 2_000 }),
+      video({ id: 'v3', start: 4_000, mediaStart: 6_000, duration: 2_000 }),
+    ]
+    const sentences = [said(1_500, 2_500, '跨过接缝的一句')]
+    expect(recognizedCaptions(clips, new Map(clips.map((clip) => [clip.id, sentences])))).toEqual({
+      captions: [{ start: 1_500, duration: 1_000, text: '跨过接缝的一句', owner: 'v1' }],
+      skipped: 0,
+      silent: ['v3'],
+      elsewhere: ['v2'],
     })
   })
 
@@ -213,6 +229,7 @@ describe('识别出来的字幕避开已有的字幕', () => {
       captions: [{ start: 0, duration: 1_000, text: '一句话', owner: 'v1' }],
       skipped: 0,
       silent: ['v2'],
+      elsewhere: [],
     })
   })
 })

@@ -750,6 +750,37 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await waitFor(() => expect(submitted).toEqual([TAKE_A, TAKE_A]))
   })
 
+  it('一句话跨过两个相接的片段：第一次写进前一个片段名下、不提示归属；再点识别，后一个片段提示它的话归开头所在的片段，不再写、不再发起', async () => {
+    await putFilm([
+      video({ label: '前半', src: URL_A, duration: 2_000 }),
+      video({
+        id: 'clip-2',
+        label: '后半',
+        src: URL_A,
+        start: 2_000,
+        duration: 2_000,
+        mediaStart: 2_000,
+      }),
+    ])
+    const user = userEvent.setup()
+    await openEditor()
+    const submitted = serveSubtitles([
+      subtitleJob(TAKE_A, { sentences: [said(1_500, 2_500, '跨过接缝的一句')] }),
+    ])
+    const elsewhereText = '后半 里的话从别的片段说起，字幕归开头所在的片段，未加字幕'
+    const panel = await openCaptions(user)
+    await user.click(recognizeButton(panel))
+    await waitSaved(() => expect(savedSceneLines()).toEqual([['跨过接缝的一句', 1.5, 1, 'clip-1']]))
+    await act(() => new Promise((resolve) => setTimeout(resolve, 300)))
+    expect(screen.queryByText(elsewhereText)).toBeNull()
+
+    await waitFor(() => expect(recognizeButton(panel)).not.toHaveAttribute('aria-disabled'))
+    await user.click(recognizeButton(panel))
+    expect(await screen.findByText(elsewhereText)).toBeVisible()
+    expect(savedSceneLines()).toEqual([['跨过接缝的一句', 1.5, 1, 'clip-1']])
+    expect(submitted).toEqual([])
+  })
+
   it('没有可识别的片段时「识别字幕」置灰，点了说明原因', async () => {
     const user = userEvent.setup()
     await openEditor()

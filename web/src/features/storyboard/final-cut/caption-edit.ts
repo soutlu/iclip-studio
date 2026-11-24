@@ -357,19 +357,23 @@ export function placeCaptions(
 /**
  * 将语音识别结果（视频片段 ID → 对应素材识别出的句子列表）换算为待加入轨道的字幕：
  * 先按各片段取它名下的句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
- * `silent` 记录用掉的那段素材里没有一句话的片段 ID；有话、只是句子都写在前一个片段名下的不算。
+ * `silent` 记录用掉的那段素材里没有一句话的片段 ID；`elsewhere` 记录用掉的那段素材里有话、但一句都没写到它名下
+ * （句子都由播出开头的别的片段写）的片段 ID。
  */
 export function recognizedCaptions(
   clips: readonly FilmClip[],
   sentencesOf: ReadonlyMap<string, readonly Sentence[]>,
-): { captions: NewCaption[]; skipped: number; silent: string[] } {
+): { captions: NewCaption[]; skipped: number; silent: string[]; elsewhere: string[] } {
   const silent: string[] = []
+  const elsewhere: string[] = []
   const wanted = clips.flatMap((clip) => {
     const sentences = sentencesOf.get(clip.id)
     if (clip.kind !== 'video' || sentences === undefined) return []
+    const own = sentenceCaptions(clip, sentences, clips)
     if (!sentences.some((sentence) => playsPart(clip, sentence))) silent.push(clip.id)
-    return sentenceCaptions(clip, sentences, clips)
+    else if (own.length === 0) elsewhere.push(clip.id)
+    return own
   })
   const { placed, skipped } = placeCaptions(clips.filter(isCaption), wanted)
-  return { captions: placed, skipped, silent }
+  return { captions: placed, skipped, silent, elsewhere }
 }
