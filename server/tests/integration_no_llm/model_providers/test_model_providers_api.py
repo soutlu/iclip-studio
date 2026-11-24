@@ -32,7 +32,8 @@ from tests.helpers.runtime_service import add_model
 
 SECRETS = (GOOD_KEY, OTHER_KEY, BAD_KEY)
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-NATIVE_TOOLS = ["web_search", "web_extractor", "image_search"]
+BAILIAN_NATIVE_TOOLS = ["web_search", "web_extractor", "image_search"]
+NATIVE_TOOLS = [*BAILIAN_NATIVE_TOOLS, "deepseek_web_search"]
 
 
 @pytest.fixture
@@ -127,6 +128,7 @@ async def test_declarations_describe_the_credential_form_and_native_tools(
     declarations = {one["name"]: one for one in response.json()["declarations"]}
     assert list(declarations) == [
         "bailian",
+        "deepseek",
         "gemini",
         "openai-compatible",
         "openrouter",
@@ -134,6 +136,7 @@ async def test_declarations_describe_the_credential_form_and_native_tools(
     ]
     assert {name: one["apis"] for name, one in declarations.items()} == {
         "bailian": ["responses", "chat"],
+        "deepseek": ["responses", "chat"],
         "gemini": ["gemini"],
         "openai-compatible": ["chat", "responses"],
         "openrouter": ["chat"],
@@ -150,7 +153,11 @@ async def test_declarations_describe_the_credential_form_and_native_tools(
     bailian = declarations["bailian"]
     assert [field["name"] for field in bailian["credentialFields"]] == ["api_key", "base_url"]
     assert bailian["credentialFields"][1]["default"] == DEFAULT_BASE_URL
-    assert bailian["nativeToolsByApi"] == {"responses": NATIVE_TOOLS, "chat": []}
+    assert bailian["nativeToolsByApi"] == {"responses": BAILIAN_NATIVE_TOOLS, "chat": []}
+    assert declarations["deepseek"]["nativeToolsByApi"] == {
+        "responses": ["deepseek_web_search"],
+        "chat": [],
+    }
     assert "pydanticAiProvider" not in bailian
 
 
