@@ -306,7 +306,7 @@ export type AgentModelSettings = {
   /**
    * Native Tools
    */
-  native_tools?: Array<'web_search' | 'web_extractor' | 'image_search'>
+  native_tools?: Array<string>
   /**
    * Thinking
    */
@@ -1738,7 +1738,7 @@ export type CustomModelCreateIn = {
   /**
    * Nativetools
    */
-  nativeTools?: Array<'web_search' | 'web_extractor' | 'image_search'>
+  nativeTools?: Array<string>
   /**
    * Thinking
    */
@@ -1775,7 +1775,7 @@ export type DeclarationOut = {
    * Nativetoolsbyapi
    */
   nativeToolsByApi: {
-    [key: string]: Array<'web_search' | 'web_extractor' | 'image_search'>
+    [key: string]: Array<string>
   }
 }
 
@@ -4271,7 +4271,7 @@ export type ModelOptionOut = {
   /**
    * Nativetools
    */
-  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
+  nativeTools: Array<string>
   /**
    * Thinking
    */
@@ -4429,7 +4429,7 @@ export type ModelUpdateIn = {
   /**
    * Nativetools
    */
-  nativeTools?: Array<'web_search' | 'web_extractor' | 'image_search'> | null
+  nativeTools?: Array<string> | null
   /**
    * Thinking
    */
@@ -4539,11 +4539,11 @@ export type NativeToolOut = {
   /**
    * Name
    */
-  name: 'web_search' | 'web_extractor' | 'image_search'
+  name: string
   /**
    * Requires
    */
-  requires: Array<'web_search' | 'web_extractor' | 'image_search'>
+  requires: Array<string>
 }
 
 /**
@@ -4893,7 +4893,7 @@ export type ProviderModelOut = {
   /**
    * Nativetools
    */
-  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
+  nativeTools: Array<string>
   /**
    * Thinking
    */

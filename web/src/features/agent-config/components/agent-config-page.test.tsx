@@ -3,8 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
+import type { CustomModelCreateIn, ProviderModelOut } from '@/shared/api/generated/types.gen'
 import { mockSkillId } from '@/testing/mocks/agent-config'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
+import {
+  mockDeclarations,
+  mockModelOptions,
+  mockNativeTools,
+} from '@/testing/mocks/model-providers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { AgentPreviewConversation } from '@/routes/-agent-preview-conversation'
@@ -397,6 +403,105 @@ describe('AgentConfigPage 原生工具', () => {
     await waitFor(() => expect(puts).toHaveLength(1))
     const model = (puts[0] as { config: { model: { settings: Body } } }).config.model
     expect(model.settings['native_tools']).toEqual(['web_search'])
+  })
+
+  it('名录里多出一个前端没见过的工具：模型设置与添加模型都按名录列出它、能打开，写进请求', async () => {
+    const tool = { label: '文搜图', name: 'web_search_image', requires: [] }
+    const options = mockModelOptions()
+    server.use(
+      http.get('*/api/agents/model-options', () =>
+        HttpResponse.json({
+          nativeTools: [...options.nativeTools, tool],
+          providers: options.providers.map((provider) => ({
+            ...provider,
+            models: provider.models.map((model) =>
+              model.name === 'qwen3.8-flash'
+                ? { ...model, nativeTools: [...model.nativeTools, tool.name] }
+                : model,
+            ),
+          })),
+        }),
+      ),
+      http.get('*/api/model-providers/declarations', () =>
+        HttpResponse.json({
+          declarations: mockDeclarations.map((declaration) =>
+            declaration.name === 'bailian'
+              ? {
+                  ...declaration,
+                  nativeToolsByApi: {
+                    ...declaration.nativeToolsByApi,
+                    responses: [...(declaration.nativeToolsByApi['responses'] ?? []), tool.name],
+                  },
+                }
+              : declaration,
+          ),
+          nativeTools: [...mockNativeTools, tool],
+        }),
+      ),
+      http.post('*/api/model-providers/:providerId/models', async ({ request }) => {
+        const body = (await request.json()) as CustomModelCreateIn
+        const created: ProviderModelOut = {
+          api: body.api ?? null,
+          contextSize: body.contextSize ?? null,
+          enabled: true,
+          name: body.name,
+          nativeTools: body.nativeTools ?? [],
+          thinking: body.thinking ?? [],
+          type: body.type,
+          usedBy: [],
+        }
+        return HttpResponse.json(created, { status: 201 })
+      }),
+    )
+    const user = await renderPage()
+    const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
+    const posts = recordBodies('POST', /\/model-providers\/[^/]+\/models$/)
+
+    await user.click(
+      within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
+    )
+    const panel = screen.getByRole('region', { name: '模型设置' })
+    const agentTool = () =>
+      within(within(panel).getByRole('group', { name: '原生工具' })).getByRole('switch', {
+        name: '文搜图',
+      })
+    await user.click(agentTool())
+    expect(agentTool()).toBeChecked()
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(
+      within(section('指令')).getByRole('button', {
+        name: /^模型设置：qwen3.8-flash.*，原生工具：文搜图$/,
+      }),
+    ).toBeVisible()
+    const saveButton = within(editor()).getByRole('button', { name: '保存草稿' })
+    await user.click(saveButton)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    const model = (puts[0] as { config: { model: { settings: Body } } }).config.model
+    expect(model.settings['native_tools']).toEqual(['web_search_image'])
+    await waitFor(() => expect(saveButton).toBeDisabled())
+
+    await user.click(screen.getByRole('tab', { name: '模型与供应商' }))
+    const providers = screen.getByRole('region', { name: '模型与供应商' })
+    await user.click(await within(providers).findByRole('button', { name: '添加模型' }))
+    const form = within(within(providers).getByRole('form', { name: '添加模型' }))
+    const tools = within(form.getByRole('group', { name: '原生工具' }))
+    expect(tools.getAllByRole('listitem').map((node) => node.textContent)).toEqual([
+      '联网搜索',
+      '读网页',
+      '图搜图',
+      '文搜图',
+    ])
+    await user.click(tools.getByRole('switch', { name: '文搜图' }))
+    expect(tools.getByRole('switch', { name: '文搜图' })).toBeChecked()
+    await user.type(form.getByLabelText('模型名'), 'qwen3.8-image')
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0]).toMatchObject({
+      api: 'responses',
+      name: 'qwen3.8-image',
+      nativeTools: ['web_search_image'],
+    })
   })
 
   it('发布检查报回原生工具的问题时，写在「指令」一节', async () => {

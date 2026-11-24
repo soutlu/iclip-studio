@@ -15,7 +15,6 @@ from iclip.platform.runtime_api.config.model_providers.models import (
 from iclip.platform.runtime_api.model_vocab import (
     MODEL_GROUP_PATTERN,
     ModelApi,
-    NativeToolName,
     ThinkingEffort,
 )
 
@@ -31,9 +30,9 @@ class CamelModel(BaseModel):
 class NativeToolOut(CamelModel):
     """一个原生工具：名字、显示名，以及开它之前必须先开的。"""
 
-    name: NativeToolName
+    name: str
     label: str
-    requires: list[NativeToolName]
+    requires: list[str]
 
 
 class CredentialFieldOut(CamelModel):
@@ -52,7 +51,7 @@ class DeclaredModelOut(CamelModel):
     api: ModelApi | None
     context_size: int | None
     thinking: list[ThinkingEffort]
-    native_tools: list[NativeToolName]
+    native_tools: list[str]
 
 
 class DeclarationOut(CamelModel):
@@ -62,7 +61,7 @@ class DeclarationOut(CamelModel):
     label: str
     apis: list[ModelApi]
     credential_fields: list[CredentialFieldOut]
-    native_tools_by_api: dict[ModelApi, list[NativeToolName]]
+    native_tools_by_api: dict[ModelApi, list[str]]
 
 
 class DeclarationsOut(CamelModel):
@@ -168,7 +167,7 @@ class CustomModelCreateIn(CamelModel):
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] = []
-    native_tools: list[NativeToolName] = []
+    native_tools: list[str] = []
 
 
 class ModelUpdateIn(CamelModel):
@@ -178,7 +177,7 @@ class ModelUpdateIn(CamelModel):
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] | None = None
-    native_tools: list[NativeToolName] | None = None
+    native_tools: list[str] | None = None
 
 
 class DefaultModelOut(CamelModel):
@@ -204,7 +203,7 @@ class ModelOptionOut(CamelModel):
     name: str
     context_size: int | None
     thinking: list[ThinkingEffort]
-    native_tools: list[NativeToolName]
+    native_tools: list[str]
 
 
 class CredentialOptionOut(CamelModel):

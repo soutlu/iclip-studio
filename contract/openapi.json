@@ -549,11 +549,8 @@
         "properties": {
           "native_tools": {
             "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
+              "maxLength": 200,
+              "minLength": 1,
               "type": "string"
             },
             "title": "Native Tools",
@@ -3068,11 +3065,6 @@
           "nativeTools": {
             "default": [],
             "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
               "type": "string"
             },
             "title": "Nativetools",
@@ -3146,11 +3138,6 @@
           "nativeToolsByApi": {
             "additionalProperties": {
               "items": {
-                "enum": [
-                  "web_search",
-                  "web_extractor",
-                  "image_search"
-                ],
                 "type": "string"
               },
               "type": "array"
@@ -7775,11 +7762,6 @@
           },
           "nativeTools": {
             "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
               "type": "string"
             },
             "title": "Nativetools",
@@ -8079,11 +8061,6 @@
             "anyOf": [
               {
                 "items": {
-                  "enum": [
-                    "web_search",
-                    "web_extractor",
-                    "image_search"
-                  ],
                   "type": "string"
                 },
                 "type": "array"
@@ -8336,21 +8313,11 @@
             "type": "string"
           },
           "name": {
-            "enum": [
-              "web_search",
-              "web_extractor",
-              "image_search"
-            ],
             "title": "Name",
             "type": "string"
           },
           "requires": {
             "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
               "type": "string"
             },
             "title": "Requires",
@@ -9002,11 +8969,6 @@
           },
           "nativeTools": {
             "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
               "type": "string"
             },
             "title": "Nativetools",

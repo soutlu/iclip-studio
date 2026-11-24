@@ -58,7 +58,7 @@ const openDeclaration = (
   nativeToolsByApi: Object.fromEntries(apis.map((api) => [api, []])),
 })
 
-const mockNativeTools: NativeToolOut[] = [
+export const mockNativeTools: NativeToolOut[] = [
   { label: '联网搜索', name: 'web_search', requires: [] },
   { label: '读网页', name: 'web_extractor', requires: ['web_search'] },
   { label: '图搜图', name: 'image_search', requires: [] },
@@ -72,7 +72,7 @@ const optionalBaseUrl = {
   type: 'text',
 } as const
 
-const mockDeclarations: DeclarationOut[] = [
+export const mockDeclarations: DeclarationOut[] = [
   {
     apis: ['responses', 'chat'],
     credentialFields: [

@@ -53,7 +53,7 @@ export const zAgentDescriptor = z.object({
  * 模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。
  */
 export const zAgentModelSettings = z.object({
-  native_tools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])).optional(),
+  native_tools: z.array(z.string().min(1).max(200)).optional(),
   thinking: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullish(),
 })
 
@@ -786,10 +786,7 @@ export const zCustomModelCreateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   name: z.string(),
-  nativeTools: z
-    .array(z.enum(['web_search', 'web_extractor', 'image_search']))
-    .optional()
-    .default([]),
+  nativeTools: z.array(z.string()).optional().default([]),
   thinking: z
     .array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
     .optional()
@@ -807,10 +804,7 @@ export const zDeclarationOut = z.object({
   credentialFields: z.array(zCredentialFieldOut),
   label: z.string(),
   name: z.string(),
-  nativeToolsByApi: z.record(
-    z.string(),
-    z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
-  ),
+  nativeToolsByApi: z.record(z.string(), z.array(z.string())),
 })
 
 /**
@@ -1841,7 +1835,7 @@ export const zModelGroupsOut = z.object({
 export const zModelOptionOut = z.object({
   contextSize: z.int().nullable(),
   name: z.string(),
-  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
+  nativeTools: z.array(z.string()),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
 })
 
@@ -1885,7 +1879,7 @@ export const zModelUpdateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   enabled: z.boolean().nullish(),
-  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])).nullish(),
+  nativeTools: z.array(z.string()).nullish(),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).nullish(),
 })
 
@@ -1949,8 +1943,8 @@ export const zMusicIn = z.object({
  */
 export const zNativeToolOut = z.object({
   label: z.string(),
-  name: z.enum(['web_search', 'web_extractor', 'image_search']),
-  requires: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
+  name: z.string(),
+  requires: z.array(z.string()),
 })
 
 /**
@@ -2053,7 +2047,7 @@ export const zProviderModelOut = z.object({
   contextSize: z.int().nullable(),
   enabled: z.boolean(),
   name: z.string(),
-  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
+  nativeTools: z.array(z.string()),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
   type: z.enum(['llm', 'embedding', 'rerank']),
   usedBy: z.array(zAgentUsageOut),
