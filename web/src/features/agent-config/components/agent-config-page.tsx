@@ -1,4 +1,11 @@
-import { useLayoutEffect, useRef, useState, type ComponentType, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentType,
+  type CSSProperties,
+} from 'react'
 import { hasPermission, PERMISSION, useUser } from '@/shared/auth'
 import { cn } from '@/shared/lib/utils'
 import { useShellChrome } from '@/shared/shell'
@@ -17,7 +24,7 @@ import {
 } from '../split-layout'
 import { useSplitLayout } from '../use-split-layout'
 import { CreateAgentPage } from './agent-definition-form'
-import { AgentWorkspace } from './agent-workspace'
+import { AgentWorkspace, type DraftSaver } from './agent-workspace'
 import type { Panel } from './panel'
 import { PreviewHost, type PreviewConversationProps } from './preview-host'
 
@@ -45,6 +52,11 @@ export function AgentConfigPage({
     value: null,
   })
   const openerRef = useRef<HTMLElement | null>(null)
+  const draftSaverRef = useRef<DraftSaver | null>(null)
+  const saveUnsavedDraft = useCallback(
+    async () => draftSaverRef.current?.saveUnsaved(),
+    [draftSaverRef],
+  )
 
   const list = agents.data ?? []
   const currentId =
@@ -204,6 +216,7 @@ export function AgentConfigPage({
             agentEntryRef={agentEntryRef}
             agentId={currentId}
             agents={list}
+            draftSaverRef={draftSaverRef}
             edit={edits[currentId]}
             key={currentId}
             onCreateAgent={() => setCreating(true)}
@@ -267,6 +280,7 @@ export function AgentConfigPage({
             agentId={currentId}
             hidden={creating || panel !== null || !currentDetail.isSuccess}
             Conversation={PreviewConversation}
+            saveUnsavedDraft={saveUnsavedDraft}
             versionId={viewingVersionId}
             versionNumber={viewingVersionNumber}
           />

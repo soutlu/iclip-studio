@@ -66,6 +66,8 @@ const hasAssistantOutput = (turn: TranscriptTurn | undefined): boolean =>
 export type ConversationTimelineProps = {
   conversationId: string | null
   openConversation?: (() => Promise<string>) | undefined
+  /** 每次发消息或重新生成前先等它完成；它拒绝时这次不发，原因按发送失败显示。 */
+  beforeSend?: (() => Promise<void>) | undefined
   readOnly?: { note: string; backLink?: ReactNode } | undefined
   onForked?: ((conversationId: string) => void) | undefined
   sourceLink?: ((conversationId: string) => ReactNode) | undefined
@@ -82,6 +84,7 @@ type EditingTurn = {
 }
 
 export function ConversationTimeline({
+  beforeSend,
   connections,
   conversationId,
   inlineSendError = false,
@@ -179,6 +182,7 @@ export function ConversationTimeline({
     const promptId = mintPromptId()
     const content = partsContent(parts)
     setSendError(null)
+    await beforeSend?.()
     let target = conversationId
     if (target === null) {
       if (openConversation === undefined) throw new Error('会话还没开，无法发送')
@@ -220,9 +224,15 @@ export function ConversationTimeline({
   )
   const regenerateTurn = useCallback(
     (turn: TranscriptTurn) => {
-      if (conversationId !== null) act(regeneratePrompt(conversationId, turn.turnId))
+      if (conversationId === null) return
+      act(
+        (async () => {
+          await beforeSend?.()
+          await regeneratePrompt(conversationId, turn.turnId)
+        })(),
+      )
     },
-    [conversationId],
+    [beforeSend, conversationId],
   )
   const onSession = (work: (id: string) => Promise<void>) => {
     if (conversationId !== null) act(work(conversationId))

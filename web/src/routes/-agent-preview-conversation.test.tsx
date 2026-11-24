@@ -175,6 +175,26 @@ const send = async (user: ReturnType<typeof userEvent.setup>, text: string) => {
   await user.click(within(preview()).getByRole('button', { name: '发送' }))
 }
 
+const saveButton = () => within(editor()).getByRole('button', { name: '保存草稿' })
+
+const changeDraft = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(within(editor()).getByRole('button', { name: '管理插件' }))
+  const panel = screen.getByRole('region', { name: '配置调整' })
+  await user.click(within(panel).getByRole('switch', { name: '镜头组表' }))
+  await user.click(within(panel).getByRole('button', { name: '完成' }))
+}
+
+const requestOrder = () => {
+  const seen: string[] = []
+  server.events.on('request:start', ({ request }) => {
+    const path = new URL(request.url).pathname
+    if (request.method === 'PUT' && path.endsWith('/agents/director/draft')) seen.push('save')
+    if (request.method === 'POST' && path.endsWith('/previews')) seen.push('open')
+    if (request.method === 'POST' && path.endsWith('/prompts')) seen.push('prompt')
+  })
+  return seen
+}
+
 const switchAgent = async (user: ReturnType<typeof userEvent.setup>, name: RegExp) => {
   await user.click(within(editor()).getByRole('button', { name: /^切换 Agent，当前：/ }))
   await user.click(await screen.findByRole('menuitemradio', { name }))
@@ -350,6 +370,45 @@ describe('Agent 配置页的测试预览', () => {
       backend.opened[0]?.id,
       backend.opened[0]?.id,
     ])
+  })
+
+  it('草稿有没保存的修改时，测试消息发出前先存草稿：先保存、再开预览、再发消息', async () => {
+    const backend = setup()
+    const order = requestOrder()
+    const user = await renderPage(backend.fake)
+    await changeDraft(user)
+    expect(saveButton()).toBeEnabled()
+
+    await send(user, '试一下')
+
+    await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
+    expect(order).toEqual(['save', 'open', 'prompt'])
+    expect(saveButton()).toBeDisabled()
+
+    backend.state.reply = 'hold'
+    await send(user, '再来一条')
+    await waitFor(() => expect(backend.prompts).toHaveLength(2))
+    expect(order).toEqual(['save', 'open', 'prompt', 'prompt'])
+  })
+
+  it('草稿存不上时不发测试消息：原因写在输入框上方，输入内容留着', async () => {
+    const backend = setup()
+    server.use(
+      http.put('*/api/agents/director/draft', () =>
+        HttpResponse.json({ detail: '保存出错' }, { status: 500 }),
+      ),
+    )
+    const user = await renderPage(backend.fake)
+    await changeDraft(user)
+
+    await send(user, '试一下')
+
+    expect(await within(preview()).findByRole('alert')).toHaveTextContent(
+      '草稿保存失败，无法发送测试消息；请重试发送',
+    )
+    expect(input()).toHaveTextContent('试一下')
+    expect(backend.opened).toHaveLength(0)
+    expect(backend.prompts).toHaveLength(0)
   })
 
   it('在跑时能停：停止发到预览 id 上的那条消息', async () => {

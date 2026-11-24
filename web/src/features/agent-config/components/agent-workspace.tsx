@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
-import { useState, type RefObject } from 'react'
-import { errorMessageOf } from '@/shared/api/client'
+import { useImperativeHandle, useState, type Ref, type RefObject } from 'react'
+import { errorMessageOf, UserFacingError } from '@/shared/api/client'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import { ListError, ListPending } from '@/shared/ui/list-state'
@@ -56,33 +56,14 @@ type AgentWorkspaceProps = {
   onPanelChange: (panel: Panel | null) => void
   viewingVersionId: string | null
   onViewVersion: (versionId: string | null) => void
+  draftSaverRef: Ref<DraftSaver>
 }
 
-export function AgentWorkspace({
-  agentId,
-  agents,
-  agentEntryRef,
-  edit,
-  onCreateAgent,
-  onEditChange,
-  onPanelChange,
-  onSelectAgent,
-  onViewVersion,
-  panel,
-  viewingVersionId,
-}: AgentWorkspaceProps) {
-  const queryClient = useQueryClient()
-  const detail = useAgent(agentId)
-  const versions = useAgentVersions(agentId)
-  const viewed = useAgentVersion(agentId, viewingVersionId)
-  const plugins = useAgentPlugins()
-  const modelOptions = useModelOptions()
-  const skills = useSkills()
-  const saveDraft = useSaveDraft()
-  const publish = usePublishAgent()
-  const restore = useRestoreVersion()
-  const [problems, setProblems] = useState<AgentProblem[]>([])
-  const [notice, setNotice] = useState<string | null>(null)
+/** 把页面上没保存的修改存进草稿；没有修改时什么都不做，存不上时拒绝。 */
+export type DraftSaver = { saveUnsaved: () => Promise<void> }
+
+export function AgentWorkspace(props: AgentWorkspaceProps) {
+  const detail = useAgent(props.agentId)
 
   if (detail.isPending || detail.isError)
     return (
@@ -95,7 +76,36 @@ export function AgentWorkspace({
       </div>
     )
 
-  const agent = detail.data
+  return <LoadedWorkspace {...props} agent={detail.data} />
+}
+
+function LoadedWorkspace({
+  agent,
+  agentId,
+  agents,
+  agentEntryRef,
+  draftSaverRef,
+  edit,
+  onCreateAgent,
+  onEditChange,
+  onPanelChange,
+  onSelectAgent,
+  onViewVersion,
+  panel,
+  viewingVersionId,
+}: AgentWorkspaceProps & { agent: AgentDetail }) {
+  const queryClient = useQueryClient()
+  const versions = useAgentVersions(agentId)
+  const viewed = useAgentVersion(agentId, viewingVersionId)
+  const plugins = useAgentPlugins()
+  const modelOptions = useModelOptions()
+  const skills = useSkills()
+  const saveDraft = useSaveDraft()
+  const publish = usePublishAgent()
+  const restore = useRestoreVersion()
+  const [problems, setProblems] = useState<AgentProblem[]>([])
+  const [notice, setNotice] = useState<string | null>(null)
+
   const server = draftOf(agent)
   const draft = edit ?? server
   const dirty = !sameDraft(draft, server)
@@ -138,6 +148,15 @@ export function AgentWorkspace({
   const onSave = async () => {
     if ((await save()) !== null) toast.success('草稿已保存')
   }
+
+  useImperativeHandle(draftSaverRef, () => ({
+    saveUnsaved: async () => {
+      if (!dirty) return
+      if (busy) throw new UserFacingError('草稿正在保存，无法发送测试消息；请稍后重试发送')
+      if ((await save()) === null)
+        throw new UserFacingError('草稿保存失败，无法发送测试消息；请重试发送')
+    },
+  }))
 
   const onPublish = async () => {
     setNotice(null)

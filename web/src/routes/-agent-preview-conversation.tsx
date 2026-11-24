@@ -3,6 +3,7 @@ import { ConversationTimeline, RunTrace } from '@/features/conversations'
 
 export function AgentPreviewConversation({
   agentId,
+  beforeSend,
   draft,
   openPreview,
   placeholder,
@@ -11,6 +12,7 @@ export function AgentPreviewConversation({
 }: PreviewConversationProps) {
   return (
     <ConversationTimeline
+      beforeSend={beforeSend}
       connections={previewId === null ? { agentId, draft } : { conversationId: previewId }}
       conversationId={previewId}
       inlineSendError
