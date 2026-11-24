@@ -249,12 +249,14 @@ function ProviderDetail({
       <section aria-labelledby={`${baseId}-models`} className="mt-7">
         <SectionHeading
           action={
-            <IconButton
-              label="添加模型"
-              name="add"
-              onClick={() => setEditor({ kind: 'model', model: null })}
-              size="sm"
-            />
+            declaration === undefined ? undefined : (
+              <IconButton
+                label="添加模型"
+                name="add"
+                onClick={() => setEditor({ kind: 'model', model: null })}
+                size="sm"
+              />
+            )
           }
           id={`${baseId}-models`}
           note="这个供应商下可以选用的模型"
