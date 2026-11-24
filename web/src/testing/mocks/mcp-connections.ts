@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import { zMcpCompleteIn } from '@/shared/api/generated/zod.gen'
+import { mockAuthUser } from './auth-user'
 import type { MockMcpUserServer } from './mcp-servers'
 import type { MockShowcase } from './transcript'
 
@@ -116,11 +117,18 @@ export const setMockMcpConnections = ({
   if (users !== undefined) book = users
 }
 
-/** dev:mock 的演示数据；`persistIn` 让登录弹窗与发起连接的页面看到同一份连接状态。 */
+/**
+ * dev:mock 的演示数据；`persistIn` 让登录弹窗与发起连接的页面看到同一份连接状态。
+ * 当前用户连着「用户洞察」，审批卡的演示对话（approval-showcase.ts）在卡脚显示这个账号。
+ */
 export const seedMockMcpConnections = (persistIn: Storage) => {
   setMockMcpConnections({
     agents: { replica: ['pickfu', 'user-insights'], storyboard: ['pickfu'] },
     drafts: { director: ['pickfu'] },
+  })
+  setConnection(mockAuthUser.username, 'user-insights', {
+    account: DEMO_ACCOUNT,
+    state: 'connected',
   })
   storage = persistIn
 }

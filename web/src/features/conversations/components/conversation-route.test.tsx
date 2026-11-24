@@ -9,10 +9,12 @@ import { mockMcpConnectionQueries, setMockMcpConnections } from '@/testing/mocks
 import { server } from '@/testing/mocks/server'
 import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcript'
 import { pasteTextIntoComposer } from '@/testing/editor'
+import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { renderWithProviders } from '@/testing/render'
 import { Toaster } from '@/shared/ui/toast'
 import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
+import { ConversationTimeline } from './conversation-timeline'
 import { type FakeSocket, SERVER_HELLO, sessionEnvelope } from '@/testing/ws'
 
 const TAIL_TEXT = '这是第 2 轮的回复。'
@@ -84,7 +86,10 @@ const APPROVAL_TURN = {
   turnId: 'ta',
 }
 
+const APPROVAL_CALL = APPROVAL_TURN.steps[0]?.frames[0]
+
 const serveApprovalPage = (ownerUserId = mockAuthUser.id, deletedAt: string | null = null) => {
+  stubIntersectionObserver({ inRange: true })
   const page = mockTranscriptPage()
   server.use(
     http.get('*/api/conversations/c1/transcript', () =>
@@ -472,7 +477,18 @@ describe('ConversationRoute', () => {
     expect(screen.getByText('点我')).not.toHaveAttribute('onclick')
   })
 
-  it('等审批时贴出审批卡，点「同意」打 interactions 端点', async () => {
+  it('对话流被浮层盖住时，审批卡改放在输入框上方，仍可决定', async () => {
+    serveApprovalPage()
+    await renderWithProviders(
+      <ConversationTimeline conversationId="c1" overlay={<p>运行轨迹</p>} />,
+    )
+
+    const card = await screen.findByRole('region', { name: '等待审批' })
+    expect(screen.getByTestId('chat-scroller')).not.toContainElement(card)
+    expect(within(card).getByRole('button', { name: /同意/ })).toBeEnabled()
+  })
+
+  it('等审批时审批卡在对话流里，待审调用不另画工具行；点「同意」打 interactions 端点', async () => {
     const user = userEvent.setup()
     serveApprovalPage()
     let decided: { body: unknown; path: string } | null = null
@@ -485,7 +501,9 @@ describe('ConversationRoute', () => {
     await renderConversation()
 
     const card = await screen.findByRole('region', { name: '等待审批' })
+    expect(screen.getByTestId('chat-scroller')).toContainElement(card)
     expect(within(card).getByText('写入文件')).toBeInTheDocument()
+    expect(screen.getAllByText('写入文件')).toHaveLength(1)
     expect(within(card).getByRole('region', { name: '改动预览' })).toHaveTextContent(
       '两张镜头帧拼版，主图在左。',
     )
@@ -500,6 +518,41 @@ describe('ConversationRoute', () => {
     })
     expect(await within(card).findByText('已同意')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: /拒绝/ })).toBeNull()
+  })
+
+  it('这一批全部决定后审批卡消失，调用照常画成工具行，行尾标「已同意」', async () => {
+    serveApprovalPage()
+    const { socket } = await renderConversation()
+    await screen.findByRole('region', { name: '等待审批' })
+
+    socket.deliver(
+      opsFrame(
+        [
+          {
+            interaction: {
+              interactionId: 'appr_1',
+              interactionKind: 'approval',
+              state: 'approved',
+              toolCallId: 'call_cover',
+            },
+            op: 'interaction.upsert',
+          },
+          {
+            frame: { ...APPROVAL_CALL, output: '已写入 3 行', state: 'done' },
+            op: 'frame.upsert',
+            stepId: 'ta.1',
+            turnId: 'ta',
+          },
+        ],
+        11,
+      ),
+    )
+
+    await waitFor(() => {
+      expect(screen.queryByRole('region', { name: '等待审批' })).toBeNull()
+    })
+    expect(screen.getByText('写入文件')).toBeInTheDocument()
+    expect(screen.getByText('已同意')).toBeInTheDocument()
   })
 
   it('改主意（409）时说清该步骤已做出决定', async () => {
@@ -534,7 +587,7 @@ describe('ConversationRoute', () => {
 
     expect(await screen.findByText('1 条消息等待发送')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '立即发送' })).toBeNull()
-    expect(screen.getByText('请先确认上方的步骤')).toBeInTheDocument()
+    expect(screen.getByText('等待上方确认，也可先输入后续指令')).toBeInTheDocument()
   })
 
   it('治理者看别人的对话是只读：页头标属主，没有输入框、修改与重新生成，审批和队列只展示', async () => {

@@ -2,6 +2,7 @@ import { http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
+import { approvalShowcases } from './approval-showcase'
 import { mockLatestMasterUrls, mockVideoProgress } from './conversations'
 import {
   addMockCollection,
@@ -48,6 +49,16 @@ const awaiting = seeded.at(-1)
 if (awaiting !== undefined) {
   awaiting.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
   markMockAwaitingApproval(awaiting.id)
+}
+
+for (const [index, { scenario, title }] of approvalShowcases(window.location.origin).entries()) {
+  const conversation = addMockConversation(
+    title,
+    new Date(Date.now() - 2 * 86_400_000 - index * 60_000).toISOString(),
+  )
+  conversation.agentId = 'replica'
+  conversation.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
+  markMockAwaitingApproval(conversation.id, { ...scenario, title })
 }
 
 const unseen = seeded[3]

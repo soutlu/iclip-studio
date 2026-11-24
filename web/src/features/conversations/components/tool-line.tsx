@@ -55,7 +55,11 @@ export function ToolLine({ backgrounded, frame, interactions }: ToolLineProps) {
     ) : (
       <FileName name={name} onOpen={openFile} />
     )
-  const tail = <Tail backgrounded={backgrounded} frame={frame} outcome={outcome} />
+  const approved =
+    frame.approvalId !== undefined && interactions.get(frame.approvalId)?.state === 'approved'
+  const tail = (
+    <Tail approved={approved} backgrounded={backgrounded} frame={frame} outcome={outcome} />
+  )
 
   return (
     <div className="flex flex-col">
@@ -155,10 +159,12 @@ export function DetailText({ children }: { children: ReactNode }) {
 }
 
 function Tail({
+  approved,
   backgrounded,
   frame,
   outcome,
 }: {
+  approved: boolean
   backgrounded: boolean
   frame: ToolCallFrame
   outcome: ToolOutcome
@@ -185,6 +191,11 @@ function Tail({
         </span>
       ) : outcome === 'done' && backgrounded ? (
         <span className="text-body-sm text-chat-muted-text">已转入后台</span>
+      ) : outcome === 'done' && approved ? (
+        <span className="flex items-center gap-1 text-body-sm text-chat-muted-text">
+          已同意
+          <Icon className="text-chat-status-success" decorative name="check" size="sm" />
+        </span>
       ) : null}
     </span>
   )

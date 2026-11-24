@@ -25,6 +25,7 @@ type ConversationTurnProps = {
   forkDisabled?: boolean | undefined
   onEdit?: ((turn: TranscriptTurn) => void) | undefined
   editDisabled?: boolean | undefined
+  hiddenFrameIds?: ReadonlySet<string> | undefined
 }
 
 const isSettled = (turn: TranscriptTurn) => turn.state !== 'running' && turn.state !== 'queued'
@@ -32,6 +33,7 @@ const isSettled = (turn: TranscriptTurn) => turn.state !== 'running' && turn.sta
 export const ConversationTurn = memo(function ConversationTurn({
   editDisabled,
   forkDisabled,
+  hiddenFrameIds,
   interactions,
   latest = false,
   onEdit,
@@ -56,7 +58,11 @@ export const ConversationTurn = memo(function ConversationTurn({
     )
     .join('\n\n')
   const liveFrameId = settled ? undefined : turn.steps.at(-1)?.frames.at(-1)?.frameId
-  const blocks = groupActivityCards(groupTurnEntries(entries))
+  const shown =
+    hiddenFrameIds === undefined
+      ? entries
+      : entries.filter(({ frame }) => !hiddenFrameIds.has(frame.frameId))
+  const blocks = groupActivityCards(groupTurnEntries(shown))
   const results = settled ? turnResults(entries.map(({ frame }) => frame)) : []
   const edit = onEdit === undefined ? undefined : () => onEdit(turn)
   const fork = onFork === undefined ? undefined : () => onFork(turn)

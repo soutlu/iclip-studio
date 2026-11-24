@@ -93,7 +93,7 @@ const queues = new Map<string, Prompt[]>()
 
 const timers = new Map<string, ReturnType<typeof setTimeout>[]>()
 
-const awaitingApproval = new Set<string>()
+const awaitingApproval = new Map<string, MockApprovalScenario>()
 
 const justFinished = new Set<MockConversation>()
 
@@ -145,20 +145,24 @@ export const resetMockTranscript = () => {
 
 const APPROVAL_TURN_ID = 'ta'
 const APPROVAL_STEP_ID = `${APPROVAL_TURN_ID}.1`
-const APPROVAL_INTERACTION_ID = 'appr_1'
-const APPROVAL_TOOL_CALL_ID = 'call_cover'
-const APPROVAL_PROMPT_ID = 'p_cover'
-const APPROVAL_PROMPT_TEXT = '把这两张镜头帧拼成封面'
+const APPROVAL_PROMPT_ID = 'p_approval'
 
-export const markMockAwaitingApproval = (conversationId: string) => {
-  awaitingApproval.add(conversationId)
-  running.set(conversationId, {
-    content: [{ text: APPROVAL_PROMPT_TEXT, type: 'text' }],
-    ordinal: 3,
-    promptId: APPROVAL_PROMPT_ID,
-    text: APPROVAL_PROMPT_TEXT,
-    turnId: APPROVAL_TURN_ID,
-  })
+type MockFrame = Record<string, unknown>
+
+/** 一次要求审批的工具调用：`call` 是工具帧里除状态、编号与审批 ID 以外的字段。 */
+export type MockApprovalCall = {
+  interactionId: string
+  call: MockFrame & { name: string; toolCallId: string }
+  output: string
+}
+
+/** 一轮停在审批上的对话：`lead` 是同一步里排在待审调用之前的帧；全部决定后按有没有同意的回复。 */
+export type MockApprovalScenario = {
+  title?: string
+  prompt: string
+  lead: readonly MockFrame[]
+  calls: readonly MockApprovalCall[]
+  reply: { approved: string; rejected: string }
 }
 
 const APPROVAL_DOCUMENT = [
@@ -181,67 +185,107 @@ const APPROVAL_DOCUMENT = [
   '竖版 9:16，导出 1080 × 1920，另存一张 1:1 给商品页。',
 ].join('\n')
 
-const approvalFrame = (state: 'running' | 'done' | 'error') => ({
-  approvalId: APPROVAL_INTERACTION_ID,
-  display: {
-    content: APPROVAL_DOCUMENT,
-    kind: 'file_io',
-    operation: 'write',
-    path: 'shots/cover.md',
-  },
-  frameId: `${APPROVAL_STEP_ID}.f4`,
-  input: { path: 'shots/cover.md', text: APPROVAL_DOCUMENT },
+const COVER_APPROVAL: MockApprovalScenario = {
+  calls: [
+    {
+      call: {
+        display: {
+          content: APPROVAL_DOCUMENT,
+          kind: 'file_io',
+          operation: 'write',
+          path: 'shots/cover.md',
+        },
+        input: { path: 'shots/cover.md', text: APPROVAL_DOCUMENT },
+        name: 'write_file',
+        toolCallId: 'call_cover',
+      },
+      interactionId: 'appr_1',
+      output: '已写入 17 行',
+    },
+  ],
+  lead: [
+    {
+      display: { kind: 'skill_call', skill_name: '分镜脚本', args: 'references/镜头节奏.md' },
+      kind: 'tool',
+      name: 'read_skill_file',
+      output: '一条镜头一个动作；封面取全片最亮的那一帧。',
+      state: 'done',
+      toolCallId: 'call_skill',
+    },
+    { kind: 'text', role: 'assistant', text: '两张镜头帧出好了：' },
+    {
+      display: { detail: '镜头 1、2', kind: 'generic', summary: '生成画面' },
+      kind: 'tool',
+      metadata: {
+        items: [
+          { caption: 'S1-1', url: DEMO_FRAME_URLS[0] },
+          { caption: 'S2-1', url: DEMO_FRAME_URLS[1] },
+        ],
+        note: '2 张 · dev 渠道',
+      },
+      name: 'generate_shot_frames',
+      output: '生成完成 2 帧（dev 渠道），版记录见 frames/grids/job-1.json。',
+      state: 'done',
+      toolCallId: 'call_frames',
+      view: 'media_grid',
+    },
+  ],
+  prompt: '把这两张镜头帧拼成封面',
+  reply: { approved: '封面写好了。', rejected: '好，这一步跳过。' },
+}
+
+export const markMockAwaitingApproval = (
+  conversationId: string,
+  scenario: MockApprovalScenario = COVER_APPROVAL,
+) => {
+  awaitingApproval.set(conversationId, scenario)
+  running.set(conversationId, {
+    content: [{ text: scenario.prompt, type: 'text' }],
+    ordinal: 3,
+    promptId: APPROVAL_PROMPT_ID,
+    text: scenario.prompt,
+    turnId: APPROVAL_TURN_ID,
+  })
+}
+
+const decisionOf = (conversationId: string, call: MockApprovalCall) =>
+  decisions.get(`${conversationId}:${call.interactionId}`)
+
+const approvalInteraction = (conversationId: string, call: MockApprovalCall) => {
+  const decided = decisionOf(conversationId, call)
+  return {
+    interactionId: call.interactionId,
+    interactionKind: 'approval',
+    state: decided === undefined ? 'pending' : decided ? 'approved' : 'rejected',
+    toolCallId: call.call.toolCallId,
+  }
+}
+
+const approvalCallFrame = (call: MockApprovalCall, index: number, outcome?: boolean) => ({
+  ...call.call,
+  approvalId: call.interactionId,
+  frameId: `${APPROVAL_STEP_ID}.c${index + 1}`,
   kind: 'tool',
-  name: 'write_file',
-  state,
-  toolCallId: APPROVAL_TOOL_CALL_ID,
-  ...(state === 'done' ? { output: '已写入 17 行' } : {}),
-  ...(state === 'error' ? { error: '你拒绝了这一步' } : {}),
+  state: outcome === undefined ? 'running' : outcome ? 'done' : 'error',
+  ...(outcome === true ? { output: call.output } : {}),
+  ...(outcome === false ? { error: '你拒绝了这一步' } : {}),
 })
 
-const approvalTurn = () => ({
+const approvalTurn = (scenario: MockApprovalScenario) => ({
   kind: 'turn',
   ordinal: 3,
   origin: { kind: 'user' },
-  content: [{ text: APPROVAL_PROMPT_TEXT, type: 'text' }],
+  content: [{ text: scenario.prompt, type: 'text' }],
   startedAt: '2026-08-31T02:10:00Z',
   state: 'running',
   steps: [
     {
       frames: [
-        {
-          display: { kind: 'skill_call', skill_name: '分镜脚本', args: 'references/镜头节奏.md' },
-          frameId: `${APPROVAL_STEP_ID}.f1`,
-          kind: 'tool',
-          name: 'read_skill_file',
-          output: '一条镜头一个动作；封面取全片最亮的那一帧。',
-          state: 'done',
-          toolCallId: 'call_skill',
-        },
-        {
-          frameId: `${APPROVAL_STEP_ID}.f2`,
-          kind: 'text',
-          role: 'assistant',
-          text: '两张镜头帧出好了：',
-        },
-        {
-          display: { detail: '镜头 1、2', kind: 'generic', summary: '生成画面' },
-          frameId: `${APPROVAL_STEP_ID}.f3`,
-          kind: 'tool',
-          metadata: {
-            items: [
-              { caption: 'S1-1', url: DEMO_FRAME_URLS[0] },
-              { caption: 'S2-1', url: DEMO_FRAME_URLS[1] },
-            ],
-            note: '2 张 · dev 渠道',
-          },
-          name: 'generate_shot_frames',
-          output: '生成完成 2 帧（dev 渠道），版记录见 frames/grids/job-1.json。',
-          state: 'done',
-          toolCallId: 'call_frames',
-          view: 'media_grid',
-        },
-        approvalFrame('running'),
+        ...scenario.lead.map((frame, index) => ({
+          ...frame,
+          frameId: `${APPROVAL_STEP_ID}.f${index + 1}`,
+        })),
+        ...scenario.calls.map((call, index) => approvalCallFrame(call, index)),
       ],
       kind: 'step',
       ordinal: 1,
@@ -253,13 +297,6 @@ const approvalTurn = () => ({
   ],
   turnId: APPROVAL_TURN_ID,
 })
-
-const pendingApproval = {
-  interactionId: APPROVAL_INTERACTION_ID,
-  interactionKind: 'approval',
-  state: 'pending',
-  toolCallId: APPROVAL_TOOL_CALL_ID,
-}
 
 const delegateCard = (
   toolCallId: string,
@@ -343,30 +380,36 @@ export const mockTranscriptPage = (
   conversationId = '',
   request: { beforeTurn?: string | null; pageSize?: number } = {},
 ) => {
-  const awaiting = awaitingApproval.has(conversationId)
+  const awaiting = awaitingApproval.get(conversationId)
   const showcase = showcases.get(conversationId)
   const history = showcase
     ? showcase.turns()
     : conversationId === MOCK_LONG_CONVERSATION_ID
       ? Array.from({ length: LONG_HISTORY_TURNS }, (_, index) => longTurn(index + 1))
       : Array.from({ length: HISTORY_TURNS }, (_, index) => historyTurn(index + 1))
-  const page = pageOf([...history, ...(awaiting ? [approvalTurn()] : [])], request)
+  const page = pageOf([...history, ...(awaiting ? [approvalTurn(awaiting)] : [])], request)
   return {
     agent_id: 'main',
     agents: [{ agentId: 'main', type: 'main' }],
     has_more: page.hasMore,
-    interactions: awaiting ? [pendingApproval] : (showcase?.interactions ?? []),
+    interactions: awaiting
+      ? awaiting.calls.map((call) => approvalInteraction(conversationId, call))
+      : (showcase?.interactions ?? []),
     items: page.items,
     meta: {
       activity: awaiting ? 'turn' : (showcase?.activity ?? 'idle'),
       agent: { contextTokens: 32768, contextUsage: 0.03125, maxContextTokens: 1048576 },
     },
     owner_user_id: mockConversationOwner(conversationId),
-    pending_interactions: awaiting ? [APPROVAL_INTERACTION_ID] : [],
+    pending_interactions: awaiting
+      ? awaiting.calls
+          .filter((call) => decisionOf(conversationId, call) === undefined)
+          .map((call) => call.interactionId)
+      : [],
     prompts: awaiting
       ? [
           {
-            content: [{ text: APPROVAL_PROMPT_TEXT, type: 'text' }],
+            content: [{ text: awaiting.prompt, type: 'text' }],
             createdAt: '2026-08-31T02:10:00Z',
             promptId: APPROVAL_PROMPT_ID,
             status: 'running',
@@ -376,11 +419,13 @@ export const mockTranscriptPage = (
     seq: HISTORY_SEQ,
     stream_epoch: MOCK_STREAM_EPOCH,
     tasks: showcase?.tasks?.() ?? [],
-    title: showcase
-      ? showcase.title
-      : conversationId === MOCK_LONG_CONVERSATION_ID
-        ? '长对话回看'
-        : '夜景延时素材生成',
+    title:
+      awaiting?.title ??
+      (showcase
+        ? showcase.title
+        : conversationId === MOCK_LONG_CONVERSATION_ID
+          ? '长对话回看'
+          : '夜景延时素材生成'),
     todos: [],
   }
 }
@@ -504,12 +549,21 @@ export const transcriptHandlers = [
           ? new HttpResponse(null, { status: 204 })
           : HttpResponse.json({ detail: '这张卡已经做过决定了' }, { status: 409 })
       }
-      if (!awaitingApproval.has(conversationId) || interactionId !== APPROVAL_INTERACTION_ID) {
+      const scenario = awaitingApproval.get(conversationId)
+      const call = scenario?.calls.find((candidate) => candidate.interactionId === interactionId)
+      if (scenario === undefined || call === undefined) {
         return HttpResponse.json({ detail: '这张卡不在等回应' }, { status: 404 })
       }
       decisions.set(key, body.approved)
-      awaitingApproval.delete(conversationId)
-      settleApproval(conversationId, body.approved)
+      broadcast(conversationId, [
+        { interaction: approvalInteraction(conversationId, call), op: 'interaction.upsert' },
+      ])
+      if (
+        scenario.calls.every((candidate) => decisionOf(conversationId, candidate) !== undefined)
+      ) {
+        awaitingApproval.delete(conversationId)
+        settleApproval(conversationId, scenario)
+      }
       return new HttpResponse(null, { status: 204 })
     },
   ),
@@ -897,25 +951,22 @@ const stopTurn = (conversationId: string) => {
   drain(conversationId)
 }
 
-const settleApproval = (conversationId: string, approved: boolean) => {
+const settleApproval = (conversationId: string, scenario: MockApprovalScenario) => {
   const now = new Date().toISOString()
+  const outcomes = scenario.calls.map((call) => decisionOf(conversationId, call) === true)
   broadcast(conversationId, [
-    {
-      interaction: { ...pendingApproval, state: approved ? 'approved' : 'rejected' },
-      op: 'interaction.upsert',
-    },
-    {
-      frame: approvalFrame(approved ? 'done' : 'error'),
+    ...scenario.calls.map((call, index) => ({
+      frame: approvalCallFrame(call, index, outcomes[index]),
       op: 'frame.upsert',
       stepId: APPROVAL_STEP_ID,
       turnId: APPROVAL_TURN_ID,
-    },
+    })),
     {
       frame: {
-        frameId: `${APPROVAL_STEP_ID}.f5`,
+        frameId: `${APPROVAL_STEP_ID}.reply`,
         kind: 'text',
         role: 'assistant',
-        text: approved ? '封面写好了。' : '好，这一步跳过。',
+        text: outcomes.includes(true) ? scenario.reply.approved : scenario.reply.rejected,
       },
       op: 'frame.upsert',
       stepId: APPROVAL_STEP_ID,
@@ -940,7 +991,7 @@ const settleApproval = (conversationId: string, approved: boolean) => {
         kind: 'turn',
         ordinal: 3,
         origin: { kind: 'user' },
-        content: [{ text: APPROVAL_PROMPT_TEXT, type: 'text' }],
+        content: [{ text: scenario.prompt, type: 'text' }],
         state: 'completed',
         turnId: APPROVAL_TURN_ID,
       },
