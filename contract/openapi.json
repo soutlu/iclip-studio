@@ -546,6 +546,19 @@
       "AgentModelSettings": {
         "additionalProperties": false,
         "properties": {
+          "native_tools": {
+            "default": [],
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Native Tools",
+            "type": "array"
+          },
           "thinking": {
             "anyOf": [
               {
@@ -3052,6 +3065,19 @@
             "title": "Name",
             "type": "string"
           },
+          "nativeTools": {
+            "default": [],
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Nativetools",
+            "type": "array"
+          },
           "thinking": {
             "default": [],
             "items": {
@@ -3127,6 +3153,28 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "nativeToolsByApi": {
+            "additionalProperties": {
+              "items": {
+                "enum": [
+                  "web_search",
+                  "web_extractor",
+                  "image_search"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "propertyNames": {
+              "enum": [
+                "chat",
+                "responses",
+                "gemini"
+              ]
+            },
+            "title": "Nativetoolsbyapi",
+            "type": "object"
           }
         },
         "required": [
@@ -3135,7 +3183,8 @@
           "apis",
           "credentialFields",
           "customModels",
-          "models"
+          "models",
+          "nativeToolsByApi"
         ],
         "title": "DeclarationOut",
         "type": "object"
@@ -3149,10 +3198,18 @@
             },
             "title": "Declarations",
             "type": "array"
+          },
+          "nativeTools": {
+            "items": {
+              "$ref": "#/components/schemas/NativeToolOut"
+            },
+            "title": "Nativetools",
+            "type": "array"
           }
         },
         "required": [
-          "declarations"
+          "declarations",
+          "nativeTools"
         ],
         "title": "DeclarationsOut",
         "type": "object"
@@ -3191,6 +3248,18 @@
             "title": "Name",
             "type": "string"
           },
+          "nativeTools": {
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Nativetools",
+            "type": "array"
+          },
           "thinking": {
             "items": {
               "enum": [
@@ -3222,7 +3291,8 @@
           "type",
           "api",
           "contextSize",
-          "thinking"
+          "thinking",
+          "nativeTools"
         ],
         "title": "DeclaredModelOut",
         "type": "object"
@@ -7798,6 +7868,18 @@
             "title": "Name",
             "type": "string"
           },
+          "nativeTools": {
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Nativetools",
+            "type": "array"
+          },
           "thinking": {
             "items": {
               "enum": [
@@ -7818,7 +7900,8 @@
         "required": [
           "name",
           "contextSize",
-          "thinking"
+          "thinking",
+          "nativeTools"
         ],
         "title": "ModelOptionOut",
         "type": "object"
@@ -7827,6 +7910,13 @@
         "additionalProperties": false,
         "description": "agent 编辑页选模型用：只读，只列启用的供应商。",
         "properties": {
+          "nativeTools": {
+            "items": {
+              "$ref": "#/components/schemas/NativeToolOut"
+            },
+            "title": "Nativetools",
+            "type": "array"
+          },
           "providers": {
             "items": {
               "$ref": "#/components/schemas/ProviderOptionOut"
@@ -7836,7 +7926,8 @@
           }
         },
         "required": [
-          "providers"
+          "providers",
+          "nativeTools"
         ],
         "title": "ModelOptionsOut",
         "type": "object"
@@ -8079,6 +8170,25 @@
             ],
             "title": "Enabled"
           },
+          "nativeTools": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "web_search",
+                    "web_extractor",
+                    "image_search"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nativetools"
+          },
           "thinking": {
             "anyOf": [
               {
@@ -8310,6 +8420,44 @@
           "conversationId"
         ],
         "title": "MusicIn",
+        "type": "object"
+      },
+      "NativeToolOut": {
+        "additionalProperties": false,
+        "description": "一个原生工具：名字、显示名，以及开它之前必须先开的。",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "name": {
+            "enum": [
+              "web_search",
+              "web_extractor",
+              "image_search"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "requires": {
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Requires",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "label",
+          "requires"
+        ],
+        "title": "NativeToolOut",
         "type": "object"
       },
       "NoticeFrame": {
@@ -8947,6 +9095,18 @@
             "title": "Name",
             "type": "string"
           },
+          "nativeTools": {
+            "items": {
+              "enum": [
+                "web_search",
+                "web_extractor",
+                "image_search"
+              ],
+              "type": "string"
+            },
+            "title": "Nativetools",
+            "type": "array"
+          },
           "source": {
             "enum": [
               "declared",
@@ -8994,6 +9154,7 @@
           "api",
           "contextSize",
           "thinking",
+          "nativeTools",
           "source",
           "enabled",
           "usedBy"

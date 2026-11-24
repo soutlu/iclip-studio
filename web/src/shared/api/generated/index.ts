@@ -645,6 +645,7 @@ export type {
   MovingAverageOut,
   MovingAveragesOut,
   MusicIn,
+  NativeToolOut,
   NoticeFrame,
   OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostData,
   OpenFinalCutPreviewConversationsConversationIdFinalCutPreviewPostError,

@@ -302,6 +302,10 @@ export type AgentModelRef = {
  */
 export type AgentModelSettings = {
   /**
+   * Native Tools
+   */
+  native_tools?: Array<'web_search' | 'web_extractor' | 'image_search'>
+  /**
    * Thinking
    */
   thinking?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | null
@@ -1730,6 +1734,10 @@ export type CustomModelCreateIn = {
    */
   name: string
   /**
+   * Nativetools
+   */
+  nativeTools?: Array<'web_search' | 'web_extractor' | 'image_search'>
+  /**
    * Thinking
    */
   thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
@@ -1769,6 +1777,12 @@ export type DeclarationOut = {
    * Name
    */
   name: string
+  /**
+   * Nativetoolsbyapi
+   */
+  nativeToolsByApi: {
+    [key: string]: Array<'web_search' | 'web_extractor' | 'image_search'>
+  }
 }
 
 /**
@@ -1779,6 +1793,10 @@ export type DeclarationsOut = {
    * Declarations
    */
   declarations: Array<DeclarationOut>
+  /**
+   * Nativetools
+   */
+  nativeTools: Array<NativeToolOut>
 }
 
 /**
@@ -1797,6 +1815,10 @@ export type DeclaredModelOut = {
    * Name
    */
   name: string
+  /**
+   * Nativetools
+   */
+  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
   /**
    * Thinking
    */
@@ -4281,6 +4303,10 @@ export type ModelOptionOut = {
    */
   name: string
   /**
+   * Nativetools
+   */
+  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
+  /**
    * Thinking
    */
   thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
@@ -4292,6 +4318,10 @@ export type ModelOptionOut = {
  * agent 编辑页选模型用：只读，只列启用的供应商。
  */
 export type ModelOptionsOut = {
+  /**
+   * Nativetools
+   */
+  nativeTools: Array<NativeToolOut>
   /**
    * Providers
    */
@@ -4432,6 +4462,10 @@ export type ModelUpdateIn = {
    */
   enabled?: boolean | null
   /**
+   * Nativetools
+   */
+  nativeTools?: Array<'web_search' | 'web_extractor' | 'image_search'> | null
+  /**
    * Thinking
    */
   thinking?: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'> | null
@@ -4525,6 +4559,26 @@ export type MusicIn = {
    * Username
    */
   userName?: string | null
+}
+
+/**
+ * NativeToolOut
+ *
+ * 一个原生工具：名字、显示名，以及开它之前必须先开的。
+ */
+export type NativeToolOut = {
+  /**
+   * Label
+   */
+  label: string
+  /**
+   * Name
+   */
+  name: 'web_search' | 'web_extractor' | 'image_search'
+  /**
+   * Requires
+   */
+  requires: Array<'web_search' | 'web_extractor' | 'image_search'>
 }
 
 /**
@@ -4871,6 +4925,10 @@ export type ProviderModelOut = {
    * Name
    */
   name: string
+  /**
+   * Nativetools
+   */
+  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
   /**
    * Source
    */

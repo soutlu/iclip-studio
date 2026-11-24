@@ -13,7 +13,12 @@ from iclip.platform.runtime_api.config.model_providers.models import (
     ModelSource,
     ModelType,
 )
-from iclip.platform.runtime_api.model_vocab import MODEL_GROUP_PATTERN, ModelApi, ThinkingEffort
+from iclip.platform.runtime_api.model_vocab import (
+    MODEL_GROUP_PATTERN,
+    ModelApi,
+    NativeToolName,
+    ThinkingEffort,
+)
 
 ModelGroupField = Annotated[str, Field(pattern=MODEL_GROUP_PATTERN)]
 
@@ -34,12 +39,21 @@ class CredentialFieldOut(CamelModel):
     default: str | None
 
 
+class NativeToolOut(CamelModel):
+    """一个原生工具：名字、显示名，以及开它之前必须先开的。"""
+
+    name: NativeToolName
+    label: str
+    requires: list[NativeToolName]
+
+
 class DeclaredModelOut(CamelModel):
     name: str
     type: ModelType
     api: ModelApi | None
     context_size: int | None
     thinking: list[ThinkingEffort]
+    native_tools: list[NativeToolName]
 
 
 class DeclarationOut(CamelModel):
@@ -51,10 +65,12 @@ class DeclarationOut(CamelModel):
     credential_fields: list[CredentialFieldOut]
     custom_models: bool
     models: list[DeclaredModelOut]
+    native_tools_by_api: dict[ModelApi, list[NativeToolName]]
 
 
 class DeclarationsOut(CamelModel):
     declarations: list[DeclarationOut]
+    native_tools: list[NativeToolOut]
 
 
 class ProviderModelOut(DeclaredModelOut):
@@ -154,6 +170,7 @@ class CustomModelCreateIn(CamelModel):
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] = []
+    native_tools: list[NativeToolName] = []
 
 
 class ModelUpdateIn(CamelModel):
@@ -164,6 +181,7 @@ class ModelUpdateIn(CamelModel):
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] | None = None
+    native_tools: list[NativeToolName] | None = None
 
 
 class DefaultModelOut(CamelModel):
@@ -189,6 +207,7 @@ class ModelOptionOut(CamelModel):
     name: str
     context_size: int | None
     thinking: list[ThinkingEffort]
+    native_tools: list[NativeToolName]
 
 
 class CredentialOptionOut(CamelModel):
@@ -214,6 +233,7 @@ class ModelOptionsOut(CamelModel):
     """agent 编辑页选模型用：只读，只列启用的供应商。"""
 
     providers: list[ProviderOptionOut]
+    native_tools: list[NativeToolOut]
 
 
 __all__ = [
@@ -239,6 +259,7 @@ __all__ = [
     "ModelProvidersOut",
     "ModelTestIn",
     "ModelUpdateIn",
+    "NativeToolOut",
     "ProbeOut",
     "ProviderModelOut",
     "ProviderOptionOut",

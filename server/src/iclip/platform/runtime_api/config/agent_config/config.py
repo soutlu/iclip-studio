@@ -13,7 +13,7 @@ from pydantic import (
     field_validator,
 )
 
-from iclip.platform.runtime_api.model_vocab import ThinkingEffort
+from iclip.platform.runtime_api.model_vocab import NativeToolName, ThinkingEffort
 
 _Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 
@@ -24,6 +24,17 @@ class _Strict(BaseModel):
 
 class AgentModelSettings(_Strict):
     thinking: ThinkingEffort | None = None
+    # 没开原生工具时不写出这一项：应用手工同步的那份配置不收不认识的字段，没更新的应用照常能读。
+    native_tools: tuple[NativeToolName, ...] = Field(default=(), exclude_if=lambda names: not names)
+
+    @field_validator("native_tools")
+    @classmethod
+    def _distinct_native_tools(
+        cls, names: tuple[NativeToolName, ...]
+    ) -> tuple[NativeToolName, ...]:
+        if (index := _first_repeat(names)) is not None:
+            raise ValueError(f"第 {index + 1} 项与前面的重复：原生工具 {names[index]} 只能写一次")
+        return names
 
 
 class AgentModelRef(_Strict):

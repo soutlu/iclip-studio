@@ -51,6 +51,7 @@ export const zAgentDescriptor = z.object({
  * AgentModelSettings
  */
 export const zAgentModelSettings = z.object({
+  native_tools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])).optional(),
   thinking: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']).nullish(),
 })
 
@@ -783,6 +784,10 @@ export const zCustomModelCreateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   name: z.string(),
+  nativeTools: z
+    .array(z.enum(['web_search', 'web_extractor', 'image_search']))
+    .optional()
+    .default([]),
   thinking: z
     .array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']))
     .optional()
@@ -797,6 +802,7 @@ export const zDeclaredModelOut = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullable(),
   contextSize: z.int().nullable(),
   name: z.string(),
+  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
   type: z.enum(['llm', 'embedding', 'rerank']),
 })
@@ -813,13 +819,10 @@ export const zDeclarationOut = z.object({
   label: z.string(),
   models: z.array(zDeclaredModelOut),
   name: z.string(),
-})
-
-/**
- * DeclarationsOut
- */
-export const zDeclarationsOut = z.object({
-  declarations: z.array(zDeclarationOut),
+  nativeToolsByApi: z.record(
+    z.string(),
+    z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
+  ),
 })
 
 /**
@@ -1850,6 +1853,7 @@ export const zModelGroupsOut = z.object({
 export const zModelOptionOut = z.object({
   contextSize: z.int().nullable(),
   name: z.string(),
+  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
 })
 
@@ -1894,6 +1898,7 @@ export const zModelUpdateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
   contextSize: z.int().nullish(),
   enabled: z.boolean().nullish(),
+  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])).nullish(),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).nullish(),
 })
 
@@ -1948,6 +1953,25 @@ export const zMusicIn = z.object({
   prompt: z.string().min(1).max(3000),
   taskId: z.uuid().nullish(),
   userName: z.string().min(1).max(200).nullish(),
+})
+
+/**
+ * NativeToolOut
+ *
+ * 一个原生工具：名字、显示名，以及开它之前必须先开的。
+ */
+export const zNativeToolOut = z.object({
+  label: z.string(),
+  name: z.enum(['web_search', 'web_extractor', 'image_search']),
+  requires: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
+})
+
+/**
+ * DeclarationsOut
+ */
+export const zDeclarationsOut = z.object({
+  declarations: z.array(zDeclarationOut),
+  nativeTools: z.array(zNativeToolOut),
 })
 
 /**
@@ -2040,6 +2064,7 @@ export const zProviderModelOut = z.object({
   contextSize: z.int().nullable(),
   enabled: z.boolean(),
   name: z.string(),
+  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
   source: z.enum(['declared', 'custom']),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
   type: z.enum(['llm', 'embedding', 'rerank']),
@@ -2088,6 +2113,7 @@ export const zProviderOptionOut = z.object({
  * agent 编辑页选模型用：只读，只列启用的供应商。
  */
 export const zModelOptionsOut = z.object({
+  nativeTools: z.array(zNativeToolOut),
   providers: z.array(zProviderOptionOut),
 })
 
