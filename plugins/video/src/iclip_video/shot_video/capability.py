@@ -32,7 +32,7 @@ CAPABILITY_ID: Final = "shot_video"
 @dataclass
 class ShotVideo(CapPlugin[AgentDepsT]):
     label = "取帧与出图"
-    summary = "从参考视频抽帧拼成图片，按描述生成镜头帧和设定图。"
+    summary = "从参考视频抽帧拼接候选图，并按描述生成镜头帧与设定图。"
 
     space: FileSpace
 

@@ -52,7 +52,7 @@ export function readLocaleTable(
   if (file === undefined)
     return {
       ok: false,
-      message: 'final-cut 里没有这种语言的语言文件，无法导出这种语言的版本',
+      message: 'final-cut 工程中缺少该语言的语言文件，无法导出该语言版本',
     }
   let parsed: unknown
   try {
@@ -64,7 +64,7 @@ export function readLocaleTable(
     return {
       ok: false,
       message:
-        '这种语言的语言文件写法不对，无法导出这种语言的版本；请把它改成变量 id 对应文字的 JSON 对象后再导出',
+        '该语言的语言文件格式无效，无法导出该语言版本；请修正为变量 ID 对应文本的 JSON 对象后重新导出',
     }
   return { ok: true, value: { ...(parsed as Record<string, unknown>) } }
 }
@@ -108,10 +108,10 @@ export function checkLocaleValues(
   const wrong = issues.find((issue) => issue.kind !== 'undeclared')
   if (wrong !== undefined) {
     const declared = declarations.find((declaration) => declaration.id === wrong.variableId)
-    const expected = declared === undefined ? '' : `，应当是${TYPE_NAMES[declared.type]}`
+    const expected = declared === undefined ? '' : `，应为${TYPE_NAMES[declared.type]}`
     return {
       ok: false,
-      message: `这种语言的语言文件里变量 ${wrong.variableId} 的值不对${expected}，无法导出这种语言的版本；请在编辑器里改好这种语言的文字后再导出`,
+      message: `该语言的语言文件中变量 ${wrong.variableId} 的值无效${expected}，无法导出该语言版本；请在编辑器中修正该语言的文本后重新导出`,
     }
   }
   const undeclared = new Set(issues.map((issue) => issue.variableId))

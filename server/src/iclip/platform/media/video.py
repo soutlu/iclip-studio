@@ -26,16 +26,16 @@ class MediaCut:
 
 def check_cut(cut: MediaCut) -> None:
     if not cut.source.is_file():
-        raise MediaError(f"要裁的素材不在: {cut.source.name}")
+        raise MediaError(f"待裁剪素材不存在：{cut.source.name}")
     if cut.start < 0 or cut.duration <= 0:
-        raise MediaError(f"片段区间无效: [{cut.start}, {cut.end})")
+        raise MediaError(f"片段区间无效：[{cut.start}, {cut.end})")
 
 
 async def cut_concat(
     cuts: Sequence[MediaCut], *, profile: VideoProfile, dest: Path, codec: MediaCodec
 ) -> None:
     if not cuts:
-        raise MediaError("没有要拼的片段")
+        raise MediaError("缺少待拼接的片段")
     for cut in cuts:
         check_cut(cut)
     silent = [not (await probe_video(cut.source)).has_audio for cut in cuts]

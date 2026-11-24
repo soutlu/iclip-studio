@@ -26,7 +26,7 @@ import {
 } from './locales'
 import { usePausedCommit } from './use-paused-commit'
 
-const ADD_LABEL = '在播放头处加一句'
+const ADD_LABEL = '在播放头处添加字幕'
 const RECOGNIZE_LABEL = '识别字幕'
 const TRANSLATE_LABEL = '翻译'
 const NARRATION_LABEL = '旁白配音'
@@ -639,9 +639,8 @@ function CaptionsView({
   )
 }
 
-const NO_VOICES_TEXT = '资料库里暂无音色，请先在资料库的「音频库」里加入音色'
-const NO_NARRATION_VOICE_TEXT =
-  '没有可用的音色，无法插入旁白配音；请先在资料库的「音频库」里加入音色'
+const NO_VOICES_TEXT = '资料库中暂无音色，请先在资料库的「音频库」中添加音色'
+const NO_NARRATION_VOICE_TEXT = '暂无可用音色，无法插入旁白配音；请先在资料库的「音频库」中添加音色'
 const NO_NARRATION_TEXT = '旁白文案为空，无法插入旁白配音；请先输入文案'
 
 /**
@@ -855,7 +854,7 @@ function ScriptLine({
           </button>
         </TooltipTrigger>
         <TooltipContent className="wf-tip" side="top">
-          用台词替换这句字幕
+          使用台词替换本句字幕
         </TooltipContent>
       </TooltipRoot>
     </p>

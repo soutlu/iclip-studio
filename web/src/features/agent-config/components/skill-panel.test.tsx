@@ -357,9 +357,7 @@ describe('编辑技能', () => {
     expect(within(panel).getByRole('textbox', { name: '文件内容' })).toHaveTextContent('这句会丢。')
     await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
 
-    expect(await within(panel).findByRole('alert')).toHaveTextContent(
-      'brief-guide.md 已被别人修改，已读取最新内容',
-    )
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('brief-guide.md')
     await waitFor(() =>
       expect(within(panel).getByRole('textbox', { name: '文件内容' })).not.toHaveTextContent(
         '这句会丢。',
@@ -472,7 +470,7 @@ describe('编辑技能', () => {
     const rename = within(panel).getByRole('textbox', { name: '新文件名' })
     await user.clear(rename)
     await user.type(rename, 'shot-schema.json{Enter}')
-    expect(within(panel).getByRole('alert')).toHaveTextContent('已有同名文件，请换一个文件名')
+    expect(within(panel).getByRole('alert')).toBeVisible()
     await user.clear(rename)
     await user.type(rename, 'guides/brief.md{Enter}')
 

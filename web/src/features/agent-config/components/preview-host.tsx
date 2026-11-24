@@ -84,8 +84,8 @@ export function PreviewHost({
     slot.versionId === null
       ? '输入需求，或添加参考素材…'
       : slot.agentId === agentId && versionNumber !== undefined
-        ? `用 v${versionNumber} 测试…`
-        : '用这一版测试…'
+        ? `使用 v${versionNumber} 测试…`
+        : '使用该版本测试…'
 
   return (
     <section

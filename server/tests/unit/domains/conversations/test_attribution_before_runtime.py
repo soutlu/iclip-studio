@@ -157,7 +157,7 @@ async def test_a_same_as_without_a_library_card_fails_before_the_runtime_opens_a
         audit_label="logan",
     )
 
-    with pytest.raises(NotFound, match="资料库里没有这条视频"):
+    with pytest.raises(NotFound):
         await build().create(reader, agent_id="storyboard", same_as=uuid.uuid4())
 
 

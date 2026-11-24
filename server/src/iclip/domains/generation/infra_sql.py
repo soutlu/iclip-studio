@@ -320,7 +320,7 @@ class SqlGenerationRepository:
         async with self._engine.connect() as conn:
             row = (await conn.execute(stmt)).mappings().one_or_none()
         if row is None:
-            raise NotFound(f"没有这次生成: {job_id}")
+            raise NotFound(f"未找到该生成记录：{job_id}")
         return _job_from_row(row)
 
     async def list_for_owner(
@@ -564,7 +564,7 @@ class SqlGenerationRepository:
                 .one_or_none()
             )
         if row is None:
-            raise NotFound(f"没有这次生成: {job_id}")
+            raise NotFound(f"未找到该生成记录：{job_id}")
         return _job_from_row(row)
 
 

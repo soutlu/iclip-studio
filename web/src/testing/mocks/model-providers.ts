@@ -60,8 +60,8 @@ const openDeclaration = (
 
 export const mockNativeTools: NativeToolOut[] = [
   { label: '联网搜索', name: 'web_search', requires: [] },
-  { label: '读网页', name: 'web_extractor', requires: ['web_search'] },
-  { label: '图搜图', name: 'image_search', requires: [] },
+  { label: '读取网页', name: 'web_extractor', requires: ['web_search'] },
+  { label: '以图搜图', name: 'image_search', requires: [] },
 ]
 
 const optionalBaseUrl = {

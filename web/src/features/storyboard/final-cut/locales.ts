@@ -101,7 +101,7 @@ export function parseLocaleValues(content: string, code: LocaleCode): Record<str
       phraseWith(
         '',
         code,
-        '的语言文件写法不对，无法打开 final-cut；请把它改成变量 id 对应文字的 JSON 对象',
+        '的语言文件格式有误，无法打开 final-cut；请将其修改为变量 ID 对应文本的 JSON 对象',
       ),
     )
   return { ...(parsed as Record<string, unknown>) }

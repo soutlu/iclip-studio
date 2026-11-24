@@ -240,17 +240,17 @@ export function captionStyles(
   const { font, color, fontSize } = changes
   if (font !== undefined) {
     if (font !== null && !Object.hasOwn(catalog.fonts, font))
-      throw new Error(`组件库里没有字体「${font}」`)
+      throw new Error(`组件库中不存在字体「${font}」`)
     styles['fontFamily'] = font === null ? null : `'${font}', '${catalog.cjk.family}', sans-serif`
   }
   if (color !== undefined) {
-    if (color !== null && !HEX_COLOR.test(color)) throw new Error(`字幕颜色写法不对：${color}`)
+    if (color !== null && !HEX_COLOR.test(color)) throw new Error(`字幕颜色格式无效：${color}`)
     styles['color'] = color
   }
   if (fontSize !== undefined) {
     const { min, max } = captionFontSizeRange(canvas)
     if (fontSize !== null && !(Number.isInteger(fontSize) && fontSize >= min && fontSize <= max))
-      throw new Error(`字幕字号要是 ${min} 到 ${max} 之间的整数像素：${fontSize}`)
+      throw new Error(`字幕字号须为 ${min} 至 ${max} 之间的整数像素：${fontSize}`)
     styles['fontSize'] = fontSize === null ? null : `${fontSize}px`
     // 键名照 SDK 把属性名转成驼峰的写法，存出来才是 -webkit-text-stroke
     styles['WebkitTextStroke'] = fontSize === null ? null : strokeOf(fontSize)
@@ -260,7 +260,7 @@ export function captionStyles(
 }
 
 export const CAPTIONS_PROBLEM_TEXT =
-  '字幕文件写法不对，字幕会显示成占位字，无法导出；请删掉字幕文件里声明的变量和字幕宿主上的取值后再导出'
+  '字幕文件格式有误，字幕将显示为占位文字，无法导出；请移除字幕文件中声明的变量及字幕宿主上的取值后再导出'
 
 const DECLARES_VARIABLES = /<[^>]*\sdata-composition-variables\s*=/i
 

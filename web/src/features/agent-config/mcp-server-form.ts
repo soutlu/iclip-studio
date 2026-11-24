@@ -144,8 +144,8 @@ export const validate = (values: Values, creating: boolean): Errors => {
     if (name === '') errors[`header-name-${row.key}`] = '请填写请求头名称'
     else if (!HEADER_NAME_PATTERN.test(name))
       errors[`header-name-${row.key}`] =
-        "请求头名称只能用英文字母、数字和 ! # $ % & ' * + - . ^ _ ` | ~"
-    else if (seen.has(name.toLowerCase())) errors[`header-name-${row.key}`] = '请求头名称不能重复'
+        "请求头名称仅支持英文字母、数字及 ! # $ % & ' * + - . ^ _ ` | ~"
+    else if (seen.has(name.toLowerCase())) errors[`header-name-${row.key}`] = '请求头名称不可重复'
     seen.add(name.toLowerCase())
     if (row.value === '' && !keepsSavedValue(row))
       errors[`header-value-${row.key}`] = '请填写请求头的值'
@@ -156,8 +156,8 @@ export const validate = (values: Values, creating: boolean): Errors => {
 /** 新加一个权限名时的问题；没问题返回 `null`。 */
 export const scopeNameProblem = (name: string, rows: readonly ScopeRow[]): string | null => {
   if (name === '') return '请填写权限名称'
-  if (!SCOPE_PATTERN.test(name)) return '权限名称不能含空格、引号或反斜杠'
-  if (rows.some((row) => row.name === name)) return '这个权限已在列表里'
+  if (!SCOPE_PATTERN.test(name)) return '权限名称不可包含空格、引号或反斜杠'
+  if (rows.some((row) => row.name === name)) return '该权限已在列表中'
   return null
 }
 

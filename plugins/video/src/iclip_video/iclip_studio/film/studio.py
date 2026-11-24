@@ -165,9 +165,9 @@ def edit_text(
     source: str, run_source: str | None, film: Film, edits: Sequence[FilmTextEdit]
 ) -> TextEdited:
     if not edits:
-        raise FilmEditRejected("没有要改的字")
+        raise FilmEditRejected("未提供需要修改的文本")
     if len({edit.target for edit in edits}) != len(edits):
-        raise FilmEditRejected("同一段字一次只改一处")
+        raise FilmEditRejected("同一文本段单次仅支持修改一处")
     project = film.project
     splice = _Splice()
     expected: list[tuple[str, str]] = []
@@ -177,7 +177,7 @@ def edit_text(
     for edit in edits:
         node = _resolve(project, edit.target)
         if node is None or not _editable(source, film, node):
-            raise FilmEditRejected("要改的这段字找不到了，刷新后再改")
+            raise FilmEditRejected("未找到待修改的文本，请刷新后重试")
         edited.add(node)
         if project.is_a(node, "Shot"):
             text, lines = _shot_text(node, edit)
@@ -196,10 +196,10 @@ def edit_text(
             continue
         if len(users) > 1 and (edit.images or IMAGE_NUMBER.search(text)):
             raise FilmEditRejected(
-                "这段文字用在几个地方，无法插入图片；带图号的文字只能用在一个节点里"
+                "该段文本被多处引用，无法插入图片；包含图号的文本仅支持用于单个节点"
             )
         if edit.images:
-            raise FilmEditRejected("只能在视频的文字里插入图片")
+            raise FilmEditRejected("仅支持在视频描述文本中插入图片")
         assert node.inner is not None
         splice.replace(node.inner, _body(source[slice(*node.inner)], text))
         expected.append((edit.target, text))
@@ -212,12 +212,12 @@ def edit_text(
     problems = rewritten if isinstance(rewritten, list) else rewritten.errors
     if problems:
         if any(f"超过 {MAX_PROMPT_CHARS} 字" in problem for problem in problems):
-            raise FilmEditRejected(f"改完以后描述超过 {MAX_PROMPT_CHARS} 字了，删短一些再保存")
+            raise FilmEditRejected(f"修改后的描述超过 {MAX_PROMPT_CHARS} 字上限，请精简后再保存")
         if any(f"超过 {VIDEO_MAX_REFERENCES} 张" in problem for problem in problems):
             raise FilmEditRejected(
-                f"插入以后这一组的参考图超过 {VIDEO_MAX_REFERENCES} 张了，删掉几张再保存"
+                f"插入后该组参考图超过 {VIDEO_MAX_REFERENCES} 张上限，请移除部分图片后再保存"
             )
-        raise FilmEditRejected("这样改以后分镜有问题，没有保存；可以跟 AI 导演说想怎么改")
+        raise FilmEditRejected("修改后的分镜存在格式问题，未保存；请告知 AI 导演进行调整")
     assert not isinstance(rewritten, list)
     for target, text in expected:
         node = _resolve(rewritten.project, target)
@@ -235,9 +235,9 @@ def choose_image(
     project = film.project
     node = project.nodes.get(image)
     if node is None or project.declared(node).output not in (("", IMAGE), ("image", IMAGE)):
-        raise FilmEditRejected("找不到这张图，刷新后再换")
+        raise FilmEditRejected("未找到该图片，请刷新后重试")
     if url is not None and _repeats_a_reference(film, image, url):
-        raise FilmEditRejected("同一组参考图里已经有这张图了，换一张")
+        raise FilmEditRejected("同一组参考图中已包含该图片，请更换其他图片")
     if _generated(project, image):
         run_updated = _select_in_run(film, run_source, image, url)
         project_updated = _place_view(film, project_source, image, listed=url is not None)
@@ -253,12 +253,12 @@ def choose_image(
             changes.reverse()
         return [(path, content) for path, content in changes if content is not None]
     if url is None:
-        raise FilmEditRejected("这张图是你给的，只能换成另一张，不能清空")
+        raise FilmEditRejected("该图片为用户上传的素材，仅支持更换为其他图片，无法清空")
     if node.attrs.get("src") == url:
         return []
     found = None if node.opening is None else _SRC.search(project_source, *node.opening)
     if node.opening is None or found is None:
-        raise FilmEditRejected("这张图的地址没法在页面上换，跟 AI 导演说")
+        raise FilmEditRejected("该图片地址无法在页面直接更换，请告知 AI 导演进行修改")
     start, stop = found.span(3)
     updated = project_source[:start] + _attribute(url, found.group(2)) + project_source[stop:]
     if check_project_content(updated):
@@ -293,7 +293,7 @@ def set_aspect_ratio(film: Film, project_source: str, aspect: str) -> str | None
             continue
         found = None if node.opening is None else _ASPECT.search(project_source, *node.opening)
         if found is None:
-            raise FilmEditRejected("画幅无法在页面上修改，请让 AI 导演修改")
+            raise FilmEditRejected("画幅无法在页面直接修改，请告知 AI 导演进行修改")
         splice.replace(found.span(3), aspect)
         changed = True
     if not changed:
@@ -452,7 +452,7 @@ def _place_view(film: Film, source: str, image: str, *, listed: bool) -> str | N
         if renumbered == raw:
             continue
         if not _writable(source, text):
-            raise FilmEditRejected("这一组的文字没法在页面上调整图号，跟 AI 导演说")
+            raise FilmEditRejected("该组文本无法在页面调整图号，请告知 AI 导演进行修改")
         assert text.inner is not None
         splice.replace(text.inner, renumbered)
     return splice.apply(source)
@@ -520,9 +520,9 @@ def _typed(film: Film, video: Node, edit: FilmTextEdit, node: Node, text: str) -
             runs.append(_Slot(keys[number - count - 1]))
             temps.add(number)
         else:
-            raise FilmEditRejected(f"字里的 @Image{number} 没有对应的图，刷新后再改")
+            raise FilmEditRejected(f"文本中的 @Image{number} 无对应图片，请刷新后重试")
     if len(temps) != len(keys):
-        raise FilmEditRejected("插入的图和字对不上，刷新后再改")
+        raise FilmEditRejected("插入的图片与文本不匹配，请刷新后重试")
     return _Typed(edit.target, node, tuple(runs), text)
 
 
@@ -615,7 +615,7 @@ def _renumber_group(
         if renumbered == raw:
             continue
         if not _writable(source, text):
-            raise FilmEditRejected("这一组的文字没法在页面上调整图号，跟 AI 导演说")
+            raise FilmEditRejected("该组文本无法在页面调整图号，请告知 AI 导演进行修改")
         splice.replace(text.inner, renumbered)
     return expected
 
@@ -654,7 +654,7 @@ class _InsertedImages:
         generated = self._generated.get(url)
         if generated is not None:
             if generated in self._views:
-                raise FilmEditRejected("机位图只随选用进参考图列表，无法插入；请在镜头上选用")
+                raise FilmEditRejected("机位图仅随选用加入参考图列表，无法直接插入；请在镜头中选用")
             return f"{generated}.image"
         return self._photo(url)
 
@@ -729,10 +729,10 @@ def _editable(source: str, film: Film, node: Node) -> bool:
 
 def _new_text(edit: FilmTextEdit) -> str:
     if edit.text is None:
-        raise FilmEditRejected("要给改好的文字")
+        raise FilmEditRejected("请提供修改后的文本")
     text = _clean(edit.text).strip()
     if not text:
-        raise FilmEditRejected("这段字不能是空的")
+        raise FilmEditRejected("文本内容不能为空")
     return text
 
 
@@ -759,21 +759,21 @@ def _shot_text(shot: Node, edit: FilmTextEdit) -> tuple[str, list[tuple[str, str
     names = LINE_REFERENCE.findall(shot.text)
     lines = edit.lines
     if edit.parts is None or lines is None or len(edit.parts) != len(lines) + 1:
-        raise FilmEditRejected("镜头的文字和台词对不上，刷新后再改")
+        raise FilmEditRejected("镜头描述与台词不匹配，请刷新后重试")
     if [line.target for line in lines] != [f"line:{name}" for name in names]:
-        raise FilmEditRejected("台词只能改字，不能删、不能加，也不能调先后；要动台词跟 AI 导演说")
+        raise FilmEditRejected("台词仅支持修改文字内容，无法增删或调整顺序；如需变更请告知 AI 导演")
     said: list[tuple[str, str]] = []
     for name, line in zip(names, lines, strict=True):
         words = " ".join(_clean(line.text).split())
         if not words:
-            raise FilmEditRejected("台词不能是空的")
+            raise FilmEditRejected("台词内容不能为空")
         said.append((name, words))
     parts = [_clean(part) for part in edit.parts]
     body = parts[0] + "".join(
         "{" + name + "}" + part for name, part in zip(names, parts[1:], strict=True)
     )
     if not LINE_REFERENCE.sub("", body).strip():
-        raise FilmEditRejected("镜头的文字不能是空的")
+        raise FilmEditRejected("镜头描述不能为空")
     return body.strip(), said
 
 
@@ -877,7 +877,7 @@ def _quoted(value: str) -> str:
 
 def _span(node: Node) -> tuple[int, int]:
     if node.opening is None:
-        raise FilmEditRejected("这一处没法在页面上改，跟 AI 导演说")
+        raise FilmEditRejected("此处内容无法在页面直接修改，请告知 AI 导演进行修改")
     return node.opening
 
 
@@ -915,10 +915,10 @@ def _before_close(source: str, root: Node, text: str) -> tuple[int, str]:
 
 def _before_end(source: str, node: Node, text: str) -> tuple[int, str]:
     if node.inner is None:
-        raise FilmEditRejected("这一组的参考图列表没法在页面上改，跟 AI 导演说")
+        raise FilmEditRejected("该组参考图列表无法在页面直接修改，请告知 AI 导演进行修改")
     position = source.rfind("\n", 0, node.inner[1]) + 1
     if source[position : node.inner[1]].strip() or position <= node.inner[0]:
-        raise FilmEditRejected("这一组的参考图列表没法在页面上改，跟 AI 导演说")
+        raise FilmEditRejected("该组参考图列表无法在页面直接修改，请告知 AI 导演进行修改")
     return position, f"{_indent(source, node)}  {text}\n"
 
 

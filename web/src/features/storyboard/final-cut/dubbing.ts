@@ -58,10 +58,10 @@ export type DubbingRefusal = 'empty' | 'uncaptioned' | 'untranslated'
 /** 配不了的原因，`code` 是要配的语言。 */
 export const dubbingRefusalText = (refusal: DubbingRefusal, code: LocaleCode): string =>
   refusal === 'empty'
-    ? 'final-cut 里暂无视频片段，无法生成配音；请先加入镜头'
+    ? 'final-cut 中暂无视频片段，无法生成配音；请先添加镜头'
     : refusal === 'uncaptioned'
-      ? `视频片段都没有识别出的字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
-      : phraseWith('字幕还没有翻成', code, '，无法生成配音；请先点击「翻译」')
+      ? `视频片段均无已识别字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
+      : phraseWith('字幕尚未翻译为', code, '，无法生成配音；请先点击「翻译」')
 
 const isCaption = (clip: FilmClip): clip is CaptionClip => clip.kind === 'caption'
 
@@ -71,12 +71,12 @@ export type LineRefusal = 'unowned' | 'untranslated' | 'untaken' | 'crowded'
 /** 一句配不了音的原因，`code` 是要配的语言。 */
 export const lineRefusalText = (refusal: LineRefusal, code: LocaleCode): string =>
   refusal === 'unowned'
-    ? '这句字幕不属于任何视频片段，无法配音'
+    ? '该条字幕不属于任何视频片段，无法配音'
     : refusal === 'untranslated'
-      ? phraseWith('这句还没有翻成', code, '，无法配音；请先点击「翻译」')
+      ? phraseWith('该条字幕尚未翻译为', code, '，无法配音；请先点击「翻译」')
       : refusal === 'untaken'
-        ? '找不到这句所在视频片段的素材片记录，无法配音'
-        : '这句和前一句重叠太多，无法配音'
+        ? '未找到该条字幕所属视频片段的素材片记录，无法配音'
+        : '该条字幕与前一条重叠过多，无法配音'
 
 /**
  * 各句字幕在一种语言（值表 `values`）下为什么配不了音，配得了的不在里面。`clips` 要含原文的旁白片段（这种语言

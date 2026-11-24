@@ -145,9 +145,9 @@ class PreviewRedirect:
 
 
 _NO_PREVIEW_ORIGIN = "尚未配置 final-cut 预览域名"
-_NO_APP_ORIGIN = "请求没有带有效的 Origin 请求头，无法签发预览令牌"
+_NO_APP_ORIGIN = "请求未携带有效的 Origin 请求头，无法签发预览令牌"
 _BAD_TOKEN = "预览令牌无效或已过期"
-_NO_FILE = "final-cut 工程里没有这个文件"
+_NO_FILE = "final-cut 工程中不存在该文件"
 
 
 class FinalCutProject:
@@ -236,11 +236,13 @@ class FinalCutProject:
         conversation = await self._conversations.workspace_writable(principal, conversation_id)
         checked = project_path(path)
         if checked is None:
-            raise ValidationFailed(f"路径 {path!r} 不合规：用 / 分隔的相对路径，不带 . 或 .. 段")
+            raise ValidationFailed(
+                f"路径 {path!r} 无效：须为使用 / 分隔的相对路径，且不可包含 . 或 .."
+            )
         full = f"{PROJECT_DIR}/{checked}"
         owner = conversation.owner_user_id
         if await self._read_file(owner, conversation.id, full) is not None:
-            raise Conflict("final-cut 工程里已经有这个文件")
+            raise Conflict("final-cut 工程中已存在该文件")
         return await self._write_file(owner, conversation.id, full, content, None)
 
     async def translate(

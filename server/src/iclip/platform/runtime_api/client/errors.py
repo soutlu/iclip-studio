@@ -24,7 +24,7 @@ class RuntimeUnavailable(Exception):
 
 class AppRejected(RuntimeUnavailable):
     def __init__(self, detail: str, *, status: int | None) -> None:
-        super().__init__("运行时拒绝了这个应用" + (f"：{detail}" if detail else ""), status=status)
+        super().__init__("运行时拒绝了当前应用" + (f"：{detail}" if detail else ""), status=status)
         self.detail = detail
 
 
@@ -81,12 +81,12 @@ def error_for(response: httpx.Response) -> DomainError | RuntimeUnavailable:
         return app_rejection(response)
     domain = _DOMAIN_BY_STATUS.get(status)
     if domain is None:
-        reason = "运行时服务出错" if status >= 500 else "运行时答了约定之外的状态码"
+        reason = "运行时服务出错" if status >= 500 else "运行时返回了预期之外的状态码"
         return RuntimeUnavailable(reason, status=status)
     try:
         envelope = _ErrorEnvelope.model_validate_json(response.content)
     except ValidationError:
-        return RuntimeUnavailable("运行时的报错答复解析不了", status=status)
+        return RuntimeUnavailable("无法解析运行时的错误响应", status=status)
     if domain is Conflict and envelope.code == AgentUnavailable.code:
         return AgentUnavailable(envelope.detail)
     if domain is Conflict and envelope.code == ModelUnavailable.code:

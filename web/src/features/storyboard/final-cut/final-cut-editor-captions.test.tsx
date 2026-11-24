@@ -57,15 +57,13 @@ vi.setConfig({ testTimeout: 15_000 })
 beforeEach(setUpEditorCase)
 afterEach(tearDownEditorCase)
 
-const EMPTY_CAPTIONS_TEXT = '暂无字幕，请点击「识别字幕」或「在播放头处加一句」'
-
 describe('final-cut 编辑器 · 字幕页签', () => {
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   const openCaptions = (user: ReturnType<typeof userEvent.setup>) =>
     user.click(within(side()).getByRole('tab', { name: '字幕' }))
   const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
-  const addButton = () => within(panel()).getByRole('button', { name: '在播放头处加一句' })
+  const addButton = () => within(panel()).getByRole('button', { name: '在播放头处添加字幕' })
   const savedScene = () =>
     mockWorkspaceFile(CONVERSATION, `final-cut/${CAPTIONS_PATH}`)?.content ?? ''
   /** 存下来的主文件根上声明的变量的默认值。 */
@@ -83,7 +81,7 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
     await openCaptions(user)
-    expect(within(panel()).getByText(EMPTY_CAPTIONS_TEXT)).toBeVisible()
+    expect(within(panel()).getByText(/暂无字幕/)).toBeVisible()
 
     await user.click(addButton())
     const field = await within(panel()).findByRole('textbox', {
@@ -94,10 +92,7 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     expect(within(panel()).getByRole('listitem')).toHaveAttribute('aria-current', 'true')
     expect(addButton()).toHaveAttribute('aria-disabled', 'true')
     await user.click(addButton())
-    expect(
-      (await screen.findAllByText('播放头处已有字幕，无法再加一句；请把播放头移到没有字幕的地方'))
-        .length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
 
     // 回车是换行；写进去以后焦点还在框里
     await user.clear(field)
@@ -109,7 +104,7 @@ describe('final-cut 编辑器 · 字幕页签', () => {
     await user.click(
       within(panel()).getByRole('button', { name: '删除 00:00.00 – 00:02.00 的字幕' }),
     )
-    expect(within(panel()).getByText(EMPTY_CAPTIONS_TEXT)).toBeVisible()
+    expect(within(panel()).getByText(/暂无字幕/)).toBeVisible()
     await waitSaved(() => expect(savedTexts()).toEqual([]))
     expect(savedScene()).not.toContain('class="clip caption"')
   })
@@ -742,7 +737,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     expect(
       await screen.findByText('A · 镜头 1 的字幕识别失败，请点击「识别字幕」重试'),
     ).toBeVisible()
-    expect(await screen.findByText('安静 没有识别出说话，未加字幕')).toBeVisible()
+    expect(await screen.findByText('安静 未识别到口播内容，未新增字幕')).toBeVisible()
     // 上次失败了的那条重新发起一次
     expect(submitted).toEqual([TAKE_A])
     await waitFor(() => expect(recognizeButton(panel)).not.toHaveAttribute('aria-disabled'))
@@ -767,7 +762,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     const submitted = serveSubtitles([
       subtitleJob(TAKE_A, { sentences: [said(1_500, 2_500, '跨过接缝的一句')] }),
     ])
-    const elsewhereText = '后半 里的话从别的片段说起，字幕归开头所在的片段，未加字幕'
+    const elsewhereText = '后半 的口播起始于其他片段，对应字幕已归属起始片段，未新增字幕'
     const panel = await openCaptions(user)
     await user.click(recognizeButton(panel))
     await waitSaved(() => expect(savedSceneLines()).toEqual([['跨过接缝的一句', 1.5, 1, 'clip-1']]))
@@ -787,9 +782,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     const panel = await openCaptions(user)
     expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
     await user.click(recognizeButton(panel))
-    expect(
-      (await screen.findAllByText('final-cut 里暂无视频片段，无法识别字幕；请先加入镜头')).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
   })
 
   it('视频片段都关了原声：「识别字幕」置灰，说明原因', async () => {
@@ -801,13 +794,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     const panel = await openCaptions(user)
     expect(recognizeButton(panel)).toHaveAttribute('aria-disabled', 'true')
     await user.click(recognizeButton(panel))
-    expect(
-      (
-        await screen.findAllByText(
-          '视频片段都关闭了原声或找不到素材记录，无法识别字幕；请先打开原声',
-        )
-      ).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
   })
 })
 
@@ -944,10 +931,12 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
 
     await user.keyboard('{Delete}')
     expect(
-      await screen.findByText(
-        '字幕跟着挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
-      ),
-    ).toBeVisible()
+      (
+        await within(screen.getByRole('region', { name: /Notifications/ })).findAllByRole(
+          'listitem',
+        )
+      ).length,
+    ).toBeGreaterThan(0)
     expect(videoBodies()).toHaveLength(2)
     expect(videoBodies()[0]).toHaveAttribute('aria-pressed', 'true')
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')

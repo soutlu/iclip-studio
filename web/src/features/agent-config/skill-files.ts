@@ -128,12 +128,12 @@ export const referencePath = (
   const name = input.trim()
   if (name === '') return { error: '请填写文件名' }
   // eslint-disable-next-line no-control-regex -- 拦的就是控制字符
-  if (/[\u0000-\u001f\u007f]/.test(name)) return { error: '文件名不能包含换行或控制字符' }
+  if (/[\u0000-\u001f\u007f]/.test(name)) return { error: '文件名不可包含换行或控制字符' }
   if (name.startsWith('/')) return { error: '请填写 references/ 下的相对路径' }
-  if (name.includes('\\')) return { error: '路径不能包含反斜杠，请用 / 分隔目录' }
+  if (name.includes('\\')) return { error: '路径不可包含反斜杠，请使用 / 分隔目录' }
   const path = name.startsWith(REFERENCES) ? name : `${REFERENCES}${name}`
   if (path.split('/').some((part) => part === '' || part === '.' || part === '..'))
-    return { error: '路径里不能有空的一段、. 或 ..' }
-  if (path !== previous && existing.includes(path)) return { error: '已有同名文件，请换一个文件名' }
+    return { error: '路径不可包含空段、. 或 ..' }
+  if (path !== previous && existing.includes(path)) return { error: '已存在同名文件，请更换文件名' }
   return { path }
 }

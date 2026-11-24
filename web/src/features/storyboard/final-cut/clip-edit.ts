@@ -412,12 +412,12 @@ export type Cut = { id: string; first: Timing; second: Timing }
 export type SplitRefusal = 'none' | 'many' | 'kind' | 'outside' | 'edge' | 'partner'
 
 export const SPLIT_REFUSAL_TEXT: Readonly<Record<SplitRefusal, string>> = {
-  none: '尚未选中片段，无法切开；请先选中一个片段',
-  many: '选中了多个片段，无法切开；请只选中一个片段',
-  kind: '只有视频、音频、贴片和场景片段可以切开',
-  outside: '播放头不在片段里，无法切开；请把播放头移到片段里面',
-  edge: `播放头离片段两端不足 ${SPLIT_MARGIN_MS / 1000} 秒，无法切开；请把播放头移到片段里面`,
-  partner: '与它链接的片段无法在同一处切开',
+  none: '尚未选中片段，无法切开；请先选中单个片段',
+  many: '已选中多个片段，无法切开；请仅选中单个片段',
+  kind: '仅视频、音频、贴片和场景片段支持切开',
+  outside: '播放头未位于片段范围内，无法切开；请将播放头移至片段内部',
+  edge: `播放头距片段两端不足 ${SPLIT_MARGIN_MS / 1000} 秒，无法切开；请将播放头移至片段内部`,
+  partner: '关联的链接片段无法在同一位置切开',
 }
 
 /** 切开的打算：能切时是要切的片段（含链接的片段），切不了时是原因。 */

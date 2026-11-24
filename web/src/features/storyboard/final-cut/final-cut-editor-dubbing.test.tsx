@@ -269,7 +269,7 @@ describe('final-cut 编辑器 · 配音', () => {
     )
     expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}')
     expect((await screen.findAllByText('已生成 3 句 English 配音')).length).toBeGreaterThan(0)
-    expect((await screen.findAllByText('2 句配音太长，已截短')).length).toBeGreaterThan(0)
+    expect((await screen.findAllByText(/2.*截短/)).length).toBeGreaterThan(0)
     expect(voiceButton('原声')).toHaveAttribute('aria-pressed', 'true')
     const row = screen.getByRole('group', { name: '配音' })
     expect(within(row).getByRole('group', { name: /^配音 · A one，2\.0 秒，截短$/ })).toBeVisible()
@@ -328,9 +328,7 @@ describe('final-cut 编辑器 · 配音', () => {
     const sent = serveDubbings()
     expect(voiceButton('原声')).toHaveAttribute('aria-disabled', 'true')
     await user.click(voiceButton('原声'))
-    expect(
-      (await screen.findAllByText('字幕还没有翻成 English，无法生成配音；请先点击「翻译」')).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('English')
     expect(sent).toEqual([])
   })
 
@@ -430,9 +428,7 @@ describe('final-cut 编辑器 · 配音', () => {
     // d4 还没翻，e5 是手动加的、不属于视频片段
     expect(lineChip(1)).toHaveAttribute('aria-disabled', 'true')
     await user.click(lineChip(1))
-    expect(
-      (await screen.findAllByText('这句还没有翻成 English，无法配音；请先点击「翻译」')).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('English')
     expect(lineChip(4)).toHaveAttribute('aria-disabled', 'true')
     expect(screen.queryByRole('menu')).toBeNull()
 

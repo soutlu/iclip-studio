@@ -71,7 +71,7 @@ async def sample_file(source: Path, *, codec: MediaCodec) -> SampledVideo:
 def _read(out_dir: Path, audio_path: Path | None) -> SampledVideo:
     frames = tuple(path.read_bytes() for path in sorted(out_dir.glob("f*.jpg")))
     if not frames:
-        raise MediaError("抽帧没产出任何帧")
+        raise MediaError("抽帧未产出任何帧")
     return SampledVideo(
         frames=frames, audio=audio_path.read_bytes() if audio_path is not None else None
     )

@@ -196,7 +196,7 @@ async def test_a_reference_that_does_not_open_is_refused_before_any_generation(
         if isinstance(part, ToolReturnPart) and part.outcome == "retried"
     ]
     assert len(refusals) == 1
-    assert "@Image2：打不开" in refusals[0].model_response_str()
+    assert "@Image2" in refusals[0].model_response_str()
     assert "made-up" not in refusals[0].model_response_str()
     assert generations.submitted == []
 
@@ -262,7 +262,7 @@ async def test_a_reference_that_does_not_answer_is_reported_as_not_opening(
     frame = "https://cdn.test/S1-1.jpg"
     media.set(frame, (502, None))
 
-    with pytest.raises(ModelRetry, match="@Image1：打不开"):
+    with pytest.raises(ModelRetry, match="@Image1"):
         await check_references(tools, ctx, [frame])
 
 

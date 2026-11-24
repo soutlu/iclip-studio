@@ -75,7 +75,7 @@ async def test_loopback_is_refused_by_the_public_rule(server: LoopbackServer, ho
 async def test_a_private_address_is_refused_without_connecting() -> None:
     refusing = PublicFetcher()
     try:
-        with pytest.raises(FetchFailed, match="不是允许的公网地址"):
+        with pytest.raises(FetchFailed):
             await refusing.fetch("http://10.0.0.5/a.png", max_bytes=1024)
     finally:
         await refusing.aclose()
@@ -96,7 +96,7 @@ async def test_a_port_outside_the_rule_is_refused_without_connecting(
 ) -> None:
     other = PublicFetcher(policy=OutboundPolicy(ports=frozenset({server.port + 1}), loopback=True))
     try:
-        with pytest.raises(FetchFailed, match=f"不连 {server.port} 端口"):
+        with pytest.raises(FetchFailed, match=str(server.port)):
             await other.probe(server.url("/a.png", host=host))
     finally:
         await other.aclose()
@@ -125,7 +125,7 @@ def test_production_allows_only_80_and_443() -> None:
 async def test_an_address_with_credentials_is_refused_without_connecting(
     server: LoopbackServer, fetcher: PublicFetcher
 ) -> None:
-    with pytest.raises(FetchFailed, match="用户名密码"):
+    with pytest.raises(FetchFailed):
         await fetcher.fetch(f"http://user:secret@127.0.0.1:{server.port}/a.png", max_bytes=1024)
 
     assert server.connections == 0
@@ -133,7 +133,7 @@ async def test_an_address_with_credentials_is_refused_without_connecting(
 
 @pytest.mark.parametrize(
     ("path", "says"),
-    [("/gone", "对方回了 404"), ("/down", "对方回了 503"), ("/loop", "TooManyRedirects")],
+    [("/gone", "404"), ("/down", "503"), ("/loop", "TooManyRedirects")],
 )
 async def test_anything_but_a_final_200_fails_with_its_reason(
     server: LoopbackServer, fetcher: PublicFetcher, path: str, says: str

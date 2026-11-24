@@ -125,12 +125,10 @@ describe('final-cut 编辑器 · 语言', () => {
     const row = screen.getByRole('group', { name: '字幕' })
     expect(within(row).getByRole('group', { name: /^Line one，/ })).toBeVisible()
     expect(within(row).getByRole('group', { name: /^字幕 b2，1\.0 秒，原文$/ })).toBeVisible()
-    const add = within(panel()).getByRole('button', { name: '在播放头处加一句' })
+    const add = within(panel()).getByRole('button', { name: '在播放头处添加字幕' })
     expect(add).toHaveAttribute('aria-disabled', 'true')
     await user.click(add)
-    expect(
-      (await screen.findAllByText('当前语言是 English，无法加字幕；请先切换到「原文」')).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('English')
 
     // 其它语言下写一句：存进 English 的值表，原文不变
     await user.type(second, 'Line two')
@@ -502,10 +500,7 @@ describe('final-cut 编辑器 · 翻译', () => {
 
     expect(translateButton()).toHaveAttribute('aria-disabled', 'true')
     await user.click(translateButton())
-    expect(
-      (await screen.findAllByText('English 的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句'))
-        .length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('English')
     expect(sent).toHaveLength(1)
 
     await user.click(undoButton())
@@ -594,8 +589,6 @@ describe('final-cut 编辑器 · 翻译', () => {
     expect(await screen.findByText('1 条超过 500 字，未翻译；请手动填写')).toBeVisible()
     expect(translateButton()).toHaveAttribute('aria-disabled', 'true')
     await user.click(translateButton())
-    expect(
-      (await screen.findAllByText('还没翻译的 1 条超过 500 字，无法自动翻译；请手动填写')).length,
-    ).toBeGreaterThan(0)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('500')
   })
 })

@@ -16,8 +16,8 @@ export const CAPTION_MS = 2000
 export const NEW_CAPTION_TEXT = '新字幕'
 
 export const CAPTION_REFUSAL_TEXT = {
-  taken: '播放头处已有字幕，无法再加一句；请把播放头移到没有字幕的地方',
-  tight: '播放头离下一句字幕不到 0.1 秒，无法加一句；请把播放头往前移',
+  taken: '播放头位置已有字幕，无法继续添加；请将播放头移至无字幕区间',
+  tight: '播放头距下一条字幕不足 0.1 秒，无法添加字幕；请将播放头前移',
 } as const
 
 /**
@@ -109,8 +109,8 @@ export function captionsFocus(
 export type CaptionFollowRefusal = 'overlap' | 'early'
 
 export const CAPTION_FOLLOW_REFUSAL_TEXT: Readonly<Record<CaptionFollowRefusal, string>> = {
-  overlap: '字幕跟着挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
-  early: '字幕跟着配音片段挪动后会早于 0 秒，无法完成这次编辑；请把配音片段往后挪',
+  overlap: '字幕联动移动后将与其他字幕重叠，无法完成本次编辑；请先移开或移除冲突字幕',
+  early: '字幕随配音片段移动后将早于 0 秒，无法完成本次编辑；请将配音片段后移',
 }
 
 /** 一步编辑里字幕要怎么跟着走：挪到的新起点（编号 → 毫秒）、要删掉的字幕；做不到时是原因。 */
@@ -242,9 +242,9 @@ export type RecognitionTarget = { clipId: string; sourceJobId: string }
 export type RecognitionRefusal = 'empty' | 'captioned' | 'unusable'
 
 export const RECOGNITION_REFUSAL_TEXT: Readonly<Record<RecognitionRefusal, string>> = {
-  empty: 'final-cut 里暂无视频片段，无法识别字幕；请先加入镜头',
-  captioned: '视频片段都已有字幕，无法再识别；删掉一个片段的全部字幕后可重新识别',
-  unusable: '视频片段都关闭了原声或找不到素材记录，无法识别字幕；请先打开原声',
+  empty: 'final-cut 中暂无视频片段，无法识别字幕；请先添加镜头',
+  captioned: '所有视频片段均已有字幕，无需重复识别；移除某一视频片段的全部字幕后可重新识别',
+  unusable: '所有视频片段均已静音或无对应素材记录，无法识别字幕；请先开启原声',
 }
 
 /** 视频片段有没有声音可识别：没关闭原声，或者它的原声分离出来了。 */

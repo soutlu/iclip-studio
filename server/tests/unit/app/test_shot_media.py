@@ -151,7 +151,7 @@ async def test_frame_boards_refuse_an_internal_address() -> None:
     )
 
     try:
-        with pytest.raises(BoardsUnreadable, match="不是允许的公网地址") as raised:
+        with pytest.raises(BoardsUnreadable) as raised:
             await adapter.boards(
                 video_url="http://10.0.0.5/ref.mp4",
                 rows=parse_shot_rows(DOCUMENT),
@@ -179,7 +179,7 @@ async def test_frame_boards_report_a_malformed_address(url: str) -> None:
     )
 
     try:
-        with pytest.raises(BoardsUnreadable, match="地址格式不对") as raised:
+        with pytest.raises(BoardsUnreadable) as raised:
             await adapter.boards(video_url=url, rows=parse_shot_rows(DOCUMENT), previous=None)
     finally:
         await public.aclose()

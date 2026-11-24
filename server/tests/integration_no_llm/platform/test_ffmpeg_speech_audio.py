@@ -72,11 +72,11 @@ async def test_a_file_that_is_not_media_is_a_media_error(tmp_path: Path) -> None
     source = tmp_path / "broken.mp4"
     source.write_bytes(b"not a video")
 
-    with pytest.raises(MediaError, match="ffprobe 失败") as raised:
+    with pytest.raises(MediaError, match="ffprobe") as raised:
         await extract_speech_audio(source, dest=tmp_path / "speech.mp3")
     assert not isinstance(raised.value, NoAudioStream), "读不了不是「没有音轨」"
 
 
 async def test_a_missing_source_is_a_media_error(tmp_path: Path) -> None:
-    with pytest.raises(MediaError, match="不在"):
+    with pytest.raises(MediaError, match=r"gone\.mp4"):
         await extract_speech_audio(tmp_path / "gone.mp4", dest=tmp_path / "speech.mp3")

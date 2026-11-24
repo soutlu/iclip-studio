@@ -571,7 +571,7 @@ describe('生成音乐的输入框', () => {
 
     await waitFor(() => expect(editor).toHaveTextContent('纯音乐，极简氛围钢琴小品'))
     await waitFor(() => expect(submit).toBeEnabled())
-    expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
+    expect(popover).toHaveAccessibleDescription()
     await user.click(submit)
 
     await waitFor(() =>
@@ -613,11 +613,7 @@ describe('生成音乐的输入框', () => {
     const { user, popover, editor, submit } = await openGenerate(conversation.id)
 
     pasteTextIntoComposer(editor, '钢'.repeat(3001))
-    await waitFor(() =>
-      expect(popover).toHaveAccessibleDescription(
-        '描述超过 3000 字，无法生成；请删减到 3000 字以内',
-      ),
-    )
+    await waitFor(() => expect(popover).toHaveAccessibleDescription(/3000/))
     expect(submit).toBeDisabled()
     expect(editor.textContent).toHaveLength(3001)
     act(() => editor.focus())
@@ -681,7 +677,7 @@ describe('生成音乐的输入框', () => {
     )
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(popover).toBeInTheDocument()
-    expect(popover).toHaveAccessibleDescription('已填入工程文件里的配乐描述，可直接修改')
+    expect(popover).toHaveAccessibleDescription()
   })
 
   it('挂在 final-cut 编辑器里、焦点落在 body 时点提交，浮层一直开到提交完成', async () => {

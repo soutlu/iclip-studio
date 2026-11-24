@@ -29,7 +29,7 @@ CAPABILITY_ID: Final = "video"
 @dataclass
 class Video(CapPlugin[AgentDepsT]):
     label = "视频理解"
-    summary = "把参考视频交给视频理解模型拆解，拆解内容写进工作区，当场返回。"
+    summary = "将参考视频交给视频理解模型拆解，拆解结果写入工作区并实时返回。"
 
     space: FileSpace
 

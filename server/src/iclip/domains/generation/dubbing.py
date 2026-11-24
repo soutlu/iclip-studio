@@ -310,7 +310,7 @@ class DubbingProvider:
             root,
             start_ms=0,
             length_ms=MAX_REFERENCE_MS,
-            silent="参考音频里没有声音，换一段参考音频",
+            silent="参考音频无声音，请更换参考音频",
         )
 
     async def _cut(

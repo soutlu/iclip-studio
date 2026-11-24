@@ -96,7 +96,7 @@ function DefinitionFields({
         <div className="flex flex-col gap-1.5">
           <span className={LABEL_CLASS}>标识</span>
           <span className="inline-flex h-10 items-center gap-1.5 text-body-sm text-on-surface-variant tabular-nums">
-            <Icon label="创建后不能修改" name="locked" size="xs" />
+            <Icon label="创建后无法修改" name="locked" size="xs" />
             {existingId}
           </span>
         </div>
@@ -109,7 +109,7 @@ function DefinitionFields({
           disabled={disabled}
           id={`${baseId}-description`}
           onChange={(event) => onChange({ description: event.currentTarget.value })}
-          placeholder="这个 Agent 用来做什么"
+          placeholder="简述该 Agent 的用途"
           rows={3}
           value={values.description}
         />

@@ -79,7 +79,7 @@ def plan_window(
         raise ValidationFailed("since 必须早于 until")
     days = (_local_day(end - _TICK, zone) - _local_day(since, zone)).days + 1
     if days > MAX_SPAN_DAYS:
-        raise ValidationFailed(f"时间窗最长 {MAX_SPAN_DAYS} 天，这次跨了 {days} 天")
+        raise ValidationFailed(f"时间范围最长 {MAX_SPAN_DAYS} 天，当前所选范围共 {days} 天")
     bucket: OverviewBucket = (
         "hour" if days <= HOURLY_SPAN_DAYS else "day" if days <= DAILY_SPAN_DAYS else "week"
     )

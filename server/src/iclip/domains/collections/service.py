@@ -21,7 +21,7 @@ class CollectionService:
         if scope == "me":
             return principal.user_id
         if not principal.has(MANAGE_PERMISSION):
-            raise PermissionDenied("只有治理者能看全部合集")
+            raise PermissionDenied("仅治理者可查看全部合集")
         return None
 
     async def create(self, principal: Principal, *, name: str) -> Collection:

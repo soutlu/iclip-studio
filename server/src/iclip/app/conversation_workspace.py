@@ -49,7 +49,7 @@ class ConversationWorkspace:
     ) -> DerivedFileContent:
         try:
             if normalize_path(path) != path:
-                raise ValidationFailed(f"路径 {path!r} 不是规范形式，按工作区文件列表里的写法给")
+                raise ValidationFailed(f"路径 {path!r} 非规范形式，请按工作区文件列表中的路径提供")
         except InvalidPath as exc:
             raise ValidationFailed(str(exc)) from exc
         entry = await self._store.write(

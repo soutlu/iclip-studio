@@ -165,10 +165,10 @@ export const subagentBlockReason = (
   candidate: Agent,
   current: { isSubagent: boolean },
 ): string | undefined => {
-  if (current.isSubagent) return '当前 Agent 正被用作子 Agent，不能再添加子 Agent'
-  if (candidate.status === 'archived') return '已归档，不能选作子 Agent'
-  if (candidate.activeVersion === null) return '还没有发布，发布后才能选作子 Agent'
-  if (candidate.hasSubagents) return '它自己有子 Agent，不能再被选作子 Agent'
+  if (current.isSubagent) return '当前 Agent 正被用作子 Agent，无法再添加子 Agent'
+  if (candidate.status === 'archived') return '已归档，无法选作子 Agent'
+  if (candidate.activeVersion === null) return '尚未发布版本，发布后方可选作子 Agent'
+  if (candidate.hasSubagents) return '该 Agent 已配置子 Agent，无法选作子 Agent'
   return undefined
 }
 

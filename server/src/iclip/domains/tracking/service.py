@@ -27,11 +27,11 @@ class TrackingService:
 
     async def _check_download(self, event: TrackingEventIn) -> None:
         if event.job_id is None:
-            raise ValidationFailed("video.downloaded 必须带 jobId")
+            raise ValidationFailed("video.downloaded 须包含 jobId")
         if event.conversation_id is not None:
-            raise ValidationFailed("video.downloaded 不带 conversationId")
+            raise ValidationFailed("video.downloaded 不可包含 conversationId")
         if not await self._repository.downloadable(event.job_id):
-            raise NotFound("没有这条可下载的视频")
+            raise NotFound("未找到可下载的视频")
 
 
 __all__ = ["TrackingService"]

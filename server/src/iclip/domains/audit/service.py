@@ -56,7 +56,7 @@ def _check_timezone(name: str) -> str:
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError) as exc:
-        raise ValidationFailed(f"timezone 不是一个可识别的时区名: {name}") from exc
+        raise ValidationFailed(f"timezone 参数不是有效的时区名称：{name}") from exc
     return name
 
 

@@ -265,7 +265,7 @@ describe('密钥', () => {
     await user.click(main)
     expect(sent).toEqual([])
 
-    await user.click(within(panel()).getByRole('button', { name: '把 创作团队 设为默认密钥' }))
+    await user.click(within(panel()).getByRole('button', { name: '将 创作团队 设为默认密钥' }))
     await waitFor(() =>
       expect(rowOf(within(panel()).getByText('创作团队')).getByText('默认')).toBeVisible(),
     )
@@ -400,8 +400,8 @@ describe('模型', () => {
     await user.type(keyForm.getByLabelText('API Key'), 'AIza-mock-0001')
     await user.click(keyForm.getByRole('button', { name: '测试连接' }))
     const status = keyForm.getByRole('status')
-    expect(await within(status).findByText('先添加一个模型再试连')).toBeVisible()
-    expect(within(status).getByRole('img', { name: '测试连接没通过' })).toBeVisible()
+    expect(await within(status).findByRole('img', { name: '测试连接未通过' })).toBeVisible()
+    expect(status).not.toBeEmptyDOMElement()
     expect(keyForm.queryByRole('alert')).toBeNull()
     await user.click(keyForm.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
@@ -479,8 +479,8 @@ describe('模型', () => {
     const freshSwitch = await within(panel()).findByRole('switch', { name: '启用模型 fresh-chat' })
     await user.click(within(panel()).getByRole('button', { name: '测试模型 fresh-chat' }))
     const fresh = rowOf(freshSwitch)
-    expect(await fresh.findByText('没法测试：先添加密钥')).toBeVisible()
-    expect(fresh.getByRole('img', { name: '测试没通过' })).toBeVisible()
+    expect(await fresh.findByRole('img', { name: '测试未通过' })).toBeVisible()
+    expect(fresh.getByRole('status')).not.toBeEmptyDOMElement()
   })
 
   it('添加模型，agent 的「模型设置」随之能选到它', async () => {
@@ -531,26 +531,26 @@ describe('模型', () => {
       tools()
         .getAllByRole('listitem')
         .map((node) => node.textContent),
-    ).toEqual(['联网搜索', '读网页', '图搜图'])
-    expect(toggle('读网页')).toBeDisabled()
+    ).toEqual(['联网搜索', '读取网页', '以图搜图'])
+    expect(toggle('读取网页')).toBeDisabled()
     await user.click(toggle('联网搜索'))
-    await user.click(toggle('读网页'))
-    expect(toggle('读网页')).toBeChecked()
+    await user.click(toggle('读取网页'))
+    expect(toggle('读取网页')).toBeChecked()
     await user.click(toggle('联网搜索'))
-    expect(toggle('读网页')).not.toBeChecked()
-    expect(toggle('读网页')).toBeDisabled()
+    expect(toggle('读取网页')).not.toBeChecked()
+    expect(toggle('读取网页')).toBeDisabled()
 
     await user.click(toggle('联网搜索'))
-    await user.click(toggle('读网页'))
+    await user.click(toggle('读取网页'))
     const apis = within(form.getByRole('radiogroup', { name: '模型接口' }))
     await user.click(apis.getByRole('radio', { name: 'chat' }))
     expect(form.queryByRole('group', { name: '原生工具' })).toBeNull()
     await user.click(apis.getByRole('radio', { name: 'responses' }))
     expect(toggle('联网搜索')).not.toBeChecked()
-    expect(toggle('读网页')).not.toBeChecked()
+    expect(toggle('读取网页')).not.toBeChecked()
 
     await user.click(toggle('联网搜索'))
-    await user.click(toggle('读网页'))
+    await user.click(toggle('读取网页'))
     await user.type(form.getByLabelText('模型名'), 'qwen3.8-search')
     await user.click(form.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(sent).toHaveLength(1))
@@ -606,7 +606,9 @@ describe('模型', () => {
     await user.click(within(panel()).getByRole('button', { name: '编辑模型 qwen3.8-plus' }))
     const form = formNamed('编辑模型')
     await user.click(
-      within(form.getByRole('group', { name: '原生工具' })).getByRole('switch', { name: '图搜图' }),
+      within(form.getByRole('group', { name: '原生工具' })).getByRole('switch', {
+        name: '以图搜图',
+      }),
     )
     await user.click(form.getByRole('button', { name: '保存' }))
 

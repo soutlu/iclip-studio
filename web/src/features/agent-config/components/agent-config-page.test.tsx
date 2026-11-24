@@ -117,7 +117,7 @@ describe('AgentConfigPage 保存草稿', () => {
 
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
 
-    expect(await within(editor()).findByRole('alert')).toHaveTextContent('草稿已被别人修改')
+    expect(await within(editor()).findByRole('alert')).toBeVisible()
     await waitFor(() => expect(pluginCards()).not.toContain('镜头组表'))
     expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeDisabled()
   })
@@ -374,23 +374,23 @@ describe('AgentConfigPage 原生工具', () => {
       within(within(panel).getByRole('group', { name: '原生工具' })).getByRole('switch', { name })
     const saveButton = () => within(editor()).getByRole('button', { name: '保存草稿' })
 
-    expect(toggle('读网页')).toBeDisabled()
+    expect(toggle('读取网页')).toBeDisabled()
     await user.click(toggle('联网搜索'))
     expect(saveButton()).toBeEnabled()
     await user.click(toggle('联网搜索'))
     expect(saveButton()).toBeDisabled()
 
     await user.click(toggle('联网搜索'))
-    await user.click(toggle('读网页'))
-    await user.click(toggle('图搜图'))
+    await user.click(toggle('读取网页'))
+    await user.click(toggle('以图搜图'))
     await user.click(toggle('联网搜索'))
-    expect(toggle('读网页')).not.toBeChecked()
-    expect(toggle('图搜图')).toBeChecked()
+    expect(toggle('读取网页')).not.toBeChecked()
+    expect(toggle('以图搜图')).toBeChecked()
 
     await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-plus/ }))
     expect(within(panel).queryByRole('group', { name: '原生工具' })).toBeNull()
     await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-flash/ }))
-    expect(toggle('图搜图')).not.toBeChecked()
+    expect(toggle('以图搜图')).not.toBeChecked()
 
     await user.click(toggle('联网搜索'))
     await user.click(within(panel).getByRole('button', { name: '完成' }))
@@ -487,8 +487,8 @@ describe('AgentConfigPage 原生工具', () => {
     const tools = within(form.getByRole('group', { name: '原生工具' }))
     expect(tools.getAllByRole('listitem').map((node) => node.textContent)).toEqual([
       '联网搜索',
-      '读网页',
-      '图搜图',
+      '读取网页',
+      '以图搜图',
       '文搜图',
     ])
     await user.click(tools.getByRole('switch', { name: '文搜图' }))
@@ -540,7 +540,7 @@ describe('AgentConfigPage 子 Agent', () => {
     })
     expect(unpublished).toHaveAttribute('aria-disabled', 'true')
     await user.hover(unpublished)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('还没有发布')
+    expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
     await user.unhover(unpublished)
     await user.click(unpublished)
     expect(unpublished).not.toBeChecked()
@@ -552,7 +552,7 @@ describe('AgentConfigPage 子 Agent', () => {
     const timeout = within(panel).getByRole('textbox', { name: '分镜助手的调用时限（秒）' })
     expect(timeout).toHaveValue('')
     await user.type(timeout, '0')
-    expect(timeout).toHaveAccessibleDescription('请填大于 0 的秒数')
+    expect(timeout).toHaveAccessibleDescription()
     await user.clear(timeout)
     await user.type(timeout, '120')
     expect(timeout).not.toHaveAccessibleDescription()

@@ -128,7 +128,7 @@ export const testCredential = (providerId: string, body: CredentialTestIn) =>
 export const testModel = (providerId: string, body: ModelTestIn) =>
   apiFetch(`${providerPath(providerId)}/models/test`, zProbeOut, {
     body,
-    fallbackErrorMessage: '没法测试',
+    fallbackErrorMessage: '无法测试',
     method: 'POST',
   })
 

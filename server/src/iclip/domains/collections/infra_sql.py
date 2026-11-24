@@ -89,7 +89,7 @@ class SqlCollectionRepository:
         async with self._engine.connect() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这个合集")
+            raise NotFound("合集不存在")
         return _row(row)
 
     async def list_recent(
@@ -118,7 +118,7 @@ class SqlCollectionRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这个合集")
+            raise NotFound("合集不存在")
         return _row(row)
 
     async def delete(self, collection_id: uuid.UUID, *, owner: uuid.UUID | None) -> None:
@@ -130,7 +130,7 @@ class SqlCollectionRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).first()
         if row is None:
-            raise NotFound("没有这个合集")
+            raise NotFound("合集不存在")
 
 
 __all__ = [

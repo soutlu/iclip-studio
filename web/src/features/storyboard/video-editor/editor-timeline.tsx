@@ -1297,7 +1297,7 @@ function LaneBlock({
         <Faces end={b1} mediaUrl={url} peaks={peaksOf(url)} start={b0} />
       </button>
       <Eye
-        label={picked ? '取消选用这一段' : '选用这一段'}
+        label={picked ? '取消选用该片段' : '选用该片段'}
         on={picked}
         onToggle={() => onTogglePart(block.id, seg)}
       />

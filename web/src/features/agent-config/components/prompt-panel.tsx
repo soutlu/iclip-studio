@@ -17,7 +17,7 @@ export function PromptPanel({
         className="max-w-180 flex-1"
         kind="markdown"
         onChange={onChange}
-        placeholder="描述这个 Agent 的角色、工作方式与表达准则"
+        placeholder="描述该 Agent 的角色、工作方式与表达准则"
         value={value}
       />
     </PanelShell>

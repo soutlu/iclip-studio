@@ -169,7 +169,7 @@ const fieldErrors = (
   for (const field of fields) {
     const value = (values[field.name] ?? '').trim()
     if (field.type === 'secret' && value.startsWith(MASK)) {
-      errors[field.name] = `请输入新的${field.label}，不要粘贴打码后的值`
+      errors[field.name] = `请输入新的${field.label}，请勿粘贴已脱敏的值`
       continue
     }
     const mayBeEmpty =
@@ -305,7 +305,7 @@ export function ProviderCreateForm({
     const next: Errors = {}
     if (label.trim() === '') next['label'] = '请填写显示名'
     if (!PROVIDER_NAME.test(name.trim()))
-      next['name'] = '标识只能用小写字母、数字和连字符，最多 64 个字符'
+      next['name'] = '标识仅支持小写字母、数字和连字符，最多 64 个字符'
     setErrors(next)
     setFormError(null)
     if (Object.keys(next).length > 0) return
@@ -450,7 +450,7 @@ export function CredentialForm({
       setTest(
         result.ok
           ? { elapsedMs: result.elapsedMs, kind: 'ok' }
-          : { kind: 'failed', reason: result.reason ?? '测试连接没通过' },
+          : { kind: 'failed', reason: result.reason ?? '测试连接未通过' },
       )
     } catch (error) {
       const refused = refusalOf(error)
@@ -617,7 +617,7 @@ export function ModelForm({
     const contextSize =
       context === initialContext ? (model?.contextSize ?? null) : parseContextSize(context)
     if (contextSize === undefined)
-      next['context'] = '上下文长度请写正整数，或带 K、M 的长度，如 128K'
+      next['context'] = '上下文长度须为正整数或带 K、M 单位的数值，例如 128K'
     setErrors(next)
     setFormError(null)
     if (Object.keys(next).length > 0 || contextSize === undefined) return

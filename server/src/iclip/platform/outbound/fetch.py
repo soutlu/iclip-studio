@@ -52,10 +52,10 @@ class PublicFetcher:
             async with asyncio.timeout(self._total_timeout):
                 async with self._client.stream("GET", url) as response:
                     if response.status_code != 200:
-                        raise FetchFailed(f"对方回了 {response.status_code}")
+                        raise FetchFailed(f"目标地址返回 HTTP {response.status_code}")
                     return await use(response)
         except TimeoutError as exc:
-            raise FetchFailed(f"{self._total_timeout:g} 秒内没有完成") from exc
+            raise FetchFailed(f"超过 {self._total_timeout:g} 秒未完成") from exc
         except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
             raise failure_of(exc) from exc
 
@@ -63,12 +63,12 @@ class PublicFetcher:
 async def _read_capped(response: httpx.Response, *, max_bytes: int) -> bytes:
     declared = response.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > max_bytes:
-        raise FetchTooLarge(f"文件有 {int(declared)} 字节，超过 {max_bytes} 字节的上限")
+        raise FetchTooLarge(f"文件大小为 {int(declared)} 字节，超出上限（{max_bytes} 字节）")
     body = bytearray()
     async for chunk in response.aiter_bytes():
         body += chunk
         if len(body) > max_bytes:
-            raise FetchTooLarge(f"读到超过 {max_bytes} 字节还没完，超过上限")
+            raise FetchTooLarge(f"文件大小超出上限（{max_bytes} 字节）")
     return bytes(body)
 
 

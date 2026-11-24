@@ -64,11 +64,11 @@ class _Socket:
             except WebSocketNetworkError as exc:
                 raise StreamClosed(_NETWORK_CLOSE, "网络中断") from exc
             except WebSocketInvalidTypeReceived as exc:
-                raise RuntimeUnavailable("实时连接上收到了不是文本的帧") from exc
+                raise RuntimeUnavailable("实时连接收到非文本帧") from exc
             try:
                 head = _FrameHead.model_validate_json(raw)
             except ValidationError as exc:
-                raise RuntimeUnavailable("实时连接上的帧读不出类型") from exc
+                raise RuntimeUnavailable("无法识别实时连接帧的类型") from exc
             if head.type == "ping":
                 ping = _parsed(Ping, raw)
                 await self.send(Pong(payload=ping.payload))
@@ -80,7 +80,7 @@ def _parsed[T: Envelope](model: type[T], raw: str) -> T:
     try:
         return model.model_validate_json(raw, extra="ignore")
     except ValidationError as exc:
-        raise RuntimeUnavailable("实时连接上的帧解析不了") from exc
+        raise RuntimeUnavailable("无法解析实时连接帧") from exc
 
 
 class TranscriptChannel:

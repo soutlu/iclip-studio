@@ -121,7 +121,7 @@ class ConversationFilmAdapter:
         except FilmEditRejected as exc:
             raise ValidationFailed(str(exc)) from exc
         if url is not None:
-            await self._require_images([("这张图", url)])
+            await self._require_images([("该图片", url)])
         for path, content in changes:
             expected = film_version if path == FILM_PATH else run_version
             await self._write(files.namespace, path, content, expected)
@@ -173,10 +173,10 @@ class ConversationFilmAdapter:
             or tag.generation is None
             or node not in {item.attrs["id"] for item in film.image_nodes()}
         ):
-            raise ValidationFailed("这张图不能按描述生成")
+            raise ValidationFailed("该图片不支持按描述生成")
         model = tag.generation.gateway
         if model not in {name for name, _ in generation.image_models()[1]}:
-            raise ValidationFailed("生图模型还没接上，暂时不能生成")
+            raise ValidationFailed("图片生成模型尚未接入，暂时无法生成")
         _require_selected(missing_references(film, node))
         if prompt is None:
             picture = image_prompt(film, node)
@@ -197,7 +197,7 @@ class ConversationFilmAdapter:
         try:
             job = await self._node_images.submit(principal, request)
         except InvalidNodeImageRequest as exc:
-            raise ValidationFailed(f"这次没有生成：{exc}") from exc
+            raise ValidationFailed(f"本次无法生成：{exc}") from exc
         return job.job_id
 
     async def generate_video(
@@ -228,7 +228,7 @@ class ConversationFilmAdapter:
             None,
         )
         if found is None:
-            raise ValidationFailed("找不到这一组，刷新后再出片")
+            raise ValidationFailed("未找到该镜头组，请刷新后重试")
         index, target = found
         _require_selected(missing_references(film, video))
         row = video_row(film, target, index)
@@ -257,14 +257,14 @@ class ConversationFilmAdapter:
 
     def _require_generation(self) -> GenerationService:
         if self._generation is None:
-            raise ValidationFailed("这里还没开生成，暂时不能生成")
+            raise ValidationFailed("生成服务尚未开通，暂时无法生成")
         return self._generation
 
     async def _require_images(self, items: Sequence[tuple[str, str]]) -> None:
         bad = await bad_images(self._probe, (url for _, url in items))
         listed = [f"{label}{bad[url]}" for label, url in items if url in bad]
         if listed:
-            raise ValidationFailed(f"{'；'.join(listed)}，请换一张图")
+            raise ValidationFailed(f"{'；'.join(listed)}，请更换图片")
 
     @staticmethod
     def _check_versions(files: _Files, film_version: int, run_version: int | None) -> None:
@@ -282,7 +282,7 @@ class ConversationFilmAdapter:
     async def _existing(self, owner: uuid.UUID, conversation_id: uuid.UUID) -> _Files:
         files = await self._read(owner, conversation_id)
         if files is None:
-            raise NotFound("这段对话里没有 AI 导演写的分镜")
+            raise NotFound("当前对话中不存在 AI 导演生成的分镜")
         return files
 
     async def _fresh(
@@ -290,7 +290,7 @@ class ConversationFilmAdapter:
     ) -> FilmView:
         view = await self.view(principal, owner, conversation_id)
         if view is None:
-            raise NotFound("这段对话里没有 AI 导演写的分镜")
+            raise NotFound("当前对话中不存在 AI 导演生成的分镜")
         return view
 
     async def _write(self, namespace: str, path: str, content: str, expected: int | None) -> None:

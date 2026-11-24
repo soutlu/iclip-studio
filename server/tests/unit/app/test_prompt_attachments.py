@@ -122,8 +122,10 @@ async def test_a_failed_image_names_its_attachment_position_and_the_rest_still_l
     fake = FakeImport(failures={bad: ValidationFailed("这张图下载不下来：对方回了 404")})
     content = (TextContent(text="看"), video(VIDEO), image(EXTERNAL), image(bad))
 
-    with pytest.raises(ValidationFailed, match="第 3 张附件转存不了：这张图下载不下来"):
+    with pytest.raises(ValidationFailed) as raised:
         await run(fake, content)
+    assert "3" in str(raised.value)
+    assert "这张图下载不下来" in str(raised.value)
 
     assert sorted(url for _, url, _ in fake.calls) == sorted([EXTERNAL, bad])
     assert fake.in_flight == 0

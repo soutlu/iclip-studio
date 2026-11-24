@@ -178,7 +178,7 @@ class SqlTaskRepository:
         async with self._engine.connect() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
             if row is None:
-                raise NotFound("没有这张需求单")
+                raise NotFound("需求单不存在")
             assignees = await self._assignees_of(conn, [task_id])
         return _row(row, assignees.get(task_id, ()))
 

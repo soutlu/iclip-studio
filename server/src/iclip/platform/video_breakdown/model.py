@@ -138,7 +138,7 @@ class ArkBreakdownModel:
         except AppRejected as exc:
             raise BreakdownError(f"视频拆解接口被拒（{exc}）", retryable=False) from exc
         except RuntimeUnavailable as exc:
-            raise BreakdownError(f"视频拆解接口连不上（{exc}）", retryable=True) from exc
+            raise BreakdownError(f"无法连接到视频拆解接口（{exc}）", retryable=True) from exc
 
 
 def sampled_content(sample: SampledVideo) -> list[dict[str, Any]]:
@@ -179,11 +179,11 @@ def _data_url(media_type: str, content: bytes) -> str:
 
 def _document(body: object) -> str:
     if not isinstance(body, dict):
-        raise BreakdownError("视频拆解接口返回的顶层不是 object", retryable=True)
+        raise BreakdownError("视频拆解接口返回的顶层数据不是 JSON 对象", retryable=True)
     status = body.get("status")
     if status != "completed":
         detail = body.get("incomplete_details") or body.get("error") or ""
-        raise BreakdownError(f"视频拆解没有正常跑完（status={status!r}）：{detail}", retryable=True)
+        raise BreakdownError(f"视频拆解未正常完成（status={status!r}）：{detail}", retryable=True)
     chunks: list[str] = []
     output = body.get("output")
     for item in output if isinstance(output, list) else []:
@@ -197,7 +197,7 @@ def _document(body: object) -> str:
                     chunks.append(text)
     document = "".join(chunks).strip()
     if not document:
-        raise BreakdownError("视频拆解接口没给出正文", retryable=True)
+        raise BreakdownError("视频拆解接口未返回正文内容", retryable=True)
     return document
 
 

@@ -144,8 +144,8 @@ export function McpToolsSection({
         id={titleId}
         note={
           bound
-            ? '选择这个 Agent 何时可以使用这些工具'
-            : '当前 Agent 还没有挂这个服务，请先在「管理 MCP 服务」里添加'
+            ? '选择该 Agent 可调用以下工具的条件'
+            : '当前 Agent 尚未添加该服务，请先在「管理 MCP 服务」中添加'
         }
         title="工具"
       />

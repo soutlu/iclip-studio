@@ -35,7 +35,7 @@ _SHOT_REQUESTS: Final = TypeAdapter[list[VideoShotRequest]](ShotRequests)
 @dataclass
 class VideoShots(CapPlugin[AgentDepsT]):
     label = "镜头组表"
-    summary = "提交镜头组的提示词表，每次提交全部镜头组，替换上一次的。"
+    summary = "提交全部镜头组的提示词表，并覆盖此前提交的内容。"
 
     space: FileSpace
 

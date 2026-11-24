@@ -207,8 +207,8 @@ const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入�
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
-const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
-const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
+const NO_TAKES_DUBBING_TEXT = '未找到视频片段对应的素材片记录，无法生成配音'
+const ALL_UNVOICED_TEXT = '全部字幕均已设为「不配音」，无需重新生成'
 const DUBBING_BUSY_TEXT = '正在生成配音，请等待生成完成'
 const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 const NO_LINKS: Links = new Map()
@@ -1096,9 +1096,9 @@ function EditorBody({
       ids.map((id) => clips.find((clip) => clip.id === id)?.label ?? id).join('、')
     if (added > 0) notice(`已加入 ${added} 句字幕`)
     if (result.skipped > 0) notice(`${result.skipped} 句与已有字幕重叠，已跳过`)
-    if (result.silent.length > 0) notice(`${labels(result.silent)} 没有识别出说话，未加字幕`)
+    if (result.silent.length > 0) notice(`${labels(result.silent)} 未识别到口播内容，未新增字幕`)
     if (added === 0 && result.elsewhere.length > 0)
-      notice(`${labels(result.elsewhere)} 里的话从别的片段说起，字幕归开头所在的片段，未加字幕`)
+      notice(`${labels(result.elsewhere)} 的口播起始于其他片段，对应字幕已归属起始片段，未新增字幕`)
     if (result.failed.length > 0)
       notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
   }
@@ -1309,7 +1309,7 @@ function EditorBody({
       }
     })
     if (added > 0) notice(phraseWith(`已生成 ${added} 句`, code, '配音'))
-    if (trimmed > 0) notice(`${trimmed} 句配音太长，已截短`)
+    if (trimmed > 0) notice(`${trimmed} 条配音时长超出上限，已截短`)
     for (const { target: request, outcome } of results)
       if (outcome.kind === 'failed')
         notice(`${sourceName(request.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)

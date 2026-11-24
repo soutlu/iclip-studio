@@ -201,7 +201,7 @@ const editTrack = () => screen.getByRole('group', { name: '编辑片段' })
 const block = (name: RegExp | string) => within(editTrack()).getByRole('button', { name })
 const partEye = (name: RegExp | string) =>
   within(within(editTrack()).getByRole('group', { name })).getByRole('button', {
-    name: /选用这一段$/,
+    name: /选用该片段$/,
   })
 const shotEye = (no: number) =>
   within(screen.getByRole('group', { name: '原片' })).getByRole('button', {
@@ -1185,7 +1185,7 @@ describe('AI 改段的弹出卡', () => {
         await within(editTrack()).findByRole('button', { name: '镜头 2–3 · 第 2 次 · 生成中' }),
       ).toBeVisible()
       expect(partEye('镜头 2–3 第 1 次生成的编辑片段 · 第 1 段 · 1.0 秒')).toHaveAccessibleName(
-        '选用这一段',
+        '选用该片段',
       )
 
       await user.click(await shot(1))
@@ -1370,7 +1370,7 @@ describe('草稿与编辑轨', () => {
     expect(draftNames()).toEqual([...shotsOnly([1, 2]), ...parts([1]), ...shotsOnly([5, 6, 7, 8])])
     expect(shotEye(3)).toHaveAccessibleName('开启镜头 3')
     expect(shotEye(4)).toHaveAttribute('aria-pressed', 'false')
-    expect(partEye(PART_1)).toHaveAccessibleName('取消选用这一段')
+    expect(partEye(PART_1)).toHaveAccessibleName('取消选用该片段')
     expect(within(draftTrack()).getByRole('button', { name: /第 1 段/ })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -1450,7 +1450,7 @@ describe('草稿与编辑轨', () => {
       'true',
     )
     expect(draftNames()).toEqual(namesBefore)
-    expect(partEye(PART_1)).toHaveAccessibleName('取消选用这一段')
+    expect(partEye(PART_1)).toHaveAccessibleName('取消选用该片段')
     expect(window.localStorage.getItem(draftStorageKey(CONVERSATION, ROOT_ID))).toBe(storedBefore)
     expect(playButton()).toBeVisible()
     expect(playhead()).toHaveValue('2')
@@ -1506,7 +1506,7 @@ describe('草稿与编辑轨', () => {
 
     act(() => screen.getByRole('slider', { name: '裁剪结尾' }).focus())
     await user.keyboard('{Shift>}{ArrowLeft}{/Shift}')
-    expect(within(smallCard('镜头 2')).getByText('0.5 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
+    expect(within(smallCard('镜头 2')).getByText('0.5 秒（该镜头 1.0 秒）· 原片')).toBeVisible()
     expect(screen.getByRole('slider', { name: '裁剪结尾' })).toHaveFocus()
     expect(controls()).toHaveTextContent('共 7.5 秒 · 比原片短 0.5 秒')
     await waitFor(() => expect(playhead()).toHaveValue('1.5'))
@@ -1586,7 +1586,7 @@ describe('草稿与编辑轨', () => {
     expect(playhead()).toHaveValue('1')
     expect(controls()).toHaveTextContent('共 7.6 秒 · 比原片短 0.4 秒')
     expect(draftWrites()).toHaveLength(1)
-    expect(within(smallCard('镜头 2')).getByText('0.6 秒（这个镜头 1.0 秒）· 原片')).toBeVisible()
+    expect(within(smallCard('镜头 2')).getByText('0.6 秒（该镜头 1.0 秒）· 原片')).toBeVisible()
 
     const end = Object.assign(screen.getByRole('slider', { name: '裁剪结尾' }), {
       setPointerCapture: () => undefined,
@@ -1662,7 +1662,7 @@ describe('草稿与编辑轨', () => {
     await act(() => view.queryClient.invalidateQueries())
     await waitFor(() => expect(smallCardOf('镜头 3–4 · 正在生成')).toBeNull())
     expect(await within(editTrack()).findByRole('button', { name: PART_1 })).toBeVisible()
-    expect(partEye(PART_1)).toHaveAccessibleName('选用这一段')
+    expect(partEye(PART_1)).toHaveAccessibleName('选用该片段')
   })
 
   it('存着的草稿对得上就照它恢复', async () => {

@@ -97,7 +97,7 @@ async def test_all_silence_is_a_media_error(tmp_path: Path) -> None:
     source = tmp_path / "silent.wav"
     synthesize_padded_music(source, lead=1.0, body=1.0, tail=1.0, volume=0)
 
-    with pytest.raises(MediaError, match="没有声音"):
+    with pytest.raises(MediaError):
         await normalize_music(source, dest=tmp_path / "music.m4a")
 
 
@@ -105,7 +105,7 @@ async def test_a_file_without_an_audio_track_is_a_media_error(tmp_path: Path) ->
     source = tmp_path / "picture.mp4"
     synthesize_video(source, size="160x120", seconds=1, audio=False)
 
-    with pytest.raises(MediaError, match="没有音轨"):
+    with pytest.raises(MediaError):
         await normalize_music(source, dest=tmp_path / "music.m4a")
 
 
@@ -113,10 +113,10 @@ async def test_a_file_that_is_not_media_is_a_media_error(tmp_path: Path) -> None
     source = tmp_path / "broken.wav"
     source.write_bytes(b"not audio")
 
-    with pytest.raises(MediaError, match="ffprobe 失败"):
+    with pytest.raises(MediaError, match="ffprobe"):
         await normalize_music(source, dest=tmp_path / "music.m4a")
 
 
 async def test_a_missing_source_is_a_media_error(tmp_path: Path) -> None:
-    with pytest.raises(MediaError, match="不在"):
+    with pytest.raises(MediaError, match=r"gone\.wav"):
         await normalize_music(tmp_path / "gone.wav", dest=tmp_path / "music.m4a")

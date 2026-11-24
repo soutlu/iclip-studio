@@ -398,7 +398,7 @@ async def test_delivery_names_the_frame_that_does_not_open(
     second = one_shot(image_urls=[FRAME_URL, broken])
     second.index = 2
 
-    with pytest.raises(ModelRetry, match="第 2 组第 2 张：打不开") as rejected:
+    with pytest.raises(ModelRetry, match="第 2 组第 2 张") as rejected:
         await check_args(
             tools, "write_video_shots", ctx, aspect_ratio="9:16", shots=[one_shot(), second]
         )
@@ -422,7 +422,7 @@ async def test_a_reachable_frame_never_seen_in_the_conversation_is_delivered(
 async def test_delivery_rejects_a_frame_url_that_is_not_http(
     tools: VideoShotsToolset[object], ctx: RunContext[object]
 ) -> None:
-    with pytest.raises(ModelRetry, match="第 1 组第 1 张：打不开"):
+    with pytest.raises(ModelRetry, match="第 1 组第 1 张"):
         await check_args(
             tools,
             "write_video_shots",

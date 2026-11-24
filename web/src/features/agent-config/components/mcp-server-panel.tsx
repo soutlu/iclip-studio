@@ -440,7 +440,7 @@ function McpServerForm({
           >
             {deleting.error === null ? (
               <p className="min-w-0 flex-1 text-body-sm text-on-surface">
-                删除「{server.name}」后所有 Agent 都不能再挂它，且无法恢复。
+                删除「{server.name}」后，所有 Agent 将无法继续使用该服务，且无法恢复。
               </p>
             ) : (
               <p className="min-w-0 flex-1 text-body-sm text-error" role="alert">

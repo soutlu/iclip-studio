@@ -35,7 +35,7 @@ class AgentModelSettings(_Strict):
     @classmethod
     def _distinct_native_tools(cls, names: tuple[str, ...]) -> tuple[str, ...]:
         if (index := _first_repeat(names)) is not None:
-            raise ValueError(f"第 {index + 1} 项与前面的重复：原生工具 {names[index]} 只能写一次")
+            raise ValueError(f"第 {index + 1} 项与前项重复：原生工具 {names[index]} 仅可配置一次")
         return names
 
 
@@ -71,7 +71,7 @@ class McpToolConfig(_Strict):
     @classmethod
     def _distinct_tools(cls, tools: tuple[str, ...] | None) -> tuple[str, ...] | None:
         if tools is not None and (index := _first_repeat(tools)) is not None:
-            raise ValueError(f"第 {index + 1} 项与前面的重复：工具 {tools[index]} 只能写一次")
+            raise ValueError(f"第 {index + 1} 项与前项重复：工具 {tools[index]} 仅可配置一次")
         return tools
 
     @field_validator("approval_tools")
@@ -80,14 +80,14 @@ class McpToolConfig(_Strict):
         cls, names: tuple[str, ...], info: ValidationInfo
     ) -> tuple[str, ...]:
         if (index := _first_repeat(names)) is not None:
-            raise ValueError(f"第 {index + 1} 项与前面的重复：工具 {names[index]} 只能写一次")
+            raise ValueError(f"第 {index + 1} 项与前项重复：工具 {names[index]} 仅可配置一次")
         tools = info.data.get("tools")
         if tools is None:
             return names
         for index, name in enumerate(names):
             if name not in tools:
                 raise ValueError(
-                    f"第 {index + 1} 项的工具 {name} 不在 tools 里：要审批的工具先得放给模型"
+                    f"第 {index + 1} 项中的工具 {name} 未包含在 tools 中：须先在工具列表中启用后方可配置审批"
                 )
         return names
 
@@ -101,9 +101,9 @@ def _tool_key(tool: CapToolConfig | McpToolConfig) -> str:
 
 def _tool_label(tool: CapToolConfig | McpToolConfig) -> str:
     return (
-        f"同一个工具集 {tool.toolset}"
+        f"同一工具集 {tool.toolset}"
         if isinstance(tool, CapToolConfig)
-        else f"同一个 MCP 服务 {tool.server}"
+        else f"同一 MCP 服务 {tool.server}"
     )
 
 
@@ -132,7 +132,7 @@ class AgentConfig(_Strict):
     ) -> tuple[CapToolConfig | McpToolConfig, ...]:
         if (index := _first_repeat([_tool_key(tool) for tool in tools])) is not None:
             raise ValueError(
-                f"第 {index + 1} 项与前面的重复：{_tool_label(tools[index])} 只能挂一次"
+                f"第 {index + 1} 项与前项重复：{_tool_label(tools[index])} 仅可添加一次"
             )
         return tools
 
@@ -143,7 +143,7 @@ class AgentConfig(_Strict):
     ) -> tuple[SubagentConfig, ...]:
         if (index := _first_repeat([sub.agent for sub in subagents])) is not None:
             raise ValueError(
-                f"第 {index + 1} 项与前面的重复：同一个子 agent {subagents[index].agent} 只能写一次"
+                f"第 {index + 1} 项与前项重复：子 Agent {subagents[index].agent} 仅可配置一次"
             )
         return subagents
 

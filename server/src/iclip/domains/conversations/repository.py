@@ -7,8 +7,8 @@ from typing import Final, Literal, Protocol
 
 from iclip.domains.conversations.models import AgentPreview, Conversation
 
-MISSING_TASK: Final = "没有这张需求单"
-MISSING_COLLECTION: Final = "没有这个合集"
+MISSING_TASK: Final = "需求单不存在"
+MISSING_COLLECTION: Final = "合集不存在"
 
 
 @dataclass(frozen=True, slots=True)

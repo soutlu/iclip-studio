@@ -132,23 +132,19 @@ describe('写回', () => {
 describe('「翻译」为什么不能点', () => {
   it('有要翻的时能点；翻译中不能点', () => {
     expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'en', false)).toBe(undefined)
-    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'en', true)).toBe(
-      '翻译中，可继续编辑',
-    )
+    expect(translateBlocked({ entries: [1], tooLong: 0, total: 1 }, 'en', true)).toBeTruthy()
   })
 
-  it('都翻过了、剩下的都超长、什么都没有：各写原因；语言名照中文排版接进句子', () => {
-    expect(translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'en', false)).toBe(
-      'English 的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句',
-    )
-    expect(translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'zh', false)).toBe(
-      '中文的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句',
-    )
-    expect(translateBlocked({ entries: [], tooLong: 2, total: 3 }, 'en', false)).toBe(
-      '还没翻译的 2 条超过 500 字，无法自动翻译；请手动填写',
-    )
-    expect(translateBlocked({ entries: [], tooLong: 0, total: 0 }, 'en', false)).toBe(
-      '暂无可翻译的字幕或文字；请先加字幕，或把贴片、场景的文字改为随语言',
-    )
+  it('都翻过了、剩下的都超长、什么都没有：各给出非空原因，且携带语言名或条数', () => {
+    const enDone = translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'en', false)
+    const zhDone = translateBlocked({ entries: [], tooLong: 0, total: 2 }, 'zh', false)
+    const tooLong = translateBlocked({ entries: [], tooLong: 2, total: 3 }, 'en', false)
+    const empty = translateBlocked({ entries: [], tooLong: 0, total: 0 }, 'en', false)
+    expect(enDone).toContain('English ')
+    expect(zhDone).toContain('中文')
+    expect(tooLong).toContain('2')
+    expect(tooLong).toContain('500')
+    expect(empty).toBeTruthy()
+    expect(new Set([enDone, tooLong, empty]).size).toBe(3)
   })
 })

@@ -109,7 +109,7 @@ export function AgentEditorPane({
   const enabled = enabledPluginNames(config)
   const subagents = config.subagents ?? []
   const addSubagentBlocked = current.isSubagent
-    ? '当前 Agent 正被用作子 Agent，不能再添加子 Agent'
+    ? '当前 Agent 正被用作子 Agent，无法再添加子 Agent'
     : undefined
   const open = (next: Panel) => (readOnly ? undefined : () => onOpenPanel(next))
 

@@ -313,7 +313,7 @@ function VoiceFields({
         aria-label="台词"
         maxLength={MAX_TEXT_CHARS}
         onChange={(event) => onTranscript(event.target.value)}
-        placeholder="这段音色里说的话（可不填）"
+        placeholder="该音色音频中的台词文本（选填）"
         rows={2}
         value={transcript}
       />

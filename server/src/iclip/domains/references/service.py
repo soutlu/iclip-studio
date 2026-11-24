@@ -89,7 +89,7 @@ def _can_edit(principal: Principal, row: ReferenceVideo) -> bool:
 
 def _require_owner(principal: Principal, row: ReferenceVideo) -> None:
     if not _can_edit(principal, row):
-        raise PermissionDenied("只有它的属主能改这条参考视频")
+        raise PermissionDenied("仅属主可修改该参考视频")
 
 
 def _item_fields(principal: Principal, row: ReferenceVideo) -> dict[str, object]:
@@ -180,12 +180,12 @@ class ReferenceService:
         queue = self._require_queue()
         if body.upload_id is not None:
             video_url = await self._sources.upload_url(principal, body.upload_id, kind=KIND_VIDEO)
-            missing = "没有这条视频上传"
+            missing = "未找到该视频上传记录"
         elif body.source_job_id is not None:
             video_url = await self._sources.generation_url(
                 principal, body.source_job_id, kind=KIND_VIDEO
             )
-            missing = "没有这条已完成的素材片"
+            missing = "未找到该已完成的素材片"
         else:
             raise RuntimeError("ReferenceVideoCreateIn 应当已核对过来源给且只给一个")
         if video_url is None:
@@ -258,12 +258,12 @@ class ReferenceService:
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         if row.breakdown_status in _BUSY:
-            raise Conflict("这条参考视频正在拆解，拆完再改")
+            raise Conflict("该参考视频正在拆解中，请待拆解完成后再修改")
         written = await self._store.update(
             reference_id, version=body.version, document=body.document
         )
         if written is None:
-            raise Conflict("这条参考视频已经变了（别处改过、刚拆完或正在拆），刷新后再改")
+            raise Conflict("该参考视频已发生变更，请刷新后再修改")
         return await self._detail(principal, await self._get(reference_id))
 
     async def replace_tags(
@@ -294,7 +294,7 @@ class ReferenceService:
             reference_id, from_failed_only=False, requested_by=principal.user_id
         )
         if not requeued:
-            raise Conflict("这条参考视频正在拆解，拆完再重拆")
+            raise Conflict("该参考视频正在拆解中，请待拆解完成后再重新拆解")
         await self._enqueue(queue, reference_id)
         return await self._detail(principal, await self._get(reference_id))
 
@@ -303,7 +303,7 @@ class ReferenceService:
     ) -> ReferenceVideoOut:
         row = await self._listed(reference_id)
         if not _can_edit(principal, row):
-            raise PermissionDenied("只有它的属主或治理者能试生成这条参考视频")
+            raise PermissionDenied("仅属主或治理者可试生成该参考视频")
         if row.breakdown_status in _BUSY or row.document is None:
             raise Conflict("拆解尚未完成，无法试生成")
         latest = await self._latest_test_video(row)
@@ -320,7 +320,7 @@ class ReferenceService:
         row = await self._listed(reference_id)
         _require_owner(principal, row)
         if not await self._store.remove(reference_id):
-            raise NotFound("资料库里没有这条参考视频")
+            raise NotFound("资料库中不存在该参考视频")
 
     async def ensure(self, principal: Principal, video_url: str) -> Outcome:
         queue = self._require_queue()
@@ -396,7 +396,7 @@ class ReferenceService:
     async def _listed(self, reference_id: uuid.UUID) -> ReferenceVideo:
         row = await self._store.get(reference_id)
         if row is None or row.deleted_at is not None:
-            raise NotFound("资料库里没有这条参考视频")
+            raise NotFound("资料库中不存在该参考视频")
         return row
 
 
@@ -421,11 +421,11 @@ def _audio_out(principal: Principal, row: ReferenceAudio) -> ReferenceAudioOut:
 
 def _check_duration(audio_kind: AudioKind, duration_ms: int) -> None:
     if duration_ms <= 0:
-        raise ValidationFailed("这段音频的时长不是正数，不能放进参考音频库")
+        raise ValidationFailed("音频时长无效，无法加入参考音频库")
     if audio_kind == AUDIO_VOICE and not MIN_VOICE_MS <= duration_ms <= MAX_VOICE_MS:
         raise ValidationFailed(
-            f"音色要在 {MIN_VOICE_MS // 1000} 到 {MAX_VOICE_MS // 1000} 秒之间，"
-            f"这段有 {duration_ms / 1000:g} 秒"
+            f"音色时长须在 {MIN_VOICE_MS // 1000} 至 {MAX_VOICE_MS // 1000} 秒之间，"
+            f"当前音频为 {duration_ms / 1000:g} 秒"
         )
 
 
@@ -459,17 +459,17 @@ class ReferenceAudioService:
             raise RuntimeError("参考音频库不收上传，建行的入口不该挂上")
         if body.upload_id is not None:
             url = await self._sources.upload_url(principal, body.upload_id, kind=KIND_AUDIO)
-            missing = "没有这条音频上传"
+            missing = "未找到该音频上传记录"
         elif body.source_job_id is not None:
             url = await self._sources.generation_url(principal, body.source_job_id, kind=KIND_AUDIO)
-            missing = "没有这条已完成的背景音乐"
+            missing = "未找到该已完成的背景音乐"
         else:
             raise RuntimeError("ReferenceAudioCreateIn 应当已核对过来源给且只给一个")
         if url is None:
             raise NotFound(missing)
         duration_ms = await self._duration(url)
         if duration_ms is None:
-            raise ValidationFailed("量不出这段音频的时长，换一段能播放的音频")
+            raise ValidationFailed("无法获取音频时长，请更换可正常播放的音频")
         _check_duration(body.audio_kind, duration_ms)
         row = await self._store.insert(
             NewReferenceAudio(
@@ -555,26 +555,26 @@ class ReferenceAudioService:
             transcript=body.transcript if "transcript" in given else row.transcript,
         )
         if text.transcript is not None and row.audio_kind != AUDIO_VOICE:
-            raise ValidationFailed("只有音色（voice）能填台词 transcript")
+            raise ValidationFailed("仅音色类型支持填写台词")
         if not await self._store.update(reference_id, text):
-            raise NotFound("参考音频库里没有这条音频")
+            raise NotFound("参考音频库中不存在该音频")
         return await self.get(principal, reference_id)
 
     async def remove(self, principal: Principal, reference_id: uuid.UUID) -> None:
         row = await self._listed(reference_id)
         self._require_owner(principal, row)
         if not await self._store.remove(reference_id):
-            raise NotFound("参考音频库里没有这条音频")
+            raise NotFound("参考音频库中不存在该音频")
 
     @staticmethod
     def _require_owner(principal: Principal, row: ReferenceAudio) -> None:
         if visible_owner_incl_act_as(principal) not in (None, row.owner_user_id):
-            raise PermissionDenied("只有它的属主或治理者能改这条参考音频")
+            raise PermissionDenied("仅属主或治理者可修改该参考音频")
 
     async def _listed(self, reference_id: uuid.UUID) -> ReferenceAudio:
         row = await self._store.get(reference_id)
         if row is None or row.deleted_at is not None:
-            raise NotFound("参考音频库里没有这条音频")
+            raise NotFound("参考音频库中不存在该音频")
         return row
 
 

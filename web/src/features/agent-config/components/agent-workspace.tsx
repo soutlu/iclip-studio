@@ -37,7 +37,7 @@ import { ProviderPanel } from './provider-panel'
 import { SkillPanel } from './skill-panel'
 import { SubagentPanel } from './subagent-panel'
 
-const STALE_NOTICE = '草稿已被别人修改，已读取最新的草稿；刚才没保存的修改已丢弃，请重新修改后保存'
+const STALE_NOTICE = '草稿已被他人修改，已加载最新草稿；此前未保存的修改已丢弃，请重新修改后保存'
 
 const draftOf = (detail: AgentDetail): DraftValue => ({
   config: detail.draft.config,
@@ -190,7 +190,7 @@ function LoadedWorkspace({
       onEditChange(undefined)
       setProblems([])
       onViewVersion(null)
-      toast.success(version === undefined ? '已恢复到草稿' : `已把 v${version.version} 恢复到草稿`)
+      toast.success(version === undefined ? '已恢复至草稿' : `已将 v${version.version} 恢复至草稿`)
     } catch (error) {
       fail(error, '恢复失败，请重试恢复')
     }

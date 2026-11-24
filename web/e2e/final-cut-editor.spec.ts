@@ -2393,7 +2393,7 @@ const serveSavedCaptions = async (page: Page) => {
   await page.route(`**/api/final-cut/preview/*/files/${CAPTIONS_FILE}`, (route) =>
     route.fulfill(
       storedScene === null
-        ? { status: 404, json: { detail: 'final-cut 工程里没有这个文件' } }
+        ? { status: 404, json: { detail: 'final-cut 工程中不存在该文件' } }
         : {
             status: 200,
             contentType: 'text/html; charset=utf-8',
@@ -2424,11 +2424,11 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
   const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
-  await expect(tab.getByText('暂无字幕，请点击「识别字幕」或「在播放头处加一句」')).toBeVisible()
+  await expect(tab.getByText(/暂无字幕/)).toBeVisible()
   const sceneWith = (text: string) =>
     page.waitForRequest((request) => savedFileOf(request, CAPTIONS_FILE)?.includes(text) === true)
   const created = sceneWith('</template>')
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
   await expect(field).toBeFocused()
   await expect(field).toHaveValue('新字幕')
@@ -2549,7 +2549,7 @@ test('字幕的改动直接打进预览：改一句的字、挪一句都不换�
   const created = page.waitForRequest(
     (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('>新字幕</div>') === true,
   )
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   await created
   // 第一句连着字幕宿主一起加进来，整份重新加载一次
   await readyPlayer(editor)
@@ -2630,7 +2630,7 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
       return scene !== null && check(scene)
     })
   const created = sceneSavedWith((scene) => savedCaptionTimings(scene).length === 1)
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   await created
 
   // 加上的那一句是选中的：时间线上「字幕」一行里有它、带着两端的把手，侧栏还停在「字幕」页签
@@ -2789,7 +2789,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   const sceneCreated = page.waitForRequest(
     (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
   )
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   const scene = savedFileOf(await sceneCreated, CAPTIONS_FILE) ?? ''
   const variable = / data-var-text="([^"]+)"/.exec(scene)?.[1] ?? ''
   expect(variable).not.toBe('')
@@ -2810,7 +2810,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await expect(field).toHaveValue('')
   await expect(field).toHaveAttribute('placeholder', '输入 English 字幕…')
   await expect(field).toHaveAccessibleDescription('原文 新字幕')
-  await expect(tab.getByRole('button', { name: '在播放头处加一句' })).toHaveAttribute(
+  await expect(tab.getByRole('button', { name: '在播放头处添加字幕' })).toHaveAttribute(
     'aria-disabled',
     'true',
   )
@@ -2860,7 +2860,7 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
   const sceneCreated = page.waitForRequest(
     (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
   )
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   await sceneCreated
   const languages = editor.getByRole('group', { name: '语言' })
   const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
@@ -3113,7 +3113,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   const sceneCreated = page.waitForRequest(
     (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('data-var-text') === true,
   )
-  await tab.getByRole('button', { name: '在播放头处加一句' }).click()
+  await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   const scene = savedFileOf(await sceneCreated, CAPTIONS_FILE) ?? ''
   const variable = / data-var-text="([^"]+)"/.exec(scene)?.[1] ?? ''
   expect(variable).not.toBe('')
@@ -4501,7 +4501,7 @@ test('画面上正显示着字幕时点贴片：选中的还是贴片，铺满�
   )
   await side
     .getByRole('tabpanel', { name: '字幕' })
-    .getByRole('button', { name: '在播放头处加一句' })
+    .getByRole('button', { name: '在播放头处添加字幕' })
     .click()
   await added
   // 加上的那句选中着、显示着：画面上框住了它，说明预览量到了它的框
@@ -4535,7 +4535,7 @@ const openWithCaptions = async (page: Page) => {
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneWith = (text: string) =>
     page.waitForRequest((request) => savedFileOf(request, CAPTIONS_FILE)?.includes(text) === true)
-  const addButton = tab.getByRole('button', { name: '在播放头处加一句' })
+  const addButton = tab.getByRole('button', { name: '在播放头处添加字幕' })
   const firstAdded = sceneWith('>新字幕</div>')
   await addButton.click()
   await firstAdded

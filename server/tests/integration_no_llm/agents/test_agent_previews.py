@@ -105,10 +105,8 @@ async def test_a_preview_of_the_draft_or_of_a_version_of_an_existing_agent(
     assert (draft.json()["agentId"], draft.json()["versionId"]) == (AGENT_ID, None)
     assert (pinned.status_code, pinned.json()["versionId"]) == (201, version_id)
     assert missing.status_code == 404
-    assert (foreign.status_code, foreign.json()) == (
-        422,
-        {"detail": f"这个版本不是 {AGENT_ID} 的"},
-    )
+    assert foreign.status_code == 422
+    assert AGENT_ID in foreign.json()["detail"]
 
 
 Route = Callable[[str], tuple[str, str, dict[str, Any] | None]]

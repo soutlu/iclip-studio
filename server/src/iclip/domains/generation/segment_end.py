@@ -16,7 +16,7 @@ def exceeds_source(end_ms: int, source_ms: int) -> bool:
 def check_segment_end(position: int, end_ms: int, source_ms: int | None) -> None:
     if source_ms is not None and exceeds_source(end_ms, source_ms):
         raise ValidationFailed(
-            f"第 {position} 段的结尾 {format_seconds(end_ms / 1000)} 秒超出了那条记录的时长 "
+            f"第 {position} 段的结束时间 {format_seconds(end_ms / 1000)} 秒超出原记录时长 "
             f"{format_seconds(source_ms / 1000)} 秒"
         )
 

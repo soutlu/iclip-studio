@@ -29,23 +29,23 @@ async def post_json(
             response = await client.post(url, json=payload, headers=dict(headers or {}))
     except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
         raise ProviderError(
-            f"{label}接口连不上: {exc}", code="PROVIDER_UNREACHABLE", retryable=True
+            f"无法连接到{label}接口：{exc}", code="PROVIDER_UNREACHABLE", retryable=True
         ) from exc
     except httpx.HTTPError as exc:
         raise ProviderError(
-            f"{label}请求已发出但没拿到结果，不重试以免重复计费: {exc}",
+            f"{label}请求已发送但未收到结果，为避免重复计费不自动重试：{exc}",
             code="PROVIDER_RESULT_UNKNOWN",
             retryable=False,
         ) from exc
     if response.status_code >= 500:
         raise ProviderError(
-            f"{label}接口返回 {response.status_code}: {response.text[:500]}",
+            f"{label}接口返回 {response.status_code}：{response.text[:500]}",
             code="PROVIDER_SERVER_ERROR",
             retryable=True,
         )
     if response.status_code >= 400:
         raise UpstreamRejected(
-            f"{label}接口拒绝了这次请求（{response.status_code}）: {response.text[:500]}",
+            f"{label}接口拒绝了本次请求（{response.status_code}）：{response.text[:500]}",
             status_code=response.status_code,
             body=_json_or_none(response),
         )

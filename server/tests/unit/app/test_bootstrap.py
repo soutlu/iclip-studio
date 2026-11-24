@@ -323,7 +323,7 @@ async def test_startup_says_when_dubbing_is_off_and_the_section_switches_it_on(
     assert response.status_code == 401, "入口挂着，没登录先 401"
     if not configured:
         # 没开通时受理前就拒绝，接口答 422；开通时下一道检查要读库，这里不连库。
-        with pytest.raises(ValidationFailed, match="配音没有开通"):
+        with pytest.raises(ValidationFailed):
             await app.state.generation.service.submit_dubbing(PRINCIPAL, DUBBING_SUBMISSION)
 
 

@@ -60,8 +60,8 @@ class VideoBreakdown(AbstractCapability[AgentDepsT]):
 class VideoBreakdownPlugin(CapPlugin[AgentDepsT], CombinedCapability[AgentDepsT]):
     label = "视频拆解"
     summary = (
-        "拆解一条视频的出场元素、逐镜时间线和整片分析；和资料库共用同一份拆解，"
-        "拆过的直接用，没拆过的在后台拆。"
+        "拆解视频的出场元素、逐镜时间线与整片分析；与资料库共用同一份拆解结果，"
+        "已拆解视频直接复用，未拆解视频在后台执行拆解。"
     )
 
     @classmethod

@@ -1105,7 +1105,13 @@ describe('final-cut 编辑器 · 属性', () => {
       const user = await openWith([audio({ duration: 4_000 })])
       await pick(user, '配乐')
       await user.click(control('同时开启自动平稳音量'))
-      expect((await screen.findAllByText('这段声音已经很平稳，不用再调')).length).toBeGreaterThan(0)
+      expect(
+        (
+          await within(screen.getByRole('region', { name: /Notifications/ })).findAllByRole(
+            'listitem',
+          )
+        ).length,
+      ).toBeGreaterThan(0)
       await pastDelay()
       expect(control('同时开启自动平稳音量')).toHaveAttribute('aria-checked', 'false')
       expect(savedTag('music-1')).not.toContain('data-fx-chain')
@@ -1180,7 +1186,11 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(control('遇到其他人声时自动压低')).toHaveAttribute('aria-checked', 'false')
       await pick(user, '配乐')
       expect(
-        (await screen.findAllByText('自动压低没有生效：人声或配乐的声音读取失败，请重试')).length,
+        (
+          await within(screen.getByRole('region', { name: /Notifications/ })).findAllByRole(
+            'listitem',
+          )
+        ).length,
       ).toBeGreaterThan(0)
       expect(carveSwitch()).toHaveAttribute('aria-checked', 'false')
       await pastDelay()

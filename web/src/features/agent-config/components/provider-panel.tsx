@@ -154,9 +154,9 @@ function ProviderDetail({
   const baseUrl = defaultCredential?.fields['base_url']
   const deleteBlocked =
     users.length > 0
-      ? `${usageNames(users)}正在使用，不能删除`
+      ? `${usageNames(users)}正在使用，无法删除`
       : holdsDefault
-        ? '默认模型在这个供应商里，请先在「默认模型」里换掉'
+        ? '该供应商包含默认模型，无法删除；请先在「默认模型」中更换'
         : undefined
 
   const runModelTest = async (key: string, model: ProviderModel) => {
@@ -166,9 +166,9 @@ function ProviderDetail({
       const outcome = await testModel(provider.id, { name: model.name, type: model.type })
       result = outcome.ok
         ? { elapsedMs: outcome.elapsedMs, kind: 'ok' }
-        : { kind: 'failed', reason: outcome.reason ?? '测试没通过' }
+        : { kind: 'failed', reason: outcome.reason ?? '测试未通过' }
     } catch (error) {
-      result = { kind: 'failed', reason: errorMessageOf(error, '没法测试，请重试') }
+      result = { kind: 'failed', reason: errorMessageOf(error, '无法测试，请重试') }
     }
     setTests((current) => ({ ...current, [key]: result }))
   }
@@ -229,7 +229,7 @@ function ProviderDetail({
           aria-label={`启用供应商 ${provider.label}`}
           blockedReason={
             provider.enabled && users.length > 0
-              ? `${usageNames(users)}正在使用，不能停用`
+              ? `${usageNames(users)}正在使用，无法停用`
               : undefined
           }
           checked={provider.enabled}
@@ -259,7 +259,7 @@ function ProviderDetail({
             )
           }
           id={`${baseId}-models`}
-          note="这个供应商下可以选用的模型"
+          note="该供应商下可选用的模型"
           title="模型"
         />
         <ul className="flex flex-col">
@@ -270,7 +270,7 @@ function ProviderDetail({
               model.usedBy.length > 0
                 ? `${usageNames(model.usedBy)}正在使用`
                 : isDefault
-                  ? `它是默认的${MODEL_KIND_LABEL[model.type]}模型`
+                  ? `已设为默认${MODEL_KIND_LABEL[model.type]}模型`
                   : undefined
             const saving =
               updateModel.isPending &&
@@ -333,7 +333,7 @@ function ProviderDetail({
                     tooltip={
                       blocked === undefined
                         ? undefined
-                        : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
+                        : `${blocked}，无法删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」中更换' : ''}`
                     }
                   />
                 </RowActions>
@@ -341,7 +341,7 @@ function ProviderDetail({
                   aria-label={`启用模型 ${model.name}`}
                   blockedReason={
                     model.enabled && blocked !== undefined
-                      ? `${blocked}，不能停用${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
+                      ? `${blocked}，无法停用${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」中更换' : ''}`
                       : undefined
                   }
                   checked={model.enabled}
@@ -383,7 +383,7 @@ function ProviderDetail({
             />
           }
           id={`${baseId}-credentials`}
-          note="调用这个供应商时使用的密钥"
+          note="调用该供应商时使用的密钥"
           title="密钥"
         />
         {provider.credentials.length === 0 ? (
@@ -397,9 +397,9 @@ function ProviderDetail({
             const isDefault = credential.id === provider.defaultCredentialId
             const masked = maskedCredential(credential.fields)
             const deleteReason = isDefault
-              ? '默认密钥不能删除，请先把另一把设为默认'
+              ? '默认密钥无法删除；请先将其他密钥设为默认'
               : credential.usedBy.length > 0
-                ? `${usageNames(credential.usedBy)}正在使用，不能删除`
+                ? `${usageNames(credential.usedBy)}正在使用，无法删除`
                 : undefined
             return (
               <Row error={errorFor(key)} key={credential.id}>
@@ -426,7 +426,7 @@ function ProviderDetail({
                 <RowActions>
                   {isDefault ? null : (
                     <IconButton
-                      label={`把 ${credential.name} 设为默认密钥`}
+                      label={`将 ${credential.name} 设为默认密钥`}
                       name="make-default"
                       onClick={() =>
                         void run(key, '默认密钥设置失败，请重试', () =>

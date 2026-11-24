@@ -16,7 +16,7 @@ def resolve_user_name(principal: Principal, given: str | None) -> str:
             raise ValidationFailed("user_name 必填")
         return name
     if principal.username is None:
-        raise ValidationFailed("当前账号没有用户名，不能提交")
+        raise ValidationFailed("当前账号缺少用户名，无法提交")
     if name:
         require_own_user_name(principal, name)
     return principal.username

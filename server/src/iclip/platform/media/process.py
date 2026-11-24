@@ -32,29 +32,29 @@ async def communicate(args: list[str], *, timeout: float) -> tuple[bytes, bytes]
             stderr=asyncio.subprocess.PIPE,
         )
     except FileNotFoundError:
-        raise MediaError(f"PATH 上找不到 {args[0]}") from None
+        raise MediaError(f"系统 PATH 中未找到可执行文件：{args[0]}") from None
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
     except TimeoutError:
         process.kill()
         await process.wait()
-        raise MediaError(f"{args[0]} 超过 {timeout:.0f} 秒还没结束") from None
+        raise MediaError(f"{args[0]} 执行超时（超过 {timeout:.0f} 秒）") from None
     except asyncio.CancelledError:
         process.kill()
         await process.wait()
         raise
     if process.returncode != 0:
         detail = stderr.decode(errors="replace")[:_STDERR_LIMIT]
-        raise MediaError(f"{args[0]} 失败（退出码 {process.returncode}）: {detail}")
+        raise MediaError(f"{args[0]} 执行失败（退出码 {process.returncode}）：{detail}")
     return stdout, stderr
 
 
 def check_output(dest: Path, *, max_bytes: int) -> None:
     size = dest.stat().st_size if dest.is_file() else 0
     if size == 0:
-        raise MediaError(f"ffmpeg 没产出内容: {dest.name}")
+        raise MediaError(f"ffmpeg 未生成有效内容：{dest.name}")
     if size > max_bytes:
-        raise MediaError(f"产物 {size} 字节，超过 {max_bytes} 字节的上限: {dest.name}")
+        raise MediaError(f"输出文件大小为 {size} 字节，超出上限（{max_bytes} 字节）：{dest.name}")
 
 
 __all__ = [
