@@ -22,6 +22,8 @@ import {
   type ProviderCredential,
   type ProviderModel,
 } from '../model-providers.api'
+import { keepNativeTools, type NativeTool, type NativeToolName } from '../native-tools'
+import { NativeToolOptions } from './native-tool-options'
 import { Segmented } from './segmented'
 import { ThinkingLevelOptions } from './thinking-controls'
 import { TestStatus, type Test } from './test-status'
@@ -580,12 +582,14 @@ const parseContextSize = (text: string): number | null | undefined => {
 export function ModelForm({
   declaration,
   model,
+  nativeTools,
   onDone,
   provider,
 }: {
   provider: ModelProvider
   declaration: Declaration
   model: ProviderModel | null
+  nativeTools: readonly NativeTool[]
   onDone: () => void
 }) {
   const baseId = useId()
@@ -600,6 +604,9 @@ export function ModelForm({
   const [api, setApi] = useState<ModelApi | undefined>(model?.api ?? apis[0])
   const [context, setContext] = useState(initialContext)
   const [thinking, setThinking] = useState<ThinkingLevel[]>(model?.thinking ?? [])
+  const [tools, setTools] = useState<NativeToolName[]>(model?.nativeTools ?? [])
+  const offeredTools = (of: ModelApi | undefined) =>
+    of === undefined ? [] : (declaration.nativeToolsByApi[of] ?? [])
   const [errors, setErrors] = useState<Errors>({})
   const [formError, setFormError] = useState<string | null>(null)
   const pending = addModel.isPending || updateModel.isPending
@@ -623,6 +630,7 @@ export function ModelForm({
             api: llm ? (api ?? null) : null,
             contextSize: llm ? contextSize : null,
             name: name.trim(),
+            nativeTools: llm ? tools : [],
             thinking: llm ? ordered : [],
             type,
           },
@@ -630,7 +638,7 @@ export function ModelForm({
         })
       else
         await updateModel.mutateAsync({
-          changes: { api: api ?? null, contextSize, thinking: ordered },
+          changes: { api: api ?? null, contextSize, nativeTools: tools, thinking: ordered },
           model,
           providerId: provider.id,
         })
@@ -696,7 +704,10 @@ export function ModelForm({
                 <Segmented
                   disabled={pending}
                   label="模型接口"
-                  onValueChange={setApi}
+                  onValueChange={(next) => {
+                    setApi(next)
+                    setTools((current) => keepNativeTools(nativeTools, current, offeredTools(next)))
+                  }}
                   options={apis.map((value) => ({ label: value, value }))}
                   value={api}
                 />
@@ -720,6 +731,13 @@ export function ModelForm({
             </Field>
           </div>
           <ThinkingLevelOptions disabled={pending} onChange={setThinking} value={thinking} />
+          <NativeToolOptions
+            catalog={nativeTools}
+            disabled={pending}
+            offered={offeredTools(api)}
+            onChange={setTools}
+            value={tools}
+          />
         </>
       ) : null}
     </InlineForm>

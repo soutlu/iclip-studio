@@ -419,6 +419,7 @@ describe('模型', () => {
           api: 'gemini',
           contextSize: null,
           name: 'gemini-3.8-flash',
+          nativeTools: [],
           thinking: [],
           type: 'llm',
         },
@@ -497,6 +498,7 @@ describe('模型', () => {
           api: 'responses',
           contextSize: 131_072,
           name: 'qwen3.8-turbo',
+          nativeTools: [],
           thinking: ['medium'],
           type: 'llm',
         },
@@ -509,6 +511,49 @@ describe('模型', () => {
     await user.click(screen.getByRole('button', { name: /^模型设置：/ }))
     const models = screen.getByRole('region', { name: '模型设置' })
     expect(await within(models).findByRole('radio', { name: /qwen3.8-turbo/ })).toBeVisible()
+  })
+
+  it('添加模型的「原生工具」按所选接口列出；依赖没开的开不了，关掉被依赖的连带关掉；换接口清掉新接口没有的', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const form = formNamed('添加模型')
+    const tools = () => within(form.getByRole('group', { name: '原生工具' }))
+    const toggle = (name: string) => tools().getByRole('switch', { name })
+
+    expect(
+      tools()
+        .getAllByRole('listitem')
+        .map((node) => node.textContent),
+    ).toEqual(['联网搜索', '读网页', '图搜图'])
+    expect(toggle('读网页')).toBeDisabled()
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读网页'))
+    expect(toggle('读网页')).toBeChecked()
+    await user.click(toggle('联网搜索'))
+    expect(toggle('读网页')).not.toBeChecked()
+    expect(toggle('读网页')).toBeDisabled()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读网页'))
+    const apis = within(form.getByRole('radiogroup', { name: '模型接口' }))
+    await user.click(apis.getByRole('radio', { name: 'chat' }))
+    expect(form.queryByRole('group', { name: '原生工具' })).toBeNull()
+    await user.click(apis.getByRole('radio', { name: 'responses' }))
+    expect(toggle('联网搜索')).not.toBeChecked()
+    expect(toggle('读网页')).not.toBeChecked()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读网页'))
+    await user.type(form.getByLabelText('模型名'), 'qwen3.8-search')
+    await user.click(form.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({
+      api: 'responses',
+      name: 'qwen3.8-search',
+      nativeTools: ['web_search', 'web_extractor'],
+    })
   })
 
   it('停用名字带斜杠的模型；在用的模型开关被拦下，后端拦下的 409 写在那一行', async () => {

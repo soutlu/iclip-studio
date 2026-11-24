@@ -11,6 +11,7 @@ import type {
   DefaultModelIn,
   DefaultModelOut,
   ModelOptionsOut,
+  NativeToolOut,
   ModelProviderCreateIn,
   ModelProviderOut,
   ModelProviderUpdateIn,
@@ -57,7 +58,14 @@ const openDeclaration = (
   label,
   models: [],
   name,
+  nativeToolsByApi: Object.fromEntries(apis.map((api) => [api, []])),
 })
+
+const mockNativeTools: NativeToolOut[] = [
+  { label: '联网搜索', name: 'web_search', requires: [] },
+  { label: '读网页', name: 'web_extractor', requires: ['web_search'] },
+  { label: '图搜图', name: 'image_search', requires: [] },
+]
 
 const optionalBaseUrl = {
   default: null,
@@ -81,6 +89,7 @@ const mockDeclarations: DeclarationOut[] = [
         api: 'responses',
         contextSize: 1_048_576,
         name: 'qwen3.8-flash',
+        nativeTools: ['web_search', 'web_extractor', 'image_search'],
         thinking: ['none', 'low', 'medium', 'high'],
         type: 'llm',
       },
@@ -88,11 +97,13 @@ const mockDeclarations: DeclarationOut[] = [
         api: 'chat',
         contextSize: 1_048_576,
         name: 'ZHIPU/GLM-5.3-Flash',
+        nativeTools: [],
         thinking: ['none', 'low', 'medium', 'high'],
         type: 'llm',
       },
     ],
     name: 'bailian',
+    nativeToolsByApi: { chat: [], responses: ['web_search', 'web_extractor', 'image_search'] },
   },
   openDeclaration('gemini', 'Google Gemini', ['gemini'], optionalBaseUrl),
   openDeclaration('openai-compatible', 'OpenAI 兼容', ['chat', 'responses'], {
@@ -130,7 +141,15 @@ const llm = (
   contextSize: number,
   thinking: CustomModel['thinking'],
   api: 'chat' | 'responses' = 'responses',
-): CustomModel => ({ api, contextSize, enabled: true, name, thinking, type: 'llm' })
+): CustomModel => ({
+  api,
+  contextSize,
+  enabled: true,
+  name,
+  nativeTools: [],
+  thinking,
+  type: 'llm',
+})
 
 const seedProviders = (): MockProvider[] => [
   {
@@ -156,6 +175,7 @@ const seedProviders = (): MockProvider[] => [
         contextSize: null,
         enabled: true,
         name: 'text-embedding-v4',
+        nativeTools: [],
         thinking: [],
         type: 'embedding',
       },
@@ -262,9 +282,15 @@ export const mockModelOptions = (): ModelOptionsOut => ({
       label: provider.label,
       models: modelsOf(provider)
         .filter((model) => model.type === 'llm' && model.enabled)
-        .map(({ contextSize, name, thinking }) => ({ contextSize, name, thinking })),
+        .map(({ contextSize, name, nativeTools, thinking }) => ({
+          contextSize,
+          name,
+          nativeTools,
+          thinking,
+        })),
       name: provider.name,
     })),
+  nativeTools: mockNativeTools,
 })
 
 const detail = (message: string, status: number) =>
@@ -306,15 +332,21 @@ const withDefaults = (provider: MockProvider, fields: Record<string, string>) =>
 
 const checkCustomModel = (
   provider: MockProvider,
-  model: Pick<CustomModel, 'api' | 'thinking' | 'type'>,
+  model: Pick<CustomModel, 'api' | 'nativeTools' | 'thinking' | 'type'>,
 ) => {
   if (model.type === 'llm' && model.api === null) return 'llm 模型要写接口'
   const declaration = declarationOf(provider)
   if (model.api !== null && declaration !== undefined && !declaration.apis.includes(model.api))
     return `${declaration.label}的模型只能走 ${declaration.apis.join('、')} 接口，不能走 ${model.api}`
-  if (model.type !== 'llm' && (model.api !== null || model.thinking.length > 0))
-    return '只有 llm 模型能写接口与思考档位'
+  if (
+    model.type !== 'llm' &&
+    (model.api !== null || model.thinking.length > 0 || model.nativeTools.length > 0)
+  )
+    return '只有 llm 模型能写接口、思考档位与原生工具'
   if (new Set(model.thinking).size !== model.thinking.length) return '思考档位不能重复'
+  const offered = model.api === null ? [] : (declaration?.nativeToolsByApi[model.api] ?? [])
+  const unoffered = model.nativeTools.find((name) => !offered.includes(name))
+  if (unoffered !== undefined) return `${model.api ?? ''} 接口的模型不能有原生工具 ${unoffered}`
   return null
 }
 
@@ -353,7 +385,7 @@ export const modelProviderHandlers = (usage: Usage) => {
     ),
 
     http.get('*/api/model-providers/declarations', () =>
-      HttpResponse.json({ declarations: mockDeclarations }),
+      HttpResponse.json({ declarations: mockDeclarations, nativeTools: mockNativeTools }),
     ),
 
     http.get('*/api/model-providers/groups', () =>
@@ -523,6 +555,7 @@ export const modelProviderHandlers = (usage: Usage) => {
         contextSize: body.contextSize ?? null,
         enabled: true,
         name: body.name.trim(),
+        nativeTools: body.nativeTools ?? [],
         thinking: body.thinking ?? [],
         type: body.type,
       }
@@ -542,7 +575,11 @@ export const modelProviderHandlers = (usage: Usage) => {
       const current = modelOut(provider, type, name)
       if (current === undefined) return detail('没有这个模型', 404)
       const body = (await request.json()) as ModelUpdateIn
-      const changesProperties = body.api != null || body.thinking != null || 'contextSize' in body
+      const changesProperties =
+        body.api != null ||
+        body.thinking != null ||
+        body.nativeTools != null ||
+        'contextSize' in body
       if (current.source === 'declared' && changesProperties)
         return detail('声明里的模型只能启用或停用', 422)
       if (body.enabled === false && current.enabled) {
@@ -563,6 +600,7 @@ export const modelProviderHandlers = (usage: Usage) => {
           ...(body.api == null ? {} : { api: body.api }),
           ...('contextSize' in body ? { contextSize: body.contextSize ?? null } : {}),
           ...(body.thinking == null ? {} : { thinking: body.thinking }),
+          ...(body.nativeTools == null ? {} : { nativeTools: body.nativeTools }),
           ...(body.enabled == null ? {} : { enabled: body.enabled }),
         }
         const problem = checkCustomModel(provider, next)

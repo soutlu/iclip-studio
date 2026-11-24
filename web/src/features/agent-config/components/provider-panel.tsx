@@ -26,6 +26,7 @@ import {
   type ProviderModel,
 } from '../model-providers.api'
 import { MODEL_KIND_LABEL } from '../model-kinds'
+import type { NativeTool } from '../native-tools'
 import { DefaultModels } from './default-models'
 import { PanelShell } from './panel-shell'
 import { CredentialForm, ModelForm, ProviderCreateForm } from './provider-forms'
@@ -108,6 +109,7 @@ function ProviderDetail({
   addKey,
   declaration,
   defaults,
+  nativeTools,
   onDeleted,
   provider,
 }: {
@@ -115,6 +117,7 @@ function ProviderDetail({
   provider: ModelProvider
   declaration: Declaration | undefined
   defaults: readonly DefaultModel[]
+  nativeTools: readonly NativeTool[]
   onDeleted: () => void
 }) {
   const baseId = useId()
@@ -367,6 +370,7 @@ function ProviderDetail({
             declaration={declaration}
             key={editor.model?.name ?? ''}
             model={editor.model}
+            nativeTools={nativeTools}
             onDone={() => setEditor(null)}
             provider={provider}
           />
@@ -541,7 +545,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
 
           {creating ? (
             <ProviderCreateForm
-              declarations={declarations.data ?? []}
+              declarations={declarations.data?.declarations ?? []}
               onCancel={() => setCreating(false)}
               onCreated={(providerId) => {
                 setCreating(false)
@@ -556,9 +560,12 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <ProviderDetail
               addKey={addKeyFor === selected.id}
-              declaration={declarations.data?.find((item) => item.name === selected.provider)}
+              declaration={declarations.data?.declarations.find(
+                (item) => item.name === selected.provider,
+              )}
               defaults={defaults.data ?? []}
               key={selected.id}
+              nativeTools={declarations.data?.nativeTools ?? []}
               onDeleted={() => setSelectedId(null)}
               provider={selected}
             />

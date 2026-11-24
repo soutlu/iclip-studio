@@ -314,8 +314,9 @@ function LoadedWorkspace({
           <ModelPanel
             config={draft.config}
             onChange={changeConfig}
+            nativeTools={modelOptions.data?.nativeTools ?? []}
             onClose={closePanel}
-            providers={modelOptions.data ?? []}
+            providers={modelOptions.data?.providers ?? []}
           />
         ) : panel.type === 'plugins' ? (
           <PluginPanel

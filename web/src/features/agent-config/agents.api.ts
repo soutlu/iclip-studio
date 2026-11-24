@@ -104,7 +104,6 @@ export const useModelOptions = () =>
         signal,
       }),
     queryKey: agentQueryKeys.modelOptions,
-    select: (data) => data.providers,
   })
 
 export const useSkills = () =>

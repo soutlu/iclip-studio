@@ -364,7 +364,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ## 19. Agent 配置 (Agents)
 
 管理后台 Agent 配置接口（路径 `/agents`，概念见 [CONTEXT.md「Agent 标识、草稿与版本」](../docs/CONTEXT.md#agent-标识草稿与版本agent-config)）：
-- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包共用结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking? } }`、`tools`（`type: "cap"` 插件或 `type: "mcp"` 远程服务）及 `subagents`；有序技能列表通过同级 `skillIds` 传入。MCP 挂载项 `{ type: "mcp", server, tools, approval_tools? }` 表达工具三态（见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#mcp-服务mcp-server)）：在 `tools` 内为允许，同时在 `approval_tools`（须为 `tools` 子集，为空省略）内为要求审批，不在 `tools` 内为关闭；新挂载写 `tools: []`，历史 `tools: null` 代表包含后续新增工具在内的全部工具。
+- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包共用结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking?, native_tools? } }`（`native_tools` 为空省略）、`tools`（`type: "cap"` 插件或 `type: "mcp"` 远程服务）及 `subagents`；有序技能列表通过同级 `skillIds` 传入。MCP 挂载项 `{ type: "mcp", server, tools, approval_tools? }` 表达工具三态（见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#mcp-服务mcp-server)）：在 `tools` 内为允许，同时在 `approval_tools`（须为 `tools` 子集，为空省略）内为要求审批，不在 `tools` 内为关闭；新挂载写 `tools: []`，历史 `tools: null` 代表包含后续新增工具在内的全部工具。
 - **乐观锁与发布编译检查**：保存草稿（`PUT /agents/{id}/draft`）、发布版本（`POST .../versions`）和恢复版本（`POST .../restore`）均须传入 `lockVersion`（不一致返回 `409`）。发布编译不通过返回 `422 { detail, problems: [{ path, message }] }`，无改动返回 `422`。
 - **YAML 导出与导入**：`GET /agents/{id}/export` 打包主 Agent 及其当前版本引用的子 Agent（剔除 `credential_id`）；`POST /agents/import` 支持 `dryRun=true` 预检，正式导入在单事务内创建或覆盖草稿，不自动发布。
 - **反向引用保护（`usedBy` 与 `409`）**：技能、模型、密钥、MCP 服务和 Agent 详情均附带 `usedBy: [{ agentId, agentName, inDraft, inActiveVersion }]`；`usedBy` 非空时归档、停用或删除均返回 `409`。

@@ -66,7 +66,6 @@ export const useProviderDeclarations = () =>
         signal,
       }),
     queryKey: providerQueryKeys.declarations,
-    select: (data) => data.declarations,
     staleTime: Infinity,
   })
 

@@ -356,6 +356,62 @@ describe('AgentConfigPage 模型设置', () => {
   })
 })
 
+describe('AgentConfigPage 原生工具', () => {
+  it('模型有原生工具才出现这一组；依赖没开的开不了，关掉被依赖的连带关掉；开了再关不算改动；换模型清掉新模型没有的', async () => {
+    const user = await renderPage()
+    const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
+    await user.click(
+      within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
+    )
+    const panel = screen.getByRole('region', { name: '模型设置' })
+    const toggle = (name: string) =>
+      within(within(panel).getByRole('group', { name: '原生工具' })).getByRole('switch', { name })
+    const saveButton = () => within(editor()).getByRole('button', { name: '保存草稿' })
+
+    expect(toggle('读网页')).toBeDisabled()
+    await user.click(toggle('联网搜索'))
+    expect(saveButton()).toBeEnabled()
+    await user.click(toggle('联网搜索'))
+    expect(saveButton()).toBeDisabled()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读网页'))
+    await user.click(toggle('图搜图'))
+    await user.click(toggle('联网搜索'))
+    expect(toggle('读网页')).not.toBeChecked()
+    expect(toggle('图搜图')).toBeChecked()
+
+    await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-plus/ }))
+    expect(within(panel).queryByRole('group', { name: '原生工具' })).toBeNull()
+    await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-flash/ }))
+    expect(toggle('图搜图')).not.toBeChecked()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    await user.click(saveButton())
+    await waitFor(() => expect(puts).toHaveLength(1))
+    const model = (puts[0] as { config: { model: { settings: Body } } }).config.model
+    expect(model.settings['native_tools']).toEqual(['web_search'])
+  })
+
+  it('发布检查报回原生工具的问题时，写在「指令」一节', async () => {
+    const message = '这个模型不支持所选的原生工具'
+    server.use(
+      http.post('*/api/agents/director/versions', () =>
+        HttpResponse.json(
+          { detail: message, problems: [{ message, path: 'model.settings.native_tools' }] },
+          { status: 422 },
+        ),
+      ),
+    )
+    const user = await renderPage()
+
+    await user.click(within(editor()).getByRole('button', { name: '发布' }))
+
+    expect(await within(section('指令')).findByRole('alert')).toHaveTextContent(message)
+  })
+})
+
 describe('AgentConfigPage 子 Agent', () => {
   it('只能选发布过、没归档、自己没有子 Agent 的；绑定的时限与次数不填就是不限，填错就地提示', async () => {
     const user = await renderPage()
