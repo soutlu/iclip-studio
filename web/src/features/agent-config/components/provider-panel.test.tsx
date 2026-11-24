@@ -556,6 +556,25 @@ describe('模型', () => {
     })
   })
 
+  it('编辑自己加的模型时开一个原生工具，修改请求带上它', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '编辑模型 qwen3.8-plus' }))
+    const form = formNamed('编辑模型')
+    await user.click(
+      within(form.getByRole('group', { name: '原生工具' })).getByRole('switch', { name: '图搜图' }),
+    )
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toMatchObject({
+      body: { nativeTools: ['image_search'] },
+      method: 'PATCH',
+      path: expect.stringMatching(/\/models\/llm\/qwen3\.8-plus$/),
+    })
+  })
+
   it('停用名字带斜杠的模型；在用的模型开关被拦下，后端拦下的 409 写在那一行', async () => {
     const user = await renderPage()
     await openProviders(user)
