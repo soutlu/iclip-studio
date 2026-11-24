@@ -23,6 +23,8 @@ class _Strict(BaseModel):
 
 
 class AgentModelSettings(_Strict):
+    """模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。"""
+
     thinking: ThinkingEffort | None = None
     # 没开原生工具时不写出这一项：应用手工同步的那份配置不收不认识的字段，没更新的应用照常能读。
     native_tools: tuple[NativeToolName, ...] = Field(

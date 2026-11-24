@@ -299,6 +299,8 @@ export type AgentModelRef = {
 
 /**
  * AgentModelSettings
+ *
+ * 模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。
  */
 export type AgentModelSettings = {
   /**
@@ -1750,7 +1752,7 @@ export type CustomModelCreateIn = {
 /**
  * DeclarationOut
  *
- * 一家可以接入的供应商。
+ * 一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。
  */
 export type DeclarationOut = {
   /**
@@ -1787,6 +1789,8 @@ export type DeclarationOut = {
 
 /**
  * DeclarationsOut
+ *
+ * ``nativeTools`` 是全部原生工具的名录。
  */
 export type DeclarationsOut = {
   /**
@@ -4315,7 +4319,7 @@ export type ModelOptionOut = {
 /**
  * ModelOptionsOut
  *
- * agent 编辑页选模型用：只读，只列启用的供应商。
+ * agent 编辑页选模型用：只读，只列启用的供应商。``nativeTools`` 是全部原生工具的名录。
  */
 export type ModelOptionsOut = {
   /**
@@ -4445,7 +4449,7 @@ export type ModelTestIn = {
 /**
  * ModelUpdateIn
  *
- * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+ * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
  * ``contextSize`` 给 ``null`` 即清掉。
  */
 export type ModelUpdateIn = {

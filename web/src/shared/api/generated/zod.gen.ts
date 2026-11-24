@@ -49,6 +49,8 @@ export const zAgentDescriptor = z.object({
 
 /**
  * AgentModelSettings
+ *
+ * 模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。
  */
 export const zAgentModelSettings = z.object({
   native_tools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])).optional(),
@@ -810,7 +812,7 @@ export const zDeclaredModelOut = z.object({
 /**
  * DeclarationOut
  *
- * 一家可以接入的供应商。
+ * 一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。
  */
 export const zDeclarationOut = z.object({
   apis: z.array(z.enum(['chat', 'responses', 'gemini'])),
@@ -1891,7 +1893,7 @@ export const zModelTestIn = z.object({
 /**
  * ModelUpdateIn
  *
- * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+ * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
  * ``contextSize`` 给 ``null`` 即清掉。
  */
 export const zModelUpdateIn = z.object({
@@ -1968,6 +1970,8 @@ export const zNativeToolOut = z.object({
 
 /**
  * DeclarationsOut
+ *
+ * ``nativeTools`` 是全部原生工具的名录。
  */
 export const zDeclarationsOut = z.object({
   declarations: z.array(zDeclarationOut),
@@ -2110,7 +2114,7 @@ export const zProviderOptionOut = z.object({
 /**
  * ModelOptionsOut
  *
- * agent 编辑页选模型用：只读，只列启用的供应商。
+ * agent 编辑页选模型用：只读，只列启用的供应商。``nativeTools`` 是全部原生工具的名录。
  */
 export const zModelOptionsOut = z.object({
   nativeTools: z.array(zNativeToolOut),

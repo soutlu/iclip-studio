@@ -29,6 +29,14 @@ class CamelModel(BaseModel):
     )
 
 
+class NativeToolOut(CamelModel):
+    """一个原生工具：名字、显示名，以及开它之前必须先开的。"""
+
+    name: NativeToolName
+    label: str
+    requires: list[NativeToolName]
+
+
 class CredentialFieldOut(CamelModel):
     """密钥表单的一个字段。``secret`` 的值只会以打码形式返回。"""
 
@@ -37,14 +45,6 @@ class CredentialFieldOut(CamelModel):
     type: CredentialFieldType
     required: bool
     default: str | None
-
-
-class NativeToolOut(CamelModel):
-    """一个原生工具：名字、显示名，以及开它之前必须先开的。"""
-
-    name: NativeToolName
-    label: str
-    requires: list[NativeToolName]
 
 
 class DeclaredModelOut(CamelModel):
@@ -57,7 +57,7 @@ class DeclaredModelOut(CamelModel):
 
 
 class DeclarationOut(CamelModel):
-    """一家可以接入的供应商。"""
+    """一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。"""
 
     name: str
     label: str
@@ -69,6 +69,8 @@ class DeclarationOut(CamelModel):
 
 
 class DeclarationsOut(CamelModel):
+    """``nativeTools`` 是全部原生工具的名录。"""
+
     declarations: list[DeclarationOut]
     native_tools: list[NativeToolOut]
 
@@ -174,7 +176,7 @@ class CustomModelCreateIn(CamelModel):
 
 
 class ModelUpdateIn(CamelModel):
-    """不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
+    """不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
     ``contextSize`` 给 ``null`` 即清掉。"""
 
     enabled: bool | None = None
@@ -230,7 +232,7 @@ class ProviderOptionOut(CamelModel):
 
 
 class ModelOptionsOut(CamelModel):
-    """agent 编辑页选模型用：只读，只列启用的供应商。"""
+    """agent 编辑页选模型用：只读，只列启用的供应商。``nativeTools`` 是全部原生工具的名录。"""
 
     providers: list[ProviderOptionOut]
     native_tools: list[NativeToolOut]
