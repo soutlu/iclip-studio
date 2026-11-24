@@ -176,6 +176,7 @@ import {
   translationsToWrite,
 } from './translation'
 import { useCaptionRecognition, type RecognitionOutcome } from './use-caption-recognition'
+import { useCaptionScripts } from './use-caption-scripts'
 import { useDubbing, type DubbingDone } from './use-dubbing'
 import { SIDE_WIDTH, TIMELINE_MIN_HEIGHT, useEditorLayout } from './use-editor-layout'
 import { useFilmSession, type NewAudio } from './use-film-session'
@@ -1054,7 +1055,7 @@ function EditorBody({
   }
 
   // 「字幕」页签里的「识别字幕」：识别中照常编辑，全部有了结果后按那时的 final-cut 一次写进去
-  const takeOf = (src: string) => takeOfUrl.get(src)
+  const takeOf = useCallback((src: string) => takeOfUrl.get(src), [takeOfUrl])
   const recognizable = recognitionTargets(clips, takeOf)
   /**
    * 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段，
@@ -1103,6 +1104,17 @@ function EditorBody({
   }
   const recognition = useCaptionRecognition(conversationId, (clipIds, outcomes) => {
     void writeRecognized(clipIds, outcomes)
+  })
+  const captionScripts = useCaptionScripts({
+    conversationId,
+    enabled:
+      sideTab === 'captions' &&
+      !collapsed &&
+      !layout.sideCollapsed &&
+      locale.code === SOURCE_LOCALE,
+    clips,
+    takeOf,
+    takes: videos.data,
   })
   const recognizeBlocked =
     recognition.recognizing > 0
@@ -1806,6 +1818,7 @@ function EditorBody({
                 problem={film.captionsProblem}
                 recognizeBlocked={recognizeBlocked}
                 recognizing={recognition.recognizing}
+                scripts={captionScripts}
                 selected={selected}
                 voice={voice}
                 translate={

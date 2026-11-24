@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
+import { Fragment, useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { useAudition } from '@/shared/ui/audition'
@@ -9,6 +9,7 @@ import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } fro
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder, type CaptionsView } from './caption-edit'
+import type { ScriptNote } from './caption-script'
 import { ComponentTexts } from './component-texts'
 import type { CaptionClip } from './composition/film'
 import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
@@ -122,6 +123,8 @@ type CaptionsTabProps = {
   /** 无法触发字幕识别时的禁用原因；非空时置灰「识别字幕」并在点击时提示。 */
   recognizeBlocked: string | undefined
   onRecognize: () => void
+  /** 和台词不一样的字幕：字幕 ID → 台词对照，在该句文字框下显示一行（见 `useCaptionScripts`）。 */
+  scripts: ReadonlyMap<string, ScriptNote>
   /** 字幕文件结构异常提示，置顶展示。 */
   problem: string | undefined
   /** 在播放头处新增一句字幕并返回新字幕 ID；未成功添加时返回 `undefined`。 */
@@ -157,6 +160,7 @@ export function CaptionsTab({
   recognizing,
   recognizeBlocked,
   onRecognize,
+  scripts,
   problem,
   onAdd,
   onText,
@@ -269,6 +273,7 @@ export function CaptionsTab({
           onRemove={onRemove}
           onText={onText}
           recognizing={recognizing}
+          scripts={scripts}
           voice={voice}
         />
       ) : (
@@ -574,6 +579,7 @@ function CaptionsView({
   onPick,
   voice,
   narration,
+  scripts,
 }: Pick<
   CaptionsTabProps,
   | 'active'
@@ -581,6 +587,7 @@ function CaptionsView({
   | 'captions'
   | 'locale'
   | 'recognizing'
+  | 'scripts'
   | 'onText'
   | 'onRemove'
   | 'onPick'
@@ -622,6 +629,7 @@ function CaptionsView({
               onRemove={() => onRemove(caption.id)}
               onSeek={() => onPick(caption)}
               onText={onText}
+              script={scripts.get(caption.id)}
               voice={voice}
             />
           ))}
@@ -732,9 +740,11 @@ type CaptionRowProps = {
   onSeek: () => void
   /** 译文语言下的人声配置（右上角附单句配音控件，见 `LineVoiceChip`）；原文语言为 `undefined`。 */
   voice: VoiceControl | undefined
+  /** 这句和台词不一样时的台词对照；没有时为 `undefined`。 */
+  script: ScriptNote | undefined
 }
 
-/** 单条字幕卡片：展示起止时间、单句配音控件（译文语言）、删除按钮与字幕文本框。 */
+/** 单条字幕卡片：展示起止时间、单句配音控件（译文语言）、删除按钮、字幕文本框与台词对照行。 */
 function CaptionRow({
   caption,
   locale,
@@ -745,6 +755,7 @@ function CaptionRow({
   onRemove,
   onSeek,
   voice,
+  script,
 }: CaptionRowProps) {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
   useEffect(() => {
@@ -783,7 +794,71 @@ function CaptionRow({
         onText={onText}
         ref={fieldRef}
       />
+      {script === undefined ? null : (
+        <ScriptLine
+          note={script}
+          onUse={() => onText(caption.id, script.script, SOURCE_LOCALE)}
+          range={range}
+        />
+      )}
     </li>
+  )
+}
+
+/** 对照的各段加上列表 key：种类和它在整行里的起点。 */
+const keyedParts = (parts: ScriptNote['parts']) => {
+  let at = 0
+  return parts.map((part) => {
+    const key = `${part.kind}-${at}`
+    at += part.text.length
+    return { ...part, key }
+  })
+}
+
+/**
+ * 字幕文字框下的台词对照行：台词写一遍，字幕有、台词没有的字划掉，台词有、字幕没有的字加下划线；行尾「采用」
+ * 把这句字幕换成台词。
+ */
+function ScriptLine({
+  note,
+  range,
+  onUse,
+}: {
+  note: ScriptNote
+  range: string
+  onUse: () => void
+}) {
+  const parts = keyedParts(note.parts)
+  return (
+    <p className="wf-caption-source">
+      <span className="wf-caption-source-tag">台词</span>
+      <span className="wf-caption-script-text">
+        {parts.map((part) =>
+          part.kind === 'captionOnly' ? (
+            <del key={part.key}>{part.text}</del>
+          ) : part.kind === 'scriptOnly' ? (
+            <ins key={part.key}>{part.text}</ins>
+          ) : (
+            <Fragment key={part.key}>{part.text}</Fragment>
+          ),
+        )}
+      </span>
+      <TooltipRoot>
+        <TooltipTrigger asChild>
+          <button
+            aria-label={`用台词替换 ${range} 的字幕`}
+            className="wf-caption-script-use ui-state ui-focus"
+            onClick={onUse}
+            type="button"
+          >
+            采用
+          </button>
+        </TooltipTrigger>
+        <TooltipContent className="wf-tip" side="top">
+          用台词替换这句字幕
+        </TooltipContent>
+      </TooltipRoot>
+    </p>
   )
 }
 
