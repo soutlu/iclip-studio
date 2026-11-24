@@ -95,6 +95,33 @@ def skill(name: str, created_by: uuid.UUID) -> SkillOut:
     )
 
 
+def agent_detail(config: AgentConfig) -> AgentDetailOut:
+    return AgentDetailOut(
+        id="director",
+        name="导演",
+        description="",
+        status="active",
+        listed=False,
+        sort_order=0,
+        active_version=None,
+        has_unpublished_changes=True,
+        has_subagents=False,
+        is_subagent=False,
+        created_by=ALICE,
+        created_at=NOW,
+        updated_at=NOW,
+        draft=AgentDraftOut(
+            config=config,
+            skill_ids=[],
+            base_version_id=None,
+            lock_version=0,
+            updated_by=BOB,
+            updated_at=NOW,
+        ),
+        used_by=[],
+    )
+
+
 def wire(model: Any) -> dict[str, Any]:
     return model.model_dump(mode="json", by_alias=True)
 
@@ -128,6 +155,32 @@ async def test_an_update_forwards_only_the_fields_it_was_given(
     assert first.url.path == f"/v1/admin/model-providers/{PROVIDER}/models/llm/qwen/qwen-max"
     assert json.loads(first.read()) == {"enabled": False}
     assert json.loads(second.read()) == {"contextSize": None}
+
+
+async def test_a_draft_forwards_native_tools_only_when_some_are_on(
+    client: httpx.AsyncClient, runtime: Runtime
+) -> None:
+    runtime.answer = httpx.Response(200, json=wire(agent_detail(AgentConfig(schema_version=1))))
+
+    for native_tools in ([], ["web_search"]):
+        model = {
+            "provider": "bailian-main",
+            "name": "qwen-max",
+            "settings": {"thinking": "low", "native_tools": native_tools},
+        }
+        saved = await client.put(
+            "/agents/director/draft",
+            json={
+                "config": {"schema_version": 1, "model": model},
+                "skillIds": [],
+                "lockVersion": 0,
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+    off, on = (json.loads(one.read())["config"]["model"]["settings"] for one in runtime.requests)
+    assert off == {"thinking": "low"}
+    assert on == {"thinking": "low", "native_tools": ["web_search"]}
 
 
 async def test_a_list_looks_up_every_actor_once_and_names_each_item(
@@ -167,30 +220,7 @@ async def test_a_detail_names_its_creator_and_the_drafts_editor_in_one_lookup(
             ],
         }
     )
-    detail = AgentDetailOut(
-        id="director",
-        name="导演",
-        description="",
-        status="active",
-        listed=False,
-        sort_order=0,
-        active_version=None,
-        has_unpublished_changes=True,
-        has_subagents=False,
-        is_subagent=False,
-        created_by=ALICE,
-        created_at=NOW,
-        updated_at=NOW,
-        draft=AgentDraftOut(
-            config=config,
-            skill_ids=[],
-            base_version_id=None,
-            lock_version=0,
-            updated_by=BOB,
-            updated_at=NOW,
-        ),
-        used_by=[],
-    )
+    detail = agent_detail(config)
     runtime.answer = httpx.Response(201, json=wire(detail))
 
     created = await client.post("/agents", json={"id": "director", "name": "导演"})

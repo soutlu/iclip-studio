@@ -29,14 +29,13 @@ def _env(prefix: str) -> tuple[dict[str, str], str]:
     ("declaration", "prefix", "api"),
     [("gemini", "GEMINI", "gemini"), ("openrouter", "OPENROUTER", "chat")],
 )
-async def test_a_custom_model_answers_with_thinking_on(
+async def test_a_model_answers_with_thinking_on(
     declaration: str, prefix: str, api: ModelApi
 ) -> None:
     fields, name = _env(prefix)
     model = ProviderModel(
         name=name,
         type="llm",
-        source="custom",
         properties=ModelProperties(api=api, context_size=None, thinking=("low",)),
         enabled=True,
     )
