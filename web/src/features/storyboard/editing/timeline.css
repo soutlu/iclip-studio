@@ -67,10 +67,12 @@
   color: var(--color-on-surface-faint);
 }
 
+/* 片段比一格更窄时 width 会超过 100%，不能让 preflight 的 img { max-width: 100% } 把它压短而露出底色缝。 */
 .timeline-frames img,
 .timeline-frame-empty {
   position: absolute;
   top: 0;
+  max-width: none;
   height: 100%;
   object-fit: cover;
 }

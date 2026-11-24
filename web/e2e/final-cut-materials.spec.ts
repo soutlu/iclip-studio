@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
+  canvasPng,
   createFinalCut,
   finalCutPreviewPlayer,
   isMarkedFinalCutPreviewPlayer,
@@ -2191,4 +2192,108 @@ test('组件那一行在画面行上面：Enter 接的镜头落在画面区第�
       sound.evaluate((audio: HTMLAudioElement) => audio.error === null && audio.readyState > 0),
     )
     .toBe(true)
+})
+
+test('短视频片段的缩略图宽度超过片段宽度时不被截断，中间和末尾不露底色缝', async ({ page }) => {
+  const { editor, materials, panel } = await openWith(page, [1])
+  await shotOf(materials, 1, 'A', 1).click()
+  await page.keyboard.press('Enter')
+  await expect.poll(() => savedClips(page)).toHaveLength(1)
+  await panel.getByRole('tab', { name: '分镜' }).click()
+  await expect(editor).toBeHidden()
+
+  const snapshot = await canvasPng(page, { fill: '#b07a5a', width: 96, height: 170 })
+  const ossVideo = 'https://mock.oss-cn-hangzhou.aliyuncs.com/timeline-gap-test.mp4'
+  // MSW 的 Service Worker 透传的跨域请求不经过 page.route，要在 context 层拦截
+  await page.context().route(/^https:\/\/mock\.oss-cn-hangzhou\.aliyuncs\.com\//, (route) => {
+    if (route.request().url().includes('x-oss-process=video/snapshot'))
+      return route.fulfill({ status: 200, contentType: 'image/png', body: snapshot })
+    return route.fulfill({ status: 404, headers: { 'access-control-allow-origin': '*' } })
+  })
+
+  // 片段长度短于单个帧格（2 秒或 4 秒）且入点不在整格上：
+  // 跨格短片跨过 4 秒格线（2 张图，第一张左端超出）；单格短片落在 0–2 秒格内（1 张图，左端超出）
+  await page.evaluate(
+    async ({ conversationId, src }) => {
+      const path = `/api/conversations/${conversationId}/workspace/file`
+      const read = await fetch(`${path}?path=final-cut%2Findex.html`)
+      const { content: html, version } = (
+        (await read.json()) as { file: { content: string; version: number } }
+      ).file
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const root = doc.getElementById('film')
+      if (root === null) throw new Error('主文件里没有根')
+      for (const video of root.querySelectorAll('video')) video.remove()
+      root.setAttribute('data-duration', '20')
+      const clip = (
+        id: string,
+        label: string,
+        start: number,
+        duration: number,
+        mediaStart: number,
+      ) =>
+        `<video id="${id}" data-hf-id="${id}" class="clip video picture" data-label="${label}" src="${src}" data-start="${start}" data-duration="${duration}" data-media-start="${mediaStart}" data-track-index="0" data-muted="true"></video>`
+      root.insertAdjacentHTML(
+        'afterbegin',
+        [
+          clip('clip-split', '跨格短片', 0, 1.5, 3.2),
+          clip('clip-single', '单格短片', 2, 1.2, 0.4),
+        ].join('\n'),
+      )
+      const response = await fetch(path, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          path: 'final-cut/index.html',
+          content: `<!doctype html>\n${doc.documentElement.outerHTML}`,
+          expectedVersion: version,
+        }),
+      })
+      if (!response.ok) throw new Error(`写主文件失败：${response.status}`)
+    },
+    { conversationId: conversationIdOf(page), src: ossVideo },
+  )
+
+  await openFinalCut(panel)
+  const lane = editor.getByRole('group', { name: '画面 1', exact: true })
+
+  const assertCovered = async (label: string, expectedImages: number) => {
+    const clip = lane.getByRole('button', { name: new RegExp(`^选中：${label}，`) })
+    const images = clip.locator('img')
+    await expect(images).toHaveCount(expectedImages)
+    await expect
+      .poll(() =>
+        images.evaluateAll(
+          (items, count) =>
+            items.length === count &&
+            items.every(
+              (item) =>
+                (item as HTMLImageElement).complete && (item as HTMLImageElement).naturalWidth > 0,
+            ),
+          expectedImages,
+        ),
+      )
+      .toBe(true)
+    const clipBox = await clip.boundingBox()
+    if (clipBox === null) throw new Error(`${label}尚未布局`)
+    const boxes = await images.evaluateAll((items) =>
+      items.map((item) => {
+        const rect = item.getBoundingClientRect()
+        return { left: rect.left, right: rect.right, width: rect.width }
+      }),
+    )
+    // 确认确实命中了单格宽于片段（width > 100%）的场景
+    expect(boxes[0]?.width ?? 0).toBeGreaterThan(clipBox.width)
+    expect(boxes[0]?.left ?? Infinity).toBeLessThanOrEqual(clipBox.x + 0.5)
+    expect(boxes.at(-1)?.right ?? 0).toBeGreaterThanOrEqual(clipBox.x + clipBox.width - 0.5)
+    for (let at = 0; at < boxes.length - 1; at += 1) {
+      const current = boxes[at]
+      const next = boxes[at + 1]
+      if (current === undefined || next === undefined) throw new Error('帧图缺少包围盒')
+      expect(Math.abs(next.left - current.right)).toBeLessThan(1)
+    }
+  }
+
+  await assertCovered('跨格短片', 2)
+  await assertCovered('单格短片', 1)
 })
