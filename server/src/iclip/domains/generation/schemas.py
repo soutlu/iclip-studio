@@ -735,10 +735,9 @@ class VideoEnhanceIn(CamelModel):
 
 
 class VideoDraftCompletionIn(CamelModel):
-    """把一条做好的样片转成 1080p 的受理输入。
+    """将已完成样片转为 1080p 的受理输入。
 
-    ``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的
-    ``user_name`` 始终是样片上的那个。"""
+    ``userName`` 仅用于 ``users:act_as`` 切换数据归属；发给上游的 ``user_name`` 固定沿用样片记录中的取值。"""
 
     draft_job_id: uuid.UUID
     conversation_id: uuid.UUID | None = None
@@ -924,8 +923,7 @@ class VideoClipModelOut(CamelModel):
 
 
 class VideoModelsOut(CamelModel):
-    """配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，
-    样片没开通时为空。"""
+    """配置允许的视频模型及片段入口已接入的模型能力。``draftModels`` 为其中支持样片的模型列表，未开通样片功能时为空。"""
 
     default: str
     items: list[str]

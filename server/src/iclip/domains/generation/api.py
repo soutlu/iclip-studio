@@ -67,8 +67,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         API key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次
         用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。
 
-        出样片就是带 ``provider_options.draft: true`` 的出片，原样发上游；做好后用
-        ``POST /generations/video-draft-completions`` 转 1080p。
+        传入 ``provider_options.draft: true`` 即生成样片并原样转发上游；完成后可通过
+        ``POST /generations/video-draft-completions`` 转为 1080p。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -124,15 +124,14 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoDraftCompletionIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """把一条做好的样片（带 ``provider_options.draft: true`` 出的片）转成 1080p，另起一条普通出片
-        （种类 ``video``、操作 ``generate``，没有来源与原作）。镜号、需求单与 ``metadata`` 随样片，
-        对话取 ``conversationId``；请求快照是样片的请求换成 1080p、去掉 ``provider_options``，并在
-        ``draft_job_id`` 记下样片。
+        """将已完成的样片（携带 ``provider_options.draft: true`` 的出片）转为 1080p，创建一条新的普通出片
+        （``kind: video``、``operation: generate``，不记录来源与原作）。镜号、需求单与 ``metadata`` 沿用样片，
+        归属对话取 ``conversationId``；请求快照将样片请求的 ``resolution`` 改为 ``"1080p"``、移除
+        ``provider_options``，并在 ``draft_job_id`` 中记录样片 ID。
 
-        ``draftJobId`` 要是这段对话自己的或继承来的一条已完成、有上游任务号的样片，否则 422；样片转
-        1080p 没开通 422。同一条样片在这段对话里已有没失败的转出记录时直接给那一条，不新建。
-        ``userName`` 的规则同出片，只用来替人办事；发给上游的 ``user_name`` 始终是样片上的，因为上游要求
-        转 1080p 与样片同一个 ``user_name``。
+        ``draftJobId`` 须为本对话自有或继承的已完成且具备上游任务号的样片，否则返回 422；未开通样片功能返回 422。
+        同一样片在同一对话下已有未失败转出记录时幂等返回该记录，不新建任务。``userName`` 仅用于 ``users:act_as``
+        切换数据归属；发给上游的 ``user_name`` 固定沿用样片记录中的取值（上游要求转 1080p 与样片一致）。
         """
 
         user_name = resolve_user_name(principal, body.user_name)
@@ -324,8 +323,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
     async def list_video_models(
         principal: Annotated[Principal, require_permission("generation:read")],
     ) -> VideoModelsOut:
-        """返回允许的视频模型与默认模型；clipModels 另外声明片段图生、编辑的支持和时长范围；
-        draftModels 列出能出样片的模型，样片没开通时为空。"""
+        """返回允许的视频模型与默认模型；``clipModels`` 声明片段图生与编辑能力及时长范围；
+        ``draftModels`` 列出支持样片的模型（未开通样片功能时为空）。"""
 
         return service.video_models()
 

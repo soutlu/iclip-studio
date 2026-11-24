@@ -49,7 +49,7 @@
       },
       "AgentConfig": {
         "additionalProperties": false,
-        "description": "一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。",
+        "description": "Agent 配置文档。草稿中 ``model`` 允许为空，发布时必填；技能绑定独立存储于关联表。",
         "properties": {
           "instructions": {
             "default": "",
@@ -505,7 +505,7 @@
       },
       "AgentModelRef": {
         "additionalProperties": false,
-        "description": "用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。",
+        "description": "模型引用：``provider`` 为供应商引用名，``name`` 为其 ``llm`` 模型名。",
         "properties": {
           "credential_id": {
             "anyOf": [
@@ -545,7 +545,7 @@
       },
       "AgentModelSettings": {
         "additionalProperties": false,
-        "description": "模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。",
+        "description": "模型运行设置：``thinking`` 为思考档位，``native_tools`` 为启用的原生工具列表。",
         "properties": {
           "native_tools": {
             "items": {
@@ -1736,7 +1736,7 @@
       },
       "CapToolConfig": {
         "additionalProperties": false,
-        "description": "挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。",
+        "description": "内置插件挂载项：``toolset`` 为插件注册名，``parameters`` 按对应插件规则校验。",
         "properties": {
           "enabled": {
             "default": true,
@@ -2775,7 +2775,7 @@
       },
       "CredentialCreateIn": {
         "additionalProperties": false,
-        "description": "``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。",
+        "description": "传入 ``modelGroup`` 时将该密钥绑定至对应配置组；同一供应商下每个配置组最多绑定一把密钥。",
         "properties": {
           "fields": {
             "additionalProperties": {
@@ -2810,7 +2810,7 @@
       },
       "CredentialFieldOut": {
         "additionalProperties": false,
-        "description": "密钥表单的一个字段。``secret`` 的值只会以打码形式返回。",
+        "description": "密钥表单字段定义。``secret`` 类型字段仅以打码形式返回。",
         "properties": {
           "default": {
             "anyOf": [
@@ -2856,7 +2856,7 @@
       },
       "CredentialOptionOut": {
         "additionalProperties": false,
-        "description": "agent 能选的一把密钥。",
+        "description": "Agent 可选的单把密钥。",
         "properties": {
           "fields": {
             "additionalProperties": {
@@ -2890,7 +2890,7 @@
       },
       "CredentialOut": {
         "additionalProperties": false,
-        "description": "``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。",
+        "description": "供应商密钥。``modelGroup`` 为归属配置组，为空表示不归属任何组。",
         "properties": {
           "createdAt": {
             "format": "date-time",
@@ -2951,7 +2951,7 @@
       },
       "CredentialTestIn": {
         "additionalProperties": false,
-        "description": "``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给\n``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试\n（规则同修改）。",
+        "description": "``credentialId`` 与 ``fields`` 至少传入其一：仅传 ``credentialId`` 测试已保存密钥；仅传 ``fields``\n按新建规则测试未保存字段；两者同传则将 ``fields`` 按更新规则覆盖至已保存密钥后测试。",
         "properties": {
           "credentialId": {
             "anyOf": [
@@ -2985,7 +2985,7 @@
       },
       "CredentialUpdateIn": {
         "additionalProperties": false,
-        "description": "``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成\n这个组。",
+        "description": "``name`` 与 ``fields`` 未传入或传入 ``null`` 时保持不变；``modelGroup`` 未传入保持不变，传入 ``null``\n清空归组，传入组名则更新归组。",
         "properties": {
           "fields": {
             "anyOf": [
@@ -3106,7 +3106,7 @@
       },
       "DeclarationOut": {
         "additionalProperties": false,
-        "description": "一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。",
+        "description": "可接入的模型供应商声明。``nativeToolsByApi`` 按接口协议列出允许配置的原生工具名。",
         "properties": {
           "apis": {
             "items": {
@@ -3165,7 +3165,7 @@
       },
       "DeclarationsOut": {
         "additionalProperties": false,
-        "description": "``nativeTools`` 是全部原生工具的名录。",
+        "description": "可接入供应商声明及全部原生工具名录（``nativeTools``）。",
         "properties": {
           "declarations": {
             "items": {
@@ -4675,7 +4675,7 @@
       },
       "FilmVideoGenerationIn": {
         "additionalProperties": false,
-        "description": "给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。``draft`` 为真时\n出样片（发给上游 ``provider_options.draft: true``），清晰度仍按传来的发。",
+        "description": "制作页镜头组出片输入。模型、分辨率与声音取自本次页面选择，不回写工程文件；``draft`` 为 ``true`` 时\n透传 ``provider_options.draft: true`` 生成样片，分辨率仍按请求传入值发送。",
         "properties": {
           "draft": {
             "default": false,
@@ -7359,7 +7359,7 @@
       },
       "McpToolConfig": {
         "additionalProperties": false,
-        "description": "挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``\n是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。",
+        "description": "MCP 服务挂载项：``server`` 为服务标识，``tools`` 为暴露给模型的工具列表（服务原始名称；``null``\n表示全部工具，空列表表示不暴露任何工具）；``approval_tools`` 为其中每次调用前需用户审批的工具列表。",
         "properties": {
           "approval_tools": {
             "default": [],
@@ -7743,7 +7743,7 @@
       },
       "ModelOptionOut": {
         "additionalProperties": false,
-        "description": "agent 能选的一个对话模型。",
+        "description": "Agent 可选的单个对话模型。",
         "properties": {
           "contextSize": {
             "anyOf": [
@@ -7795,7 +7795,7 @@
       },
       "ModelOptionsOut": {
         "additionalProperties": false,
-        "description": "agent 编辑页选模型用：只读，只列启用的供应商。``nativeTools`` 是全部原生工具的名录。",
+        "description": "Agent 编辑页的模型可选项（只读，仅含已启用供应商），附带全部原生工具名录（``nativeTools``）。",
         "properties": {
           "nativeTools": {
             "items": {
@@ -7921,7 +7921,7 @@
       },
       "ModelProviderUpdateIn": {
         "additionalProperties": false,
-        "description": "不给或给 ``null`` 的项不动。",
+        "description": "未传入或传入 ``null`` 的字段保持不变。",
         "properties": {
           "defaultCredentialId": {
             "anyOf": [
@@ -7980,7 +7980,7 @@
       },
       "ModelTestIn": {
         "additionalProperties": false,
-        "description": "测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。",
+        "description": "测试供应商下的指定模型；未传 ``credentialId`` 时使用该供应商的默认密钥。",
         "properties": {
           "credentialId": {
             "anyOf": [
@@ -8017,7 +8017,7 @@
       },
       "ModelUpdateIn": {
         "additionalProperties": false,
-        "description": "不给的项不动；``contextSize`` 给 ``null`` 即清掉。",
+        "description": "未传入的字段保持不变；``contextSize`` 传入 ``null`` 表示清空上下文窗口配置。",
         "properties": {
           "api": {
             "anyOf": [
@@ -8306,7 +8306,7 @@
       },
       "NativeToolOut": {
         "additionalProperties": false,
-        "description": "一个原生工具：名字、显示名，以及开它之前必须先开的。",
+        "description": "原生工具定义：接口类型名、显示名及其前置依赖列表。",
         "properties": {
           "label": {
             "title": "Label",
@@ -8930,7 +8930,7 @@
       },
       "ProviderModelOut": {
         "additionalProperties": false,
-        "description": "供应商的一个模型。",
+        "description": "供应商下的单个模型配置。",
         "properties": {
           "api": {
             "anyOf": [
@@ -9022,7 +9022,7 @@
       },
       "ProviderOptionOut": {
         "additionalProperties": false,
-        "description": "agent 能选的一个供应商。",
+        "description": "Agent 可选的单个供应商。",
         "properties": {
           "credentials": {
             "items": {
@@ -11059,7 +11059,7 @@
       },
       "SubagentConfig": {
         "additionalProperties": false,
-        "description": "派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。",
+        "description": "子 Agent 委派项。后三项对应委派工具的同名控制参数，省略表示不限制。",
         "properties": {
           "agent": {
             "maxLength": 200,
@@ -14250,7 +14250,7 @@
       },
       "VideoDraftCompletionIn": {
         "additionalProperties": false,
-        "description": "把一条做好的样片转成 1080p 的受理输入。\n\n``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的\n``user_name`` 始终是样片上的那个。",
+        "description": "将已完成样片转为 1080p 的受理输入。\n\n``userName`` 仅用于 ``users:act_as`` 切换数据归属；发给上游的 ``user_name`` 固定沿用样片记录中的取值。",
         "properties": {
           "conversationId": {
             "anyOf": [
@@ -14707,7 +14707,7 @@
       },
       "VideoModelsOut": {
         "additionalProperties": false,
-        "description": "配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，\n样片没开通时为空。",
+        "description": "配置允许的视频模型及片段入口已接入的模型能力。``draftModels`` 为其中支持样片的模型列表，未开通样片功能时为空。",
         "properties": {
           "clipModels": {
             "items": {
@@ -18519,7 +18519,7 @@
     },
     "/conversations/{conversation_id}/film/video-generations": {
       "post": {
-        "description": "给一个镜头组出片：按文件拼好镜头组与参考图，镜号是组号。``draft`` 为真时出样片，做好后用\n``POST /generations/video-draft-completions`` 转 1080p。",
+        "description": "为指定镜头组发起出片：按工程文件拼装镜头组与参考图，镜号取自组号。``draft`` 为 ``true`` 时生成样片，\n完成后可通过 ``POST /generations/video-draft-completions`` 转为 1080p。",
         "operationId": "generate_conversation_film_video_conversations__conversation_id__film_video_generations_post",
         "parameters": [
           {
@@ -20145,7 +20145,7 @@
     },
     "/default-models": {
       "get": {
-        "description": "各类型的默认模型。",
+        "description": "查询各模型类型的全局默认模型。",
         "operationId": "default_models_default_models_get",
         "responses": {
           "200": {
@@ -20179,7 +20179,7 @@
     },
     "/default-models/{model_type}": {
       "put": {
-        "description": "把这个类型的默认模型设成某供应商一个已启用的模型。",
+        "description": "将指定模型类型的全局默认模型设为某供应商下已启用的模型。",
         "operationId": "set_default_model_default_models__model_type__put",
         "parameters": [
           {
@@ -20859,7 +20859,7 @@
     },
     "/generations/video": {
       "post": {
-        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。\n\n出样片就是带 ``provider_options.draft: true`` 的出片，原样发上游；做好后用\n``POST /generations/video-draft-completions`` 转 1080p。",
+        "description": "提交一次视频生成。请求体照上游异步接口，外加 conversation_id / task_id / shot_index /\nmetadata。\n\n正文可以直接给 ``prompt``，也可以给结构化的 ``shot`` 由服务端拼成 ``prompt``；记录里\n两者都存，``shot`` 不发上游。``shot_index`` 是镜头组编号，落记录的列。``user_name``：\nAPI key 调用方必填、照收；浏览器会话可省略，填登录用户名。``reference_ids`` 可选，是这次\n用到的参考资产，有一条不在资料库或已移除就 422；原样记进请求，不发上游。\n\n传入 ``provider_options.draft: true`` 即生成样片并原样转发上游；完成后可通过\n``POST /generations/video-draft-completions`` 转为 1080p。",
         "operationId": "submit_video_generations_video_post",
         "requestBody": {
           "content": {
@@ -20961,7 +20961,7 @@
     },
     "/generations/video-draft-completions": {
       "post": {
-        "description": "把一条做好的样片（带 ``provider_options.draft: true`` 出的片）转成 1080p，另起一条普通出片\n（种类 ``video``、操作 ``generate``，没有来源与原作）。镜号、需求单与 ``metadata`` 随样片，\n对话取 ``conversationId``；请求快照是样片的请求换成 1080p、去掉 ``provider_options``，并在\n``draft_job_id`` 记下样片。\n\n``draftJobId`` 要是这段对话自己的或继承来的一条已完成、有上游任务号的样片，否则 422；样片转\n1080p 没开通 422。同一条样片在这段对话里已有没失败的转出记录时直接给那一条，不新建。\n``userName`` 的规则同出片，只用来替人办事；发给上游的 ``user_name`` 始终是样片上的，因为上游要求\n转 1080p 与样片同一个 ``user_name``。",
+        "description": "将已完成的样片（携带 ``provider_options.draft: true`` 的出片）转为 1080p，创建一条新的普通出片\n（``kind: video``、``operation: generate``，不记录来源与原作）。镜号、需求单与 ``metadata`` 沿用样片，\n归属对话取 ``conversationId``；请求快照将样片请求的 ``resolution`` 改为 ``\"1080p\"``、移除\n``provider_options``，并在 ``draft_job_id`` 中记录样片 ID。\n\n``draftJobId`` 须为本对话自有或继承的已完成且具备上游任务号的样片，否则返回 422；未开通样片功能返回 422。\n同一样片在同一对话下已有未失败转出记录时幂等返回该记录，不新建任务。``userName`` 仅用于 ``users:act_as``\n切换数据归属；发给上游的 ``user_name`` 固定沿用样片记录中的取值（上游要求转 1080p 与样片一致）。",
         "operationId": "submit_video_draft_completion_generations_video_draft_completions_post",
         "requestBody": {
           "content": {
@@ -21114,7 +21114,7 @@
     },
     "/generations/video-models": {
       "get": {
-        "description": "返回允许的视频模型与默认模型；clipModels 另外声明片段图生、编辑的支持和时长范围；\ndraftModels 列出能出样片的模型，样片没开通时为空。",
+        "description": "返回允许的视频模型与默认模型；``clipModels`` 声明片段图生与编辑能力及时长范围；\n``draftModels`` 列出支持样片的模型（未开通样片功能时为空）。",
         "operationId": "list_video_models_generations_video_models_get",
         "responses": {
           "200": {
@@ -23109,7 +23109,7 @@
     },
     "/model-providers": {
       "get": {
-        "description": "接入的全部供应商，带打码的密钥、默认密钥与模型列表。",
+        "description": "列出已接入的全部模型供应商，包含脱敏密钥、默认密钥与模型列表。",
         "operationId": "model_providers_model_providers_get",
         "responses": {
           "200": {
@@ -23141,7 +23141,7 @@
         ]
       },
       "post": {
-        "description": "按一份声明接入一个供应商，启用、还没有密钥和模型。",
+        "description": "按供应商声明接入新供应商（默认启用，初始不含密钥与模型）。",
         "operationId": "create_model_provider_model_providers_post",
         "requestBody": {
           "content": {
@@ -23195,7 +23195,7 @@
     },
     "/model-providers/declarations": {
       "get": {
-        "description": "可以接入的供应商声明：显示名、接口、密钥表单字段与各接口的模型能有的原生工具。",
+        "description": "列出可接入的模型供应商声明（显示名、接口协议、密钥字段及各接口支持的原生工具）与原生工具名录。",
         "operationId": "model_provider_declarations_model_providers_declarations_get",
         "responses": {
           "200": {
@@ -23263,7 +23263,7 @@
     },
     "/model-providers/{provider_id}": {
       "delete": {
-        "description": "删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。",
+        "description": "删除供应商及其全部密钥与模型；仍被 Agent 草稿或当前版本引用或包含默认模型时返回 409。",
         "operationId": "delete_model_provider_model_providers__provider_id__delete",
         "parameters": [
           {
@@ -23310,7 +23310,7 @@
         ]
       },
       "patch": {
-        "description": "改显示名、启停或默认密钥。",
+        "description": "修改供应商的显示名、启停状态或默认密钥。",
         "operationId": "update_model_provider_model_providers__provider_id__patch",
         "parameters": [
           {
@@ -23376,7 +23376,7 @@
     },
     "/model-providers/{provider_id}/credentials": {
       "post": {
-        "description": "新建一把密钥，不试连；供应商的第一把成为默认密钥。``modelGroup`` 给了就归进这个配置组，\n组不在部署配置里 422。",
+        "description": "新增密钥（不强制联网测试）；供应商的首把密钥自动设为默认密钥。传入 ``modelGroup`` 时归属至对应配置组，\n不在部署配置中返回 422。",
         "operationId": "create_provider_credential_model_providers__provider_id__credentials_post",
         "parameters": [
           {
@@ -23442,7 +23442,7 @@
     },
     "/model-providers/{provider_id}/credentials/test": {
       "post": {
-        "description": "试连，不保存；结果在答复里，没通过也是 200。",
+        "description": "测试密钥连通性（不落库）；无论通过与否均返回 200，以响应体 ``ok`` 字段为准。",
         "operationId": "test_provider_credential_model_providers__provider_id__credentials_test_post",
         "parameters": [
           {
@@ -23508,7 +23508,7 @@
     },
     "/model-providers/{provider_id}/credentials/{credential_id}": {
       "delete": {
-        "description": "删一把密钥；默认密钥不能删。",
+        "description": "删除指定密钥；默认密钥须先切换默认后方可删除。",
         "operationId": "delete_provider_credential_model_providers__provider_id__credentials__credential_id__delete",
         "parameters": [
           {
@@ -23565,7 +23565,7 @@
         ]
       },
       "patch": {
-        "description": "改名、改字段或改配置组，不试连。``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成这个组；\n组不在部署配置里 422。",
+        "description": "修改密钥名称、字段或配置组（不联网测试）。``modelGroup`` 未传入保持不变，传入 ``null`` 清空归组，\n传入组名则更新归组；组不在部署配置中返回 422。",
         "operationId": "update_provider_credential_model_providers__provider_id__credentials__credential_id__patch",
         "parameters": [
           {
@@ -23641,7 +23641,7 @@
     },
     "/model-providers/{provider_id}/models": {
       "post": {
-        "description": "给供应商加一个模型，加上即启用。",
+        "description": "为供应商添加模型，添加后默认启用。",
         "operationId": "add_provider_model_model_providers__provider_id__models_post",
         "parameters": [
           {
@@ -23707,7 +23707,7 @@
     },
     "/model-providers/{provider_id}/models/test": {
       "post": {
-        "description": "用一把密钥（不给就是默认密钥）测试一个 llm 模型，不保存；结果在答复里，没通过也是 200。",
+        "description": "使用指定密钥（缺省时用默认密钥）测试单个 ``llm`` 模型连通性（不落库）；失败亦返回 200。",
         "operationId": "test_provider_model_model_providers__provider_id__models_test_post",
         "parameters": [
           {
@@ -23773,7 +23773,7 @@
     },
     "/model-providers/{provider_id}/models/{model_type}/{model_name}": {
       "delete": {
-        "description": "删一个模型；有 agent 写着它、或它是默认模型是 409。",
+        "description": "删除模型；正被 Agent 引用或已设为默认模型时返回 409。",
         "operationId": "delete_provider_model_model_providers__provider_id__models__model_type___model_name__delete",
         "parameters": [
           {
@@ -23843,7 +23843,7 @@
         ]
       },
       "patch": {
-        "description": "启停一个模型，或改它的属性。模型名放在路径最后，可以带斜杠。",
+        "description": "启停模型或修改其属性。模型名置于路径末尾，支持包含斜杠。",
         "operationId": "update_provider_model_model_providers__provider_id__models__model_type___model_name__patch",
         "parameters": [
           {

@@ -38,7 +38,7 @@ media_generation:
       - vendor-b-seedance-2-5-flash
       - vendor-b-seedance-2-5
       - wan3.0-video-prime
-    # 配置即开通样片（先出 480p，做好后转 1080p）；能出样片的模型由代码侧按模型名判定，状态查询复用 status_base_url。
+    # 配置此项即开通样片功能（先生成 480p 样片，完成后转为 1080p）；支持样片的模型由代码侧按模型名判定，状态查询复用 status_base_url。
     draft_complete_url: https://placeholder.invalid/video/draft/complete
     # 配置此段即启用高清版（超分）；状态查询复用 status_base_url，密钥与 model_id 取自各配置组。
     enhance:

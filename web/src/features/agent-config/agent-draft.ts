@@ -76,7 +76,7 @@ export const missingRequiresReason = (
 
 type ModelSettings = NonNullable<NonNullable<AgentConfig['model']>['settings']>
 
-// 一个都没开时不写 native_tools：读回的配置为空时就没有这一项，写成空数组会被当成改动，旧运行时也不认识它。
+// 未启用原生工具时省略 native_tools 字段：回读空配置不含该键，写成空数组会误判为未保存修改，同时兼容旧版运行时。
 const withNativeTools = (
   settings: Omit<ModelSettings, 'native_tools'>,
   names: readonly NativeToolName[],

@@ -331,15 +331,14 @@ export type NewDub = Pick<
   'label' | 'src' | 'start' | 'duration' | 'mediaStart' | 'playbackRate'
 > & { caption: string; trimmed: boolean }
 
-/** 一条素材片配好的配音记录里用得到的：音轨地址、总长（毫秒）和每句的结果。 */
+/** 素材片已完成配音记录的关键信息：音轨地址、总时长（毫秒）与单句结果列表。 */
 export type DubbedTrack = { url: string; durationMs: number | null; lines: readonly DubbedLine[] }
 
 /**
- * 一条素材片的配音（`request` 是发起时的各句，`track` 是配好的音轨）按 `clips`（这一刻的片段）建成配音片段：
- * 每句一个，和它配的那句字幕对齐（从字幕的开始放），从音轨里这句的开始放起，速度跟着字幕所属的视频片段；
- * 长度照配音的规则占到这句的 `slotEndMs`（没有时到音轨结尾），再按速度换算，不超出那个视频片段的结尾和这句字幕的
- * 结尾里晚的那个（识别出来的一句跨过接缝时字幕比它的片段长，配音要能配完这句）。字幕或它的视频片段已经不在、
- * 放不下最短长度的句子不建。截了尾的句子标出来。
+ * 根据当前工程片段 `clips` 将单条素材片的配音结果（`request` 为发起请求，`track` 为产出音轨）构建为配音片段：
+ * 每句与对应字幕起点对齐、沿用所属视频片段的播放倍速；长度按 `slotEndMs`（缺省为音轨结尾）经倍速换算，
+ * 上限取所属视频片段结尾与该句字幕结尾的较晚者（跨镜头识别的字幕长于其归属片段时确保配音完整播放）。
+ * 对应字幕或视频片段已移除、或可用时长不足最短片段时长的条目不生成，截尾条目保留标记。
  */
 export function dubClips(
   clips: readonly FilmClip[],
@@ -351,7 +350,7 @@ export function dubClips(
     const caption = byId.get(line.caption)
     const video = caption?.kind === 'caption' ? byId.get(caption.owner ?? '') : undefined
     if (caption === undefined || video?.kind !== 'video') return []
-    // 请求里的下一句不会早于 `slotEndMs`（它不晚于这条素材片上下一句要配的开始），和后端的取法一样
+    // 后续句起点不早于 slotEndMs，与后端槽位计算规则保持一致。
     const slotEnd = line.slotEndMs ?? track.durationMs ?? line.endMs
     const duration = Math.min(
       Math.round((slotEnd - line.startMs) / video.playbackRate),

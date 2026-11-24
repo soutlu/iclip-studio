@@ -66,7 +66,7 @@ const hasAssistantOutput = (turn: TranscriptTurn | undefined): boolean =>
 export type ConversationTimelineProps = {
   conversationId: string | null
   openConversation?: (() => Promise<string>) | undefined
-  /** 每次发消息或重新生成前先等它完成；它拒绝时这次不发，原因按发送失败显示。 */
+  /** 发送消息或重新生成前等待的前置钩子；若被拒绝则取消发送，并以发送失败提示原因。 */
   beforeSend?: (() => Promise<void>) | undefined
   readOnly?: { note: string; backLink?: ReactNode } | undefined
   onForked?: ((conversationId: string) => void) | undefined

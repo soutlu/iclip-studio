@@ -59,7 +59,7 @@ type AgentWorkspaceProps = {
   draftSaverRef: Ref<DraftSaver>
 }
 
-/** 把页面上没保存的修改存进草稿；没有修改时什么都不做，存不上时拒绝。 */
+/** 将页面上未保存的修改写入草稿；无修改时直接成功，保存失败时返回拒绝的 Promise。 */
 export type DraftSaver = { saveUnsaved: () => Promise<void> }
 
 export function AgentWorkspace(props: AgentWorkspaceProps) {

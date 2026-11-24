@@ -4,8 +4,8 @@ export type NativeTool = NativeToolOut
 export type NativeToolName = NativeTool['name']
 
 /**
- * 从 `selected` 里留下 `available` 中有、且依赖都还开着的原生工具，按名录顺序返回。
- * 被依赖的工具被去掉时，依赖它的也一并去掉。
+ * 从 `selected` 中筛选出属于 `available` 且全部前置依赖仍满足的原生工具，按名录顺序返回。
+ * 移除被依赖工具时，依赖它的工具一并移除。
  */
 export const keepNativeTools = (
   catalog: readonly NativeTool[],
@@ -22,7 +22,7 @@ export const keepNativeTools = (
   }
 }
 
-/** 开或关一个原生工具：依赖没全开时开不了；关掉时依赖它的一并关掉。 */
+/** 切换单个原生工具的开关状态：前置依赖未满足时无法开启；关闭时级联关闭依赖它的工具。 */
 export const setNativeTool = (
   catalog: readonly NativeTool[],
   selected: readonly NativeToolName[],

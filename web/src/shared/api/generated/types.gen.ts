@@ -42,7 +42,7 @@ export type ActiveVersionOut = {
 /**
  * AgentConfig
  *
- * 一个 agent 的配置。草稿里 ``model`` 可以为空，发布时必填。技能不写在这里，存在绑定表里。
+ * Agent 配置文档。草稿中 ``model`` 允许为空，发布时必填；技能绑定独立存储于关联表。
  */
 export type AgentConfig = {
   /**
@@ -279,7 +279,7 @@ export type AgentImportOut = {
 /**
  * AgentModelRef
  *
- * 用哪个模型：``provider`` 是供应商的引用名，``name`` 是它的 llm 模型名。
+ * 模型引用：``provider`` 为供应商引用名，``name`` 为其 ``llm`` 模型名。
  */
 export type AgentModelRef = {
   /**
@@ -300,7 +300,7 @@ export type AgentModelRef = {
 /**
  * AgentModelSettings
  *
- * 模型的设置：``thinking`` 是思考档位，``native_tools`` 是开着的原生工具。
+ * 模型运行设置：``thinking`` 为思考档位，``native_tools`` 为启用的原生工具列表。
  */
 export type AgentModelSettings = {
   /**
@@ -966,7 +966,7 @@ export type BodyImportSkillSkillsImportPost = {
 /**
  * CapToolConfig
  *
- * 挂一个插件：``toolset`` 是插件的登记名，``parameters`` 按插件自己的参数校验。
+ * 内置插件挂载项：``toolset`` 为插件注册名，``parameters`` 按对应插件规则校验。
  */
 export type CapToolConfig = {
   /**
@@ -1565,7 +1565,7 @@ export type ConversationsPageOut = {
 /**
  * CredentialCreateIn
  *
- * ``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。
+ * 传入 ``modelGroup`` 时将该密钥绑定至对应配置组；同一供应商下每个配置组最多绑定一把密钥。
  */
 export type CredentialCreateIn = {
   /**
@@ -1587,7 +1587,7 @@ export type CredentialCreateIn = {
 /**
  * CredentialFieldOut
  *
- * 密钥表单的一个字段。``secret`` 的值只会以打码形式返回。
+ * 密钥表单字段定义。``secret`` 类型字段仅以打码形式返回。
  */
 export type CredentialFieldOut = {
   /**
@@ -1615,7 +1615,7 @@ export type CredentialFieldOut = {
 /**
  * CredentialOptionOut
  *
- * agent 能选的一把密钥。
+ * Agent 可选的单把密钥。
  */
 export type CredentialOptionOut = {
   /**
@@ -1641,7 +1641,7 @@ export type CredentialOptionOut = {
 /**
  * CredentialOut
  *
- * ``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。
+ * 供应商密钥。``modelGroup`` 为归属配置组，为空表示不归属任何组。
  */
 export type CredentialOut = {
   /**
@@ -1679,9 +1679,8 @@ export type CredentialOut = {
 /**
  * CredentialTestIn
  *
- * ``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给
- * ``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试
- * （规则同修改）。
+ * ``credentialId`` 与 ``fields`` 至少传入其一：仅传 ``credentialId`` 测试已保存密钥；仅传 ``fields``
+ * 按新建规则测试未保存字段；两者同传则将 ``fields`` 按更新规则覆盖至已保存密钥后测试。
  */
 export type CredentialTestIn = {
   /**
@@ -1699,8 +1698,8 @@ export type CredentialTestIn = {
 /**
  * CredentialUpdateIn
  *
- * ``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
- * 这个组。
+ * ``name`` 与 ``fields`` 未传入或传入 ``null`` 时保持不变；``modelGroup`` 未传入保持不变，传入 ``null``
+ * 清空归组，传入组名则更新归组。
  */
 export type CredentialUpdateIn = {
   /**
@@ -1752,7 +1751,7 @@ export type CustomModelCreateIn = {
 /**
  * DeclarationOut
  *
- * 一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。
+ * 可接入的模型供应商声明。``nativeToolsByApi`` 按接口协议列出允许配置的原生工具名。
  */
 export type DeclarationOut = {
   /**
@@ -1782,7 +1781,7 @@ export type DeclarationOut = {
 /**
  * DeclarationsOut
  *
- * ``nativeTools`` 是全部原生工具的名录。
+ * 可接入供应商声明及全部原生工具名录（``nativeTools``）。
  */
 export type DeclarationsOut = {
   /**
@@ -2678,8 +2677,8 @@ export type FilmTextEditsIn = {
 /**
  * FilmVideoGenerationIn
  *
- * 给 ``video`` 这一组出片。模型、清晰度、声音是出片栏上这次选的，不写回文件。``draft`` 为真时
- * 出样片（发给上游 ``provider_options.draft: true``），清晰度仍按传来的发。
+ * 制作页镜头组出片输入。模型、分辨率与声音取自本次页面选择，不回写工程文件；``draft`` 为 ``true`` 时
+ * 透传 ``provider_options.draft: true`` 生成样片，分辨率仍按请求传入值发送。
  */
 export type FilmVideoGenerationIn = {
   /**
@@ -4066,8 +4065,8 @@ export type McpServersOut = {
 /**
  * McpToolConfig
  *
- * 挂一个 MCP 服务：``server`` 是服务的标识，``tools`` 是放给模型的工具（服务自己给的名字），``null``
- * 是全部，空列表是一个都不放。``approval_tools`` 是其中每次调用前要对话用户同意的工具。
+ * MCP 服务挂载项：``server`` 为服务标识，``tools`` 为暴露给模型的工具列表（服务原始名称；``null``
+ * 表示全部工具，空列表表示不暴露任何工具）；``approval_tools`` 为其中每次调用前需用户审批的工具列表。
  */
 export type McpToolConfig = {
   /**
@@ -4257,7 +4256,7 @@ export type ModelGroupsOut = {
 /**
  * ModelOptionOut
  *
- * agent 能选的一个对话模型。
+ * Agent 可选的单个对话模型。
  */
 export type ModelOptionOut = {
   /**
@@ -4281,7 +4280,7 @@ export type ModelOptionOut = {
 /**
  * ModelOptionsOut
  *
- * agent 编辑页选模型用：只读，只列启用的供应商。``nativeTools`` 是全部原生工具的名录。
+ * Agent 编辑页的模型可选项（只读，仅含已启用供应商），附带全部原生工具名录（``nativeTools``）。
  */
 export type ModelOptionsOut = {
   /**
@@ -4361,7 +4360,7 @@ export type ModelProviderOut = {
 /**
  * ModelProviderUpdateIn
  *
- * 不给或给 ``null`` 的项不动。
+ * 未传入或传入 ``null`` 的字段保持不变。
  */
 export type ModelProviderUpdateIn = {
   /**
@@ -4391,7 +4390,7 @@ export type ModelProvidersOut = {
 /**
  * ModelTestIn
  *
- * 测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。
+ * 测试供应商下的指定模型；未传 ``credentialId`` 时使用该供应商的默认密钥。
  */
 export type ModelTestIn = {
   /**
@@ -4411,7 +4410,7 @@ export type ModelTestIn = {
 /**
  * ModelUpdateIn
  *
- * 不给的项不动；``contextSize`` 给 ``null`` 即清掉。
+ * 未传入的字段保持不变；``contextSize`` 传入 ``null`` 表示清空上下文窗口配置。
  */
 export type ModelUpdateIn = {
   /**
@@ -4529,7 +4528,7 @@ export type MusicIn = {
 /**
  * NativeToolOut
  *
- * 一个原生工具：名字、显示名，以及开它之前必须先开的。
+ * 原生工具定义：接口类型名、显示名及其前置依赖列表。
  */
 export type NativeToolOut = {
   /**
@@ -4871,7 +4870,7 @@ export type PromptUpsertOp = {
 /**
  * ProviderModelOut
  *
- * 供应商的一个模型。
+ * 供应商下的单个模型配置。
  */
 export type ProviderModelOut = {
   /**
@@ -4911,7 +4910,7 @@ export type ProviderModelOut = {
 /**
  * ProviderOptionOut
  *
- * agent 能选的一个供应商。
+ * Agent 可选的单个供应商。
  */
 export type ProviderOptionOut = {
   /**
@@ -5977,7 +5976,7 @@ export type StyleMatchOut = {
 /**
  * SubagentConfig
  *
- * 派活给哪个 agent。后三项与派活工具的同名控制项一致，不写就不限。
+ * 子 Agent 委派项。后三项对应委派工具的同名控制参数，省略表示不限制。
  */
 export type SubagentConfig = {
   /**
@@ -7563,10 +7562,9 @@ export type VideoContent = {
 /**
  * VideoDraftCompletionIn
  *
- * 把一条做好的样片转成 1080p 的受理输入。
+ * 将已完成样片转为 1080p 的受理输入。
  *
- * ``userName`` 只用来替人办事（持 ``users:act_as`` 的钥匙按它切换归属）；发给上游的
- * ``user_name`` 始终是样片上的那个。
+ * ``userName`` 仅用于 ``users:act_as`` 切换数据归属；发给上游的 ``user_name`` 固定沿用样片记录中的取值。
  */
 export type VideoDraftCompletionIn = {
   /**
@@ -7789,8 +7787,7 @@ export type VideoGenerationIn = {
 /**
  * VideoModelsOut
  *
- * 配置允许的视频模型，以及片段入口已接入的模型能力。``draftModels`` 是其中能出样片的模型，
- * 样片没开通时为空。
+ * 配置允许的视频模型及片段入口已接入的模型能力。``draftModels`` 为其中支持样片的模型列表，未开通样片功能时为空。
  */
 export type VideoModelsOut = {
   /**

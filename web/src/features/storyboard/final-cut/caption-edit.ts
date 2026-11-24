@@ -273,27 +273,27 @@ export function recognitionTargets(
   return targets.length === 0 ? { refusal: 'unusable' } : { targets }
 }
 
-/** 识别出来的一句：在素材里的起止（毫秒）和字。 */
+/** 语音识别产出的单句：在源素材中的起止时刻（毫秒）与识别文本。 */
 export type Sentence = Pick<SubtitleSentence, 'startMs' | 'endMs' | 'text'>
 
 /** 待加入轨道的单句字幕：起止时间（毫秒）、文本及归属的视频片段 ID（手动添加时为 `null`）。 */
 export type NewCaption = Span & { text: string; owner: string | null }
 
-/** 视频片段用掉的那段素材（从入点起、长 时长 × 速度）里有没有素材时间 `ms`。 */
+/** 判断视频片段所播放的素材区间（`[mediaStart, mediaStart + duration * playbackRate)`）是否包含时刻 `ms`。 */
 const playsAt = (video: VideoClip, ms: number) =>
   video.mediaStart <= ms && ms < video.mediaStart + video.duration * video.playbackRate
 
-/** 视频片段用掉的那段素材和句子在素材里的起止有没有重叠。 */
+/** 判断视频片段所播放的素材区间与句子在源素材中的时间区间是否存在重叠。 */
 const playsPart = (video: VideoClip, sentence: Sentence) =>
   video.mediaStart < sentence.endMs &&
   sentence.startMs < video.mediaStart + video.duration * video.playbackRate
 
 /**
- * 视频片段 `video` 名下要加的字幕，一句一条、字是整句：一句话只由播出它开头的片段写（句子开头在片段用掉的那段
- * 素材里），这样一句话跨过两个相接的片段时只在前一个片段名下写一条整句；开头哪个有声的片段都没播出（被裁掉了）
- * 时，由时间线上第一个播出这句一部分的有声片段写。`clips` 是 final-cut 里的全部片段，用来找同一条素材的有声片段。
- * 时间是 `片段开始 + (句子时间 − 入点) ÷ 速度`：开头被裁掉的截到片段开头，结尾不截，照句子的结尾，所以跨过接缝的
- * 一句占到它说完为止。不到最短长度的、字是空的不要。
+ * 计算归属视频片段 `video` 的待写入字幕（每句一条完整文本）：
+ * - 句子仅归属播放其起点的有声片段，避免跨镜头的一句话在相邻片段下重复生成；
+ * - 若句子起点未被任何同源有声片段播放（被裁去），则归属时间线上首个播放其部分内容的有声片段；
+ * - 映射时间按 `片段起点 + (句子时刻 − 入点) ÷ 速度` 计算：起点被裁时截断至片段起点，终点保留句子完整结尾；
+ * - 空文本及短于最短片段时长的条目将被忽略。`clips` 为工程全部片段，用于定位同源有声视频片段。
  */
 export function sentenceCaptions(
   video: VideoClip,
@@ -322,8 +322,8 @@ export function sentenceCaptions(
 }
 
 /**
- * 把 `wanted` 按开始时间一句句放进已有的字幕（`existing`）之间：和已有的（含先放进去的）重叠的那一句截短到
- * 它自己那段时间里没被占的最长一截（一样长取靠前的），不到最短长度就不要。答复放进去的和没放下的句数。
+ * 按起始时间依次将 `wanted` 填入 `existing` 字幕之间的空隙：与已有字幕（含已放置项）重叠时，
+ * 截取其自身区间内最长的空闲子段（等长取靠前者）；剩余时长不足最短片段时长则跳过。返回成功放置的字幕与跳过句数。
  */
 export function placeCaptions(
   existing: readonly Span[],
@@ -356,9 +356,9 @@ export function placeCaptions(
 
 /**
  * 将语音识别结果（视频片段 ID → 对应素材识别出的句子列表）换算为待加入轨道的字幕：
- * 先按各片段取它名下的句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
- * `silent` 记录用掉的那段素材里没有一句话的片段 ID；`elsewhere` 记录用掉的那段素材里有话、但一句都没写到它名下
- * （句子都由播出开头的别的片段写）的片段 ID。
+ * 先按各片段提取归属句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
+ * `silent` 记录所播素材区间内无任何口播句子的片段 ID；`elsewhere` 记录所播素材区间内有口播但句子均归属
+ * 其他播放起点片段的片段 ID。
  */
 export function recognizedCaptions(
   clips: readonly FilmClip[],

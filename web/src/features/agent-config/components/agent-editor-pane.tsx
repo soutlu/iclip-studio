@@ -357,7 +357,7 @@ function ModelPill({
 }: {
   model: string | null
   thinking: Parameters<typeof thinkingLabel>[0] | null
-  /** 开着的原生工具的显示名。 */
+  /** 已启用原生工具的显示名列表。 */
   nativeTools: readonly string[]
   active?: boolean
   onClick?: () => void

@@ -8,11 +8,11 @@ export type PreviewView = 'chat' | 'trace'
 
 export type PreviewConversationProps = {
   agentId: string
-  /** 测的是草稿（没有选定某个已发布版本）。 */
+  /** 是否预览当前草稿（未选定特定历史版本）。 */
   draft: boolean
   previewId: string | null
   openPreview: () => Promise<string>
-  /** 试草稿时，每条测试消息发出前先把页面上没保存的修改存进草稿；存不上就不发。 */
+  /** 预览草稿时，发送测试消息前先自动保存未保存的草稿修改；保存失败时取消发送。 */
   beforeSend: (() => Promise<void>) | undefined
   placeholder: string
   view: PreviewView

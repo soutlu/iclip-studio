@@ -80,7 +80,7 @@ CREATE DATABASE iclip OWNER iclip;
   - `runtime.url` 设为 `http://runtime:7790`；
   - 若服务器是与 OSS 同地域的阿里云 ECS，建议配置 `object_store.internal_endpoint` 走内网高速读写；
   - 媒体生成各项服务的密钥环境变量名与视频网关 `model_id` 按组配置在 `model_groups` 段，启用媒体生成时必须配置 `default` 组（见[配置组](#配置组)）；
-  - 按需开通样片（配置 `media_generation.video.draft_complete_url`，填视频网关的样片转 1080p 提交地址）：配了才能转 1080p，视频模型清单也才列出能出样片的模型（须在 `allowed_models` 中）；出片请求本身带不带样片参数不受这项控制，原样发给上游；
+  - 按需开通样片功能（配置 `media_generation.video.draft_complete_url` 为视频网关的样片转 1080p 提交地址）：配置后方可发起转 1080p，视频模型清单方列出支持样片的模型（须在 `allowed_models` 中）；出片请求本身是否携带样片参数不受此项控制，原样转发给上游；
   - 按需启用高清版（配置 `media_generation.video.enhance` 段）与千问音频能力（三项独立开关，配置对应子段即启用）：素材片字幕识别配置 `media_generation.subtitle`；生成背景音乐配置 `media_generation.music`；`final-cut` 配音与旁白配置 `media_generation.speech`（`url` 填 `https://maas.qianwenaiapi.com/api/v1/services/audio/tts/SpeechSynthesizer`，`concurrency` 与 `timeout_seconds` 可省略）；
   - 启用成片导出：配置 `final_cut.render_url: http://render:8080`，并在 `.env` 中配置 `RENDER_ALLOWED_MEDIA_HOSTS`；
   - 启用 `final-cut` 预览沙箱：配置 `final_cut.preview_origin: https://<预览子域名>`（未配置时编辑器预览无法加载）。预览子域名的 DNS 解析与 HTTPS 证书须与主应用域名一样指向 `web` 容器，由同一套 Nginx 托管前端页面并将 `/api/` 原样保留 `Host` 转发给后端。

@@ -4,17 +4,17 @@ import type { Sentence } from './caption-edit'
 import type { CaptionClip, FilmClip, VideoClip } from './composition/film'
 
 /**
- * 识别出来的字幕对照台词：从素材片的出片记录里取台词，按句和识别结果对齐，给每句字幕找到它对应的那段台词，
- * 再比出字幕的字和台词哪里不一样。
+ * 识别字幕与原始台词对照：从素材片出片记录中提取台词，与语音识别句子按词元对齐，
+ * 为每句字幕定位对应台词片段并计算逐段文本差异。
  */
 
-// 镜头文字里花括号只用来写台词，出片时换成「{台词原文}」；全角括号「｛｝」不是台词
+// 镜头描述中的半角花括号专用于标注台词（全角花括号「｛｝」不视为台词）。
 const SCRIPT_LINE = /\{([^{}]*)\}/g
 
 /**
- * 素材片 `job` 的台词：只认从镜头组出的片（`metadata.film_node` 是字符串，且记录里存着结构化的镜头），按镜头
- * 时间线的先后、每镜文字里从左到右取花括号里的字（去掉首尾空白，空的不要）。不是这种记录、或一句台词都没有时
- * 是 null。编辑、合成出来的记录没有镜头，声音是重新生成或重新剪过的，不对照。
+ * 提取素材片 `job` 的原始台词列表：仅识别来自镜头组的出片记录（`metadata.film_node` 为字符串且含结构化镜头），
+ * 按镜头时间线顺序提取各镜头文本中花括号内的非空内容；不符合条件或无台词时返回 `null`。
+ * 编辑段与合成片不含原始镜头结构且音轨已重制，不参与台词对照。
  */
 export function scriptLinesOf(job: GenerationJob): string[] | null {
   if (typeof job.metadata?.['film_node'] !== 'string') return null
@@ -29,7 +29,7 @@ export function scriptLinesOf(job: GenerationJob): string[] | null {
   return lines.length === 0 ? null : lines
 }
 
-/** 切词得到的一个单位：比较用的字（归一化后），和它在原文里占的范围 `[from, to)`。 */
+/** 分词产出的最小比较单元：归一化后的比较键及其在原文中的字符范围 `[from, to)`。 */
 type Unit = { key: string; from: number; to: number }
 
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
@@ -38,12 +38,12 @@ const APOSTROPHE = /['’]/u
 
 const isCjk = (char: string): boolean => CJK.test(char)
 
-/** 比较用的写法：NFKC、转小写；弯撇号和直撇号当成一样。 */
+/** 归一化比较键：NFKC 规范化、转小写，并将弯撇号统一为直撇号。 */
 const keyOf = (raw: string) => raw.normalize('NFKC').toLowerCase().replaceAll('’', "'")
 
 /**
- * 把 `text` 切成单位：中日韩的字每字一个；其余连着的字母、数字（夹在其间的撇号 `'` `’` 算词内）是一个；
- * 标点、空白只是分隔。单位记着在原文里的位置，显示时按位置从原文里截，比较时用归一化的写法。
+ * 将 `text` 切分为比较单元：中日韩文字按单字切分；连续的字母、数字（含词内撇号 `'` `’`）合并为一个单元；
+ * 标点与空白仅作分隔。各单元记录原文区间用于展示截取，以归一化键参与比对。
  */
 function unitsOf(text: string): Unit[] {
   const chars = [...text]
@@ -71,8 +71,8 @@ function unitsOf(text: string): Unit[] {
 const OPENS_WORD = /[\p{L}\p{N}\p{M}\p{Ps}\p{Pi}]/u
 
 /**
- * 两段字接起来：接缝左边不是中日韩的字也不是空白、右边是字母数字或左括号引号（也不是中日韩的字）时中间加一个空格，
- * 否则直接连。
+ * 拼接两段文本：当左侧末尾非中日韩文字且非空白、右侧开头为非中日韩的字母/数字/左括号引号时补入单个空格，
+ * 否则直接拼接。
  */
 function joinText(left: string, right: string): string {
   const last = [...left].at(-1)
@@ -82,12 +82,12 @@ function joinText(left: string, right: string): string {
   return spaced ? `${left} ${right}` : left + right
 }
 
-/** 台词的一个单位，带它在第几行台词里。 */
+/** 附带所在台词行索引的比较单元。 */
 type LineUnit = Unit & { line: number }
 
 /**
- * 台词单位 `picked`（`units` 里的序号，从小到大）合成的一段台词：每行从第一个单位截到最后一个、带上紧跟的标点，
- * 跨行按 `joinText` 接。一个都没有时是空串。
+ * 将选中的台词单元索引 `picked`（升序）还原为连续台词片段：每行从首单元截到末单元并保留紧随标点，
+ * 跨行按 `joinText` 拼接；无选中单元时返回空串。
  */
 function excerptOf(
   lines: readonly string[],
@@ -111,10 +111,10 @@ function excerptOf(
 }
 
 /**
- * 一条素材片识别出的每一句对应的台词（和 `sentences` 一一对应；空串是没有对应的台词）。各句的字按先后切成单位，
- * 和整组台词 `lines` 的单位对齐，每个台词单位挂到一句上：一样的挂配对单位所在的句；相邻的两段差异挂字幕那一段
- * 第一个单位所在的句；只在台词里有的挂前面最近的单位所在的句，它和后面最近的单位在同一行台词、和前面的不在
- * 同一行时（一句话开头的词没识别出来），或者前面没有时，挂后面最近的。
+ * 为素材片识别出的每句文本匹配对应台词（与 `sentences` 一一对应，无对应台词为空串）。
+ * 将识别句序列与台词行序列切词对齐，并将每个台词单元归属至相应识别句：相同单元归属配对句；
+ * 替换差异归属对应识别差异的首个单元所在句；仅台词新增的单元默认归属前方最近单元所在句，
+ * 若其位于句首或与后方最近单元同属一行台词而与前方不同行（句首漏识别）则归属后方最近句。
  */
 function sentenceScripts(lines: readonly string[], sentences: readonly Sentence[]): string[] {
   const units = lines.flatMap((line, index) =>
@@ -166,13 +166,13 @@ function sentenceScripts(lines: readonly string[], sentences: readonly Sentence[
   return attached.map((picked) => excerptOf(lines, units, picked))
 }
 
-/** 字幕和台词比出来的一段：一样的、只在字幕里的、只在台词里的，字照原文写法。 */
+/** 字幕与台词比对产出的单个片段（相同、仅字幕、仅台词），保留原文拼写。 */
 type ScriptPart = { kind: 'same' | 'captionOnly' | 'scriptOnly'; text: string }
 
 /**
- * 字幕的字 `text` 和它对应的台词 `script` 各自切词后对齐，比出哪里不一样。都一样时是 null。不一样时按先后给出
- * 各段：字幕那边的段从字幕原文里截、带着它后面的标点空白（紧跟着只在台词里的段时，标点空白挪到那段后面），只在
- * 台词里的段从台词原文里截，和前后之间按 `joinText` 的规则补空格。
+ * 对齐字幕文本 `text` 与对应台词 `script` 并计算差异片段；两者词元完全一致时返回 `null`。
+ * 有差异时按顺序输出各段：字幕侧片段取自原文并附带其后标点空白（紧接 `scriptOnly` 时后移至该段之后），
+ * 台词侧片段取自台词原文并按 `joinText` 规则与相邻段补齐空格。
  */
 function scriptMarks(text: string, script: string): ScriptPart[] | null {
   const said = unitsOf(text)
@@ -190,7 +190,7 @@ function scriptMarks(text: string, script: string): ScriptPart[] | null {
   }
   const push = (kind: ScriptPart['kind'], piece: string) => {
     if (piece === '') return
-    // 字幕那边相邻的段在原文里本来就连着；只有台词里截来的段和前后之间要看是否补空格
+    // 字幕侧相邻片段在原文中原本连续，仅在涉及台词侧插入片段的边界按需补空格。
     const previous = parts.at(-1)
     if (previous !== undefined && (kind === 'scriptOnly' || previous.kind === 'scriptOnly'))
       append('same', joinText(previous.text, piece).slice(previous.text.length, -piece.length))
@@ -226,7 +226,7 @@ function scriptMarks(text: string, script: string): ScriptPart[] | null {
   return parts
 }
 
-/** 字幕 `caption` 对应 `sentences` 里的第几句：起止按视频片段 `video` 换算回素材时间后重叠最长的那句；都不重叠时是 undefined。 */
+/** 将字幕 `caption` 按所属视频片段 `video` 换算回源素材时间，返回与 `sentences` 重叠最长者的索引；无重叠返回 `undefined`。 */
 function sentenceOf(
   caption: CaptionClip,
   video: VideoClip,
@@ -247,13 +247,13 @@ function sentenceOf(
   return found
 }
 
-/** 一句字幕的台词对照：对应的台词，和字幕与它比出来的各段。 */
+/** 单句字幕的台词对照信息：完整目标台词及逐段差异。 */
 export type ScriptNote = { script: string; parts: readonly ScriptPart[] }
 
 /**
- * final-cut 里和台词不一样的字幕：字幕编号 → 对照。`takeOf` 把视频片段的地址对上素材片，`linesOf` 是素材片 →
- * 台词，`sentencesOf` 是素材片 → 识别出的句子。只收有所属片段、素材片有台词也有识别结果、对应的台词不是空串、
- * 而且字和台词有差异的字幕。
+ * 计算工程中与原始台词存在差异的字幕映射（字幕 ID → 台词对照）。
+ * `takeOf` 按视频地址映射素材片 ID，`linesOf` 为素材片台词列表，`sentencesOf` 为素材片已识别句子列表；
+ * 仅收录归属有效视频片段、具备台词与识别记录且文本存在差异的字幕。
  */
 export function captionScripts(
   clips: readonly FilmClip[],

@@ -1054,12 +1054,12 @@ function EditorBody({
     return id
   }
 
-  // 「字幕」页签里的「识别字幕」：识别中照常编辑，全部有了结果后按那时的 final-cut 一次写进去
+  // 「字幕」页签的「识别字幕」：识别期间不阻塞编辑，全部完成后按最新工程状态一次性写入。
   const takeOf = useCallback((src: string) => takeOfUrl.get(src), [takeOfUrl])
   const recognizable = recognitionTargets(clips, takeOf)
   /**
-   * 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段，
-   * 有话但句子都归别的片段的片段。
+   * 按写入时刻的工程片段 `current` 汇总识别结果：失败片段、待新增字幕、重叠跳过句数、
+   * 无口播片段，以及虽有口播但句子均归属其他片段的片段。
    */
   const recognitionResult = (
     current: readonly FilmClip[],
@@ -1067,7 +1067,7 @@ function EditorBody({
     outcomes: ReadonlyMap<string, RecognitionOutcome>,
   ) => {
     const wanted = new Set(clipIds)
-    // 识别期间片段删掉了、有了字幕的不再写
+    // 跳过识别期间已删除或已存在字幕的片段。
     const found = recognitionTargets(current, takeOf)
     const targets = 'targets' in found ? found.targets.filter((t) => wanted.has(t.clipId)) : []
     const failed: string[] = []
