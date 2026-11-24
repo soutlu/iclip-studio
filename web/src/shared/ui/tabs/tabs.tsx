@@ -62,16 +62,18 @@ const triggerVariants = cva(
   },
 )
 
-/** `trailing` 渲染于标题之后且不参与文本截断（例如可关闭页签的关闭图标）。 */
+/** `leading` / `trailing` 渲染于标题前后且不参与文本截断（例如状态标记、可关闭页签的关闭图标）。 */
 export function TabsTrigger({
   children,
   className,
+  leading,
   trailing,
   ...props
-}: ComponentPropsWithoutRef<typeof Tabs.Trigger> & { trailing?: ReactNode }) {
+}: ComponentPropsWithoutRef<typeof Tabs.Trigger> & { leading?: ReactNode; trailing?: ReactNode }) {
   const variant = use(TabsVariantContext)
   return (
     <Tabs.Trigger className={cn(triggerVariants({ variant }), className)} {...props}>
+      {leading}
       <span className="min-w-0 truncate">{children}</span>
       {trailing}
     </Tabs.Trigger>

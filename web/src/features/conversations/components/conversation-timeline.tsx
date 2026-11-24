@@ -8,7 +8,7 @@ import {
 } from '@/shared/transcript/local-prompts'
 import { useLocalPrompts } from '@/shared/transcript/use-local-prompts'
 import { useTranscript } from '@/shared/transcript/use-transcript'
-import type { PromptContentPart, ToolCallFrame, TranscriptTurn } from '@/shared/transcript/vendor'
+import type { PromptContentPart, TranscriptTurn } from '@/shared/transcript/vendor'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
@@ -28,6 +28,7 @@ import {
   submitPrompt,
   useForkConversation,
 } from '../conversations.api'
+import { approvalBatch } from './approval-batch'
 import { ApprovalCard } from './approval-card'
 import { BackgroundTaskBar } from './background-task-bar'
 import { ConversationComposer } from './conversation-composer'
@@ -44,17 +45,8 @@ const STICK_THRESHOLD_PX = 80
 
 const SCROLL_IDLE_MS = 600
 
-const frameAwaiting = (
-  turns: readonly TranscriptTurn[],
-  interactionId: string,
-): ToolCallFrame | undefined =>
-  turns
-    .flatMap((turn) => turn.steps)
-    .flatMap((step) => step.frames)
-    .find(
-      (frame): frame is ToolCallFrame =>
-        frame.kind === 'tool' && frame.approvalId === interactionId,
-    )
+const ownsAny = (turn: TranscriptTurn, frameIds: ReadonlySet<string>): boolean =>
+  turn.steps.some((step) => step.frames.some((frame) => frameIds.has(frame.frameId)))
 
 const act = (work: Promise<void>) => {
   void work.catch((error: unknown) => {
@@ -132,9 +124,12 @@ export function ConversationTimeline({
     keepPlace()
     void loadOlder().catch(() => {})
   }
-  const approval = view.pendingInteractions.find(
-    (interaction) => interaction.interactionKind === 'approval',
-  )
+  const approvals = approvalBatch(turns, view.interactions, view.pendingInteractions)
+  const showApprovals = approvals.length > 0 && conversationId !== null
+  const hiddenKey = showApprovals
+    ? approvals.flatMap((item) => (item.frame === undefined ? [] : [item.frame.frameId])).join('\n')
+    : ''
+  const hiddenFrameIds = new Set(hiddenKey === '' ? [] : hiddenKey.split('\n'))
 
   const queued = view.prompts.filter((prompt) => prompt.status === 'queued')
   const running = view.prompts.find((prompt) => prompt.status === 'running')
@@ -163,7 +158,7 @@ export function ConversationTimeline({
     inFlight && !turns.some((turn) => turn.triggerPromptId === inFlightPromptId)
       ? undefined
       : latestTurn
-  const awaitingApproval = approval !== undefined
+  const awaitingApproval = approvals.length > 0
   const workingLabel = awaitingApproval
     ? conversationStatusLabel('approval')
     : retry !== undefined
@@ -243,6 +238,17 @@ export function ConversationTimeline({
 
   const canWrite = readOnly === undefined
   const overlaid = overlay !== undefined && overlay !== null
+  const approvalCard =
+    conversationId === null || !showApprovals ? null : (
+      <ApprovalCard
+        connections={connections}
+        conversationId={conversationId}
+        items={approvals}
+        key={approvals[0]?.interactionId}
+        onRefresh={refresh}
+        readOnly={!canWrite}
+      />
+    )
 
   return (
     <WorkbenchLinksContext value={workbench}>
@@ -292,6 +298,7 @@ export function ConversationTimeline({
                 latest={turn.turnId === latestTurn?.turnId}
                 onEdit={canWrite && turn.turnId === latestTurn?.turnId ? editTurn : undefined}
                 forkDisabled={conversationBusy || fork.isPending}
+                hiddenFrameIds={ownsAny(turn, hiddenFrameIds) ? hiddenFrameIds : undefined}
                 onFork={onForked === undefined ? undefined : forkTurn}
                 onRegenerate={
                   canWrite && turn.turnId === latestTurn?.turnId ? regenerateTurn : undefined
@@ -301,6 +308,7 @@ export function ConversationTimeline({
                 turn={turn}
               />
             ))}
+            {overlaid ? null : approvalCard}
             {bubbles.map((item) => (
               <UserBubble content={item.content} key={item.promptId} />
             ))}
@@ -310,7 +318,7 @@ export function ConversationTimeline({
               </div>
             ) : null}
             <PromptQueue
-              canSteer={running !== undefined && approval === undefined}
+              canSteer={running !== undefined && !awaitingApproval}
               onDiscard={(promptId) => onSession((id) => abortPrompt(id, promptId))}
               onSteer={(promptId) => onSession((id) => steerPrompt(id, promptId))}
               prompts={queued.map((prompt) => ({
@@ -360,16 +368,7 @@ export function ConversationTimeline({
           className="pointer-events-none absolute inset-x-0 -top-8 h-8 bg-gradient-to-b from-transparent to-background"
         />
         <div className="mx-auto w-full max-w-(--layout-home-read-max)">
-          {approval === undefined || conversationId === null ? null : (
-            <ApprovalCard
-              conversationId={conversationId}
-              frame={frameAwaiting(turns, approval.interactionId)}
-              interactionId={approval.interactionId}
-              key={approval.interactionId}
-              onRefresh={refresh}
-              readOnly={!canWrite}
-            />
-          )}
+          {overlaid && approvalCard !== null ? <div className="mb-2">{approvalCard}</div> : null}
           {view.forkedFrom === null || sourceLink === undefined ? null : (
             <p
               aria-label="分叉来源"

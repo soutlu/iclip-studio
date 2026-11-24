@@ -165,6 +165,7 @@ const registry = () => {
 }
 
 type RenderTurnOptions = {
+  hiddenFrameIds?: ReadonlySet<string>
   interactions?: ReadonlyMap<string, TranscriptInteraction>
   onRegenerate?: () => void
   toolTasks?: ReadonlyMap<string, TranscriptTask>
@@ -172,6 +173,7 @@ type RenderTurnOptions = {
 
 const turnElement = (turn: TranscriptTurn, options: RenderTurnOptions = {}) => (
   <ConversationTurn
+    hiddenFrameIds={options.hiddenFrameIds}
     interactions={options.interactions ?? new Map()}
     onRegenerate={options.onRegenerate}
     toolTasks={options.toolTasks ?? new Map()}
@@ -462,6 +464,44 @@ describe('每次调用按自己的状态画', () => {
       'aria-expanded',
       'true',
     )
+  })
+
+  it('审批同意且已完成的调用：行尾标「已同意」加对勾', async () => {
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'write', 'shots/cover.md', { approvalId: 'appr_1', state: 'done' }),
+      ]),
+      {
+        interactions: new Map([
+          [
+            'appr_1',
+            {
+              interactionId: 'appr_1',
+              interactionKind: 'approval',
+              state: 'approved',
+              toolCallId: 't1.1.f1',
+            },
+          ],
+        ]),
+      },
+    )
+
+    expect(screen.getByText('已同意')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'cover.md' })).toBeInTheDocument()
+  })
+
+  it('交给审批卡的调用不另画工具行，也不算进活动组；同一轮其他调用照常', async () => {
+    await renderTurn(
+      turnWithFrames([
+        fileTool('t1.1.f1', 'read', 'shots/需求.md'),
+        fileTool('t1.1.f2', 'write', 'shots/cover.md', { approvalId: 'appr_1', state: 'running' }),
+      ]),
+      { hiddenFrameIds: new Set(['t1.1.f2']) },
+    )
+
+    expect(screen.getByRole('button', { name: '需求.md' })).toBeInTheDocument()
+    expect(screen.queryByText('cover.md')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^已完成：/ })).toBeNull()
   })
 
   it('轮已结束、调用仍是 running：照协议画运行中，不替它改成完成', async () => {

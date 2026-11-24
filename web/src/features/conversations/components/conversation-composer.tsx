@@ -97,7 +97,7 @@ export function ConversationComposer({
         }
         onStop={onStop}
         onSubmit={(submission) => void send(submission)}
-        placeholder={awaitingApproval ? '请先确认上方的步骤' : placeholder}
+        placeholder={awaitingApproval ? '等待上方确认，也可先输入后续指令' : placeholder}
         ref={composerRef}
         sending={sending}
         trailing={
