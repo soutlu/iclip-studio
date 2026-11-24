@@ -1056,7 +1056,10 @@ function EditorBody({
   // 「字幕」页签里的「识别字幕」：识别中照常编辑，全部有了结果后按那时的 final-cut 一次写进去
   const takeOf = (src: string) => takeOfUrl.get(src)
   const recognizable = recognitionTargets(clips, takeOf)
-  /** 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段。 */
+  /**
+   * 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段，
+   * 有话但句子都归别的片段的片段。
+   */
   const recognitionResult = (
     current: readonly FilmClip[],
     clipIds: readonly string[],
@@ -1093,6 +1096,8 @@ function EditorBody({
     if (added > 0) notice(`已加入 ${added} 句字幕`)
     if (result.skipped > 0) notice(`${result.skipped} 句与已有字幕重叠，已跳过`)
     if (result.silent.length > 0) notice(`${labels(result.silent)} 没有识别出说话，未加字幕`)
+    if (added === 0 && result.elsewhere.length > 0)
+      notice(`${labels(result.elsewhere)} 里的话从别的片段说起，字幕归开头所在的片段，未加字幕`)
     if (result.failed.length > 0)
       notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
   }
