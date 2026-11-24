@@ -10,7 +10,6 @@ from pydantic.alias_generators import to_camel
 from iclip.platform.runtime_api.agent_usage import AgentUsageOut
 from iclip.platform.runtime_api.config.model_providers.models import (
     CredentialFieldType,
-    ModelSource,
     ModelType,
 )
 from iclip.platform.runtime_api.model_vocab import (
@@ -63,8 +62,6 @@ class DeclarationOut(CamelModel):
     label: str
     apis: list[ModelApi]
     credential_fields: list[CredentialFieldOut]
-    custom_models: bool
-    models: list[DeclaredModelOut]
     native_tools_by_api: dict[ModelApi, list[NativeToolName]]
 
 
@@ -76,9 +73,8 @@ class DeclarationsOut(CamelModel):
 
 
 class ProviderModelOut(DeclaredModelOut):
-    """供应商的一个模型：声明里的叠加停用设置，或自己加的。"""
+    """供应商的一个模型。"""
 
-    source: ModelSource
     enabled: bool
     used_by: list[AgentUsageOut]
 
@@ -176,8 +172,7 @@ class CustomModelCreateIn(CamelModel):
 
 
 class ModelUpdateIn(CamelModel):
-    """不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
-    ``contextSize`` 给 ``null`` 即清掉。"""
+    """不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。"""
 
     enabled: bool | None = None
     api: ModelApi | None = None

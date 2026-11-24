@@ -272,7 +272,6 @@ export type {
   CustomModelCreateIn,
   DeclarationOut,
   DeclarationsOut,
-  DeclaredModelOut,
   DefaultModelIn,
   DefaultModelOut,
   DefaultModelsDefaultModelsGetData,

@@ -3135,20 +3135,9 @@
             "title": "Credentialfields",
             "type": "array"
           },
-          "customModels": {
-            "title": "Custommodels",
-            "type": "boolean"
-          },
           "label": {
             "title": "Label",
             "type": "string"
-          },
-          "models": {
-            "items": {
-              "$ref": "#/components/schemas/DeclaredModelOut"
-            },
-            "title": "Models",
-            "type": "array"
           },
           "name": {
             "title": "Name",
@@ -3182,8 +3171,6 @@
           "label",
           "apis",
           "credentialFields",
-          "customModels",
-          "models",
           "nativeToolsByApi"
         ],
         "title": "DeclarationOut",
@@ -3213,89 +3200,6 @@
           "nativeTools"
         ],
         "title": "DeclarationsOut",
-        "type": "object"
-      },
-      "DeclaredModelOut": {
-        "additionalProperties": false,
-        "properties": {
-          "api": {
-            "anyOf": [
-              {
-                "enum": [
-                  "chat",
-                  "responses",
-                  "gemini"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Api"
-          },
-          "contextSize": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Contextsize"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "nativeTools": {
-            "items": {
-              "enum": [
-                "web_search",
-                "web_extractor",
-                "image_search"
-              ],
-              "type": "string"
-            },
-            "title": "Nativetools",
-            "type": "array"
-          },
-          "thinking": {
-            "items": {
-              "enum": [
-                "none",
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh",
-                "max"
-              ],
-              "type": "string"
-            },
-            "title": "Thinking",
-            "type": "array"
-          },
-          "type": {
-            "enum": [
-              "llm",
-              "embedding",
-              "rerank"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "type",
-          "api",
-          "contextSize",
-          "thinking",
-          "nativeTools"
-        ],
-        "title": "DeclaredModelOut",
         "type": "object"
       },
       "DefaultModelIn": {
@@ -8131,7 +8035,7 @@
       },
       "ModelUpdateIn": {
         "additionalProperties": false,
-        "description": "不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，\n``contextSize`` 给 ``null`` 即清掉。",
+        "description": "不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。",
         "properties": {
           "api": {
             "anyOf": [
@@ -9059,7 +8963,7 @@
       },
       "ProviderModelOut": {
         "additionalProperties": false,
-        "description": "供应商的一个模型：声明里的叠加停用设置，或自己加的。",
+        "description": "供应商的一个模型。",
         "properties": {
           "api": {
             "anyOf": [
@@ -9108,14 +9012,6 @@
             "title": "Nativetools",
             "type": "array"
           },
-          "source": {
-            "enum": [
-              "declared",
-              "custom"
-            ],
-            "title": "Source",
-            "type": "string"
-          },
           "thinking": {
             "items": {
               "enum": [
@@ -9156,7 +9052,6 @@
           "contextSize",
           "thinking",
           "nativeTools",
-          "source",
           "enabled",
           "usedBy"
         ],

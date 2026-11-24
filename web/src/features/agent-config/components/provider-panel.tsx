@@ -37,7 +37,7 @@ import { UsageAvatars } from './usage-avatars'
 
 const IDLE: Test = { kind: 'idle' }
 
-function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' }) {
+function StateGlyph({ label, name }: { label: string; name: 'link' }) {
   return (
     <TooltipRoot>
       <TooltipTrigger asChild>
@@ -249,14 +249,12 @@ function ProviderDetail({
       <section aria-labelledby={`${baseId}-models`} className="mt-7">
         <SectionHeading
           action={
-            declaration?.customModels === true ? (
-              <IconButton
-                label="添加模型"
-                name="add"
-                onClick={() => setEditor({ kind: 'model', model: null })}
-                size="sm"
-              />
-            ) : undefined
+            <IconButton
+              label="添加模型"
+              name="add"
+              onClick={() => setEditor({ kind: 'model', model: null })}
+              size="sm"
+            />
           }
           id={`${baseId}-models`}
           note="这个供应商下可以选用的模型"
@@ -297,12 +295,11 @@ function ProviderDetail({
                 {model.type === 'llm' ? null : (
                   <CardBadge>{MODEL_KIND_LABEL[model.type]}</CardBadge>
                 )}
-                {model.source === 'declared' ? <StateGlyph label="内置模型" name="locked" /> : null}
                 <span className="flex-1" />
                 <UsageAvatars users={model.usedBy} />
-                {model.type === 'llm' || model.source === 'custom' ? (
-                  <RowActions>
-                    {model.type === 'llm' ? (
+                <RowActions>
+                  {model.type === 'llm' ? (
+                    <>
                       <Button
                         aria-label={`测试模型 ${model.name}`}
                         className="h-(--control-height-xs) px-2 text-label"
@@ -313,35 +310,31 @@ function ProviderDetail({
                       >
                         测试
                       </Button>
-                    ) : null}
-                    {model.source === 'custom' && model.type === 'llm' ? (
                       <IconButton
                         label={`编辑模型 ${model.name}`}
                         name="edit"
                         onClick={() => setEditor({ kind: 'model', model })}
                         size="xs"
                       />
-                    ) : null}
-                    {model.source === 'custom' ? (
-                      <IconButton
-                        disabled={blocked !== undefined}
-                        label={`删除模型 ${model.name}`}
-                        name="delete"
-                        onClick={() =>
-                          void run(key, '模型删除失败，请重试', () =>
-                            deleteModel.mutateAsync({ model, providerId: provider.id }),
-                          )
-                        }
-                        size="xs"
-                        tooltip={
-                          blocked === undefined
-                            ? undefined
-                            : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
-                        }
-                      />
-                    ) : null}
-                  </RowActions>
-                ) : null}
+                    </>
+                  ) : null}
+                  <IconButton
+                    disabled={blocked !== undefined}
+                    label={`删除模型 ${model.name}`}
+                    name="delete"
+                    onClick={() =>
+                      void run(key, '模型删除失败，请重试', () =>
+                        deleteModel.mutateAsync({ model, providerId: provider.id }),
+                      )
+                    }
+                    size="xs"
+                    tooltip={
+                      blocked === undefined
+                        ? undefined
+                        : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
+                    }
+                  />
+                </RowActions>
                 <Switch
                   aria-label={`启用模型 ${model.name}`}
                   blockedReason={

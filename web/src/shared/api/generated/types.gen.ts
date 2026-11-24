@@ -1764,17 +1764,9 @@ export type DeclarationOut = {
    */
   credentialFields: Array<CredentialFieldOut>
   /**
-   * Custommodels
-   */
-  customModels: boolean
-  /**
    * Label
    */
   label: string
-  /**
-   * Models
-   */
-  models: Array<DeclaredModelOut>
   /**
    * Name
    */
@@ -1801,36 +1793,6 @@ export type DeclarationsOut = {
    * Nativetools
    */
   nativeTools: Array<NativeToolOut>
-}
-
-/**
- * DeclaredModelOut
- */
-export type DeclaredModelOut = {
-  /**
-   * Api
-   */
-  api: 'chat' | 'responses' | 'gemini' | null
-  /**
-   * Contextsize
-   */
-  contextSize: number | null
-  /**
-   * Name
-   */
-  name: string
-  /**
-   * Nativetools
-   */
-  nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
-  /**
-   * Thinking
-   */
-  thinking: Array<'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'>
-  /**
-   * Type
-   */
-  type: 'llm' | 'embedding' | 'rerank'
 }
 
 /**
@@ -4449,8 +4411,7 @@ export type ModelTestIn = {
 /**
  * ModelUpdateIn
  *
- * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
- * ``contextSize`` 给 ``null`` 即清掉。
+ * 不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。
  */
 export type ModelUpdateIn = {
   /**
@@ -4910,7 +4871,7 @@ export type PromptUpsertOp = {
 /**
  * ProviderModelOut
  *
- * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
+ * 供应商的一个模型。
  */
 export type ProviderModelOut = {
   /**
@@ -4933,10 +4894,6 @@ export type ProviderModelOut = {
    * Nativetools
    */
   nativeTools: Array<'web_search' | 'web_extractor' | 'image_search'>
-  /**
-   * Source
-   */
-  source: 'declared' | 'custom'
   /**
    * Thinking
    */

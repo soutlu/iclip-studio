@@ -798,18 +798,6 @@ export const zCustomModelCreateIn = z.object({
 })
 
 /**
- * DeclaredModelOut
- */
-export const zDeclaredModelOut = z.object({
-  api: z.enum(['chat', 'responses', 'gemini']).nullable(),
-  contextSize: z.int().nullable(),
-  name: z.string(),
-  nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
-  thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
-  type: z.enum(['llm', 'embedding', 'rerank']),
-})
-
-/**
  * DeclarationOut
  *
  * 一家可以接入的供应商。``nativeToolsByApi`` 的键是它的每个接口，值是走这个接口的模型能有的原生工具。
@@ -817,9 +805,7 @@ export const zDeclaredModelOut = z.object({
 export const zDeclarationOut = z.object({
   apis: z.array(z.enum(['chat', 'responses', 'gemini'])),
   credentialFields: z.array(zCredentialFieldOut),
-  customModels: z.boolean(),
   label: z.string(),
-  models: z.array(zDeclaredModelOut),
   name: z.string(),
   nativeToolsByApi: z.record(
     z.string(),
@@ -1893,8 +1879,7 @@ export const zModelTestIn = z.object({
 /**
  * ModelUpdateIn
  *
- * 不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余四项只有自己加的模型能改，
- * ``contextSize`` 给 ``null`` 即清掉。
+ * 不给的项不动。所有模型都能改这几项，``contextSize`` 给 ``null`` 即清掉。
  */
 export const zModelUpdateIn = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullish(),
@@ -2061,7 +2046,7 @@ export const zProbeOut = z.object({
 /**
  * ProviderModelOut
  *
- * 供应商的一个模型：声明里的叠加停用设置，或自己加的。
+ * 供应商的一个模型。
  */
 export const zProviderModelOut = z.object({
   api: z.enum(['chat', 'responses', 'gemini']).nullable(),
@@ -2069,7 +2054,6 @@ export const zProviderModelOut = z.object({
   enabled: z.boolean(),
   name: z.string(),
   nativeTools: z.array(z.enum(['web_search', 'web_extractor', 'image_search'])),
-  source: z.enum(['declared', 'custom']),
   thinking: z.array(z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])),
   type: z.enum(['llm', 'embedding', 'rerank']),
   usedBy: z.array(zAgentUsageOut),
