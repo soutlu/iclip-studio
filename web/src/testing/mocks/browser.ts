@@ -2,7 +2,7 @@ import { http } from 'msw'
 import { setupWorker } from 'msw/browser'
 import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
-import { approvalShowcases } from './approval-showcase'
+import { mcpApprovalCalls, publishApproval } from './approval-showcase'
 import { mockLatestMasterUrls, mockVideoProgress } from './conversations'
 import {
   addMockCollection,
@@ -18,7 +18,12 @@ import { seedDemoTasks } from './demo-tasks'
 import { seedMockFilm } from './film'
 import { backgroundShowcase, multipleBackgroundShowcase } from './background-showcase'
 import { toolShowcase } from './tool-showcase'
-import { markMockAwaitingApproval, markMockJustFinished, markMockShowcase } from './transcript'
+import {
+  COVER_APPROVAL,
+  markMockAwaitingApproval,
+  markMockJustFinished,
+  markMockShowcase,
+} from './transcript'
 import {
   persistMockProjects,
   seedMockMusic,
@@ -48,17 +53,10 @@ const seeded = DEMO_CONVERSATIONS.map((title, index) =>
 const awaiting = seeded.at(-1)
 if (awaiting !== undefined) {
   awaiting.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
-  markMockAwaitingApproval(awaiting.id)
-}
-
-for (const [index, { scenario, title }] of approvalShowcases(window.location.origin).entries()) {
-  const conversation = addMockConversation(
-    title,
-    new Date(Date.now() - 2 * 86_400_000 - index * 60_000).toISOString(),
-  )
-  conversation.agentId = 'replica'
-  conversation.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
-  markMockAwaitingApproval(conversation.id, { ...scenario, title })
+  markMockAwaitingApproval(awaiting.id, {
+    ...COVER_APPROVAL,
+    calls: [...COVER_APPROVAL.calls, ...mcpApprovalCalls(window.location.origin)],
+  })
 }
 
 const unseen = seeded[3]
@@ -94,7 +92,10 @@ shareMockSession(window.localStorage, window.opener !== null)
 const mcpShowcaseConversation = addMockConversation(mcpExpiredShowcase.title)
 seedMockWorkspace(mcpShowcaseConversation.id, { httpFrames: true })
 markMockShowcase(mcpShowcaseConversation.id, mcpExpiredShowcase)
-addMockConversation('爆款脚本复刻').agentId = 'replica'
+const publishing = addMockConversation('爆款脚本复刻')
+publishing.agentId = 'replica'
+publishing.activity = { busy: true, lastTurnReason: null, pendingInteraction: 'approval' }
+markMockAwaitingApproval(publishing.id, publishApproval)
 
 const film = addMockConversation('穿搭种草 · 12 秒')
 seedMockFilm(film.id, { sharedBody: true })

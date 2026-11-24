@@ -185,7 +185,7 @@ const APPROVAL_DOCUMENT = [
   '竖版 9:16，导出 1080 × 1920，另存一张 1:1 给商品页。',
 ].join('\n')
 
-const COVER_APPROVAL: MockApprovalScenario = {
+export const COVER_APPROVAL: MockApprovalScenario = {
   calls: [
     {
       call: {
