@@ -12,6 +12,7 @@ import {
   type EditorSection,
 } from '../agent-draft'
 import type { Agent, AgentPlugin, Skill } from '../agents.api'
+import type { NativeTool } from '../native-tools'
 import { pluginIcon } from '../plugin-icons'
 import { skillIcon } from '../skill-icons'
 import { McpCards } from './mcp-cards'
@@ -79,6 +80,7 @@ type AgentEditorPaneProps = {
   agents: readonly Agent[]
   plugins: readonly AgentPlugin[]
   skills: readonly Skill[]
+  nativeTools: readonly NativeTool[]
   problems: SectionProblems
   panel: Panel | null
   onOpenPanel: (panel: Panel) => void
@@ -87,6 +89,7 @@ type AgentEditorPaneProps = {
 export function AgentEditorPane({
   agents,
   current,
+  nativeTools,
   onOpenPanel,
   panel,
   plugins,
@@ -99,6 +102,10 @@ export function AgentEditorPane({
   const { config } = value
   const model = config.model ?? null
   const thinking = model?.settings?.thinking ?? null
+  const enabledTools = model?.settings?.native_tools ?? []
+  const toolLabels = nativeTools
+    .filter((tool) => enabledTools.includes(tool.name))
+    .map((tool) => tool.label)
   const enabled = enabledPluginNames(config)
   const subagents = config.subagents ?? []
   const addSubagentBlocked = current.isSubagent
@@ -128,11 +135,12 @@ export function AgentEditorPane({
         <Section
           actions={
             readOnly ? (
-              <ModelPill model={model?.name ?? null} thinking={thinking} />
+              <ModelPill model={model?.name ?? null} nativeTools={toolLabels} thinking={thinking} />
             ) : (
               <ModelPill
                 active={panel?.type === 'model'}
                 model={model?.name ?? null}
+                nativeTools={toolLabels}
                 onClick={() => onOpenPanel({ type: 'model' })}
                 thinking={thinking}
               />
@@ -343,11 +351,14 @@ export function AgentEditorPane({
 function ModelPill({
   active = false,
   model,
+  nativeTools,
   onClick,
   thinking,
 }: {
   model: string | null
   thinking: Parameters<typeof thinkingLabel>[0] | null
+  /** 开着的原生工具的显示名。 */
+  nativeTools: readonly string[]
   active?: boolean
   onClick?: () => void
 }) {
@@ -358,7 +369,9 @@ function ModelPill({
   const label =
     model === null
       ? '选择模型'
-      : `模型设置：${model}${thinking === null ? '' : `，思考：${thinkingLabel(thinking)}`}`
+      : `模型设置：${model}${thinking === null ? '' : `，思考：${thinkingLabel(thinking)}`}${
+          nativeTools.length === 0 ? '' : `，原生工具：${nativeTools.join('、')}`
+        }`
   const content = (
     <>
       <span
@@ -376,6 +389,11 @@ function ModelPill({
             : thinking === 'none'
               ? '不思考'
               : `思考 · ${thinkingLabel(thinking)}`}
+        </span>
+      )}
+      {model === null || nativeTools.length === 0 ? null : (
+        <span className="shrink-0 border-l border-hairline pl-2 text-caption whitespace-nowrap text-on-surface-muted">
+          原生工具 · {nativeTools.length}
         </span>
       )}
       {onClick === undefined ? null : (

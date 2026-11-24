@@ -388,6 +388,11 @@ describe('AgentConfigPage 原生工具', () => {
 
     await user.click(toggle('联网搜索'))
     await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(
+      within(section('指令')).getByRole('button', {
+        name: /^模型设置：qwen3.8-flash.*，原生工具：联网搜索$/,
+      }),
+    ).toHaveTextContent('原生工具 · 1')
     await user.click(saveButton())
     await waitFor(() => expect(puts).toHaveLength(1))
     const model = (puts[0] as { config: { model: { settings: Body } } }).config.model

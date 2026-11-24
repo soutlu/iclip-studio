@@ -547,7 +547,6 @@
         "additionalProperties": false,
         "properties": {
           "native_tools": {
-            "default": [],
             "items": {
               "enum": [
                 "web_search",

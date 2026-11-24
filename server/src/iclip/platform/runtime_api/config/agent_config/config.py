@@ -25,7 +25,9 @@ class _Strict(BaseModel):
 class AgentModelSettings(_Strict):
     thinking: ThinkingEffort | None = None
     # 没开原生工具时不写出这一项：应用手工同步的那份配置不收不认识的字段，没更新的应用照常能读。
-    native_tools: tuple[NativeToolName, ...] = Field(default=(), exclude_if=lambda names: not names)
+    native_tools: tuple[NativeToolName, ...] = Field(
+        default_factory=tuple[NativeToolName, ...], exclude_if=lambda names: not names
+    )
 
     @field_validator("native_tools")
     @classmethod

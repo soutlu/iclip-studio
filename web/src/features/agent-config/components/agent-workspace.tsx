@@ -245,6 +245,7 @@ function LoadedWorkspace({
           <AgentEditorPane
             agents={agents}
             current={current}
+            nativeTools={modelOptions.data?.nativeTools ?? []}
             onOpenPanel={onPanelChange}
             panel={panel}
             plugins={plugins.data ?? []}
