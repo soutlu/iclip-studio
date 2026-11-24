@@ -115,8 +115,9 @@ export function translateBlocked(
 ): string | undefined {
   if (translating) return '翻译中，可继续编辑'
   if (plan.entries.length > 0) return undefined
-  if (plan.total === 0) return '暂无可翻译的字幕或文字；请先加字幕，或把贴片、场景的文字改为随语言'
+  if (plan.total === 0)
+    return '暂无可翻译的字幕或文本；请先添加字幕，或将贴片、场景的文本设为随语言切换'
   if (plan.tooLong > 0)
-    return `还没翻译的 ${plan.tooLong} 条超过 ${limits.text} 字，无法自动翻译；请手动填写`
-  return phraseWith('', code, '的字幕和文字都已翻译；要重新翻译哪一句，请先清空那一句')
+    return `待翻译的 ${plan.tooLong} 条文本超过 ${limits.text} 字，无法自动翻译；请手动填写`
+  return phraseWith('', code, '的字幕与文本均已翻译；如需重新翻译，请先清空对应条目')
 }

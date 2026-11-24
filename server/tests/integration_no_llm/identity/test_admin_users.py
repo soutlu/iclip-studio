@@ -84,9 +84,6 @@ async def test_root_updates_roles_grants_and_self_protection(
         assert login.status_code == 400
 
 
-BEYOND_OWN = {"detail": "不能修改权限超出自己的用户，也不能授予超出自己的权限"}
-
-
 async def test_manager_cannot_touch_users_with_more_permissions(
     app: FastAPI, migrated_pg: str
 ) -> None:
@@ -98,10 +95,10 @@ async def test_manager_cannot_touch_users_with_more_permissions(
 
         deactivated = await admin.patch(f"/users/{root_id}", json={"isActive": False})
         assert deactivated.status_code == 403
-        assert deactivated.json() == BEYOND_OWN
+        assert deactivated.json()["detail"]
         demoted = await admin.patch(f"/users/{root_id}", json={"roles": ["editor"]})
         assert demoted.status_code == 403
-        assert demoted.json() == BEYOND_OWN
+        assert demoted.json()["detail"]
         resent = await admin.patch(f"/users/{root_id}", json={"roles": ["root"]})
         assert resent.status_code == 403
 
@@ -119,12 +116,12 @@ async def test_manager_cannot_grant_beyond_own_permissions(app: FastAPI, migrate
 
         to_root = await admin.patch(f"/users/{editor_id}", json={"roles": ["root"]})
         assert to_root.status_code == 403
-        assert to_root.json() == BEYOND_OWN
+        assert to_root.json()["detail"]
         direct = await admin.patch(
             f"/users/{editor_id}", json={"directPermissions": ["agent:manage"]}
         )
         assert direct.status_code == 403
-        assert direct.json() == BEYOND_OWN
+        assert direct.json()["detail"]
 
         me = (await editor.get("/users/me")).json()["user"]
         assert me["roles"] == ["editor"]

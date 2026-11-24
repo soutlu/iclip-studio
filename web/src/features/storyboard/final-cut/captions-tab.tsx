@@ -26,7 +26,7 @@ import {
 } from './locales'
 import { usePausedCommit } from './use-paused-commit'
 
-const ADD_LABEL = '在播放头处加一句'
+const ADD_LABEL = '在播放头处添加字幕'
 const RECOGNIZE_LABEL = '识别字幕'
 const TRANSLATE_LABEL = '翻译'
 const NARRATION_LABEL = '旁白配音'
@@ -123,7 +123,7 @@ type CaptionsTabProps = {
   /** 无法触发字幕识别时的禁用原因；非空时置灰「识别字幕」并在点击时提示。 */
   recognizeBlocked: string | undefined
   onRecognize: () => void
-  /** 和台词不一样的字幕：字幕 ID → 台词对照，在该句文字框下显示一行（见 `useCaptionScripts`）。 */
+  /** 与原始台词存在差异的字幕映射（字幕 ID → 台词对照），在该句输入框下方展示（见 `useCaptionScripts`）。 */
   scripts: ReadonlyMap<string, ScriptNote>
   /** 字幕文件结构异常提示，置顶展示。 */
   problem: string | undefined
@@ -639,9 +639,8 @@ function CaptionsView({
   )
 }
 
-const NO_VOICES_TEXT = '资料库里暂无音色，请先在资料库的「音频库」里加入音色'
-const NO_NARRATION_VOICE_TEXT =
-  '没有可用的音色，无法插入旁白配音；请先在资料库的「音频库」里加入音色'
+const NO_VOICES_TEXT = '资料库中暂无音色，请先在资料库的「音频库」中添加音色'
+const NO_NARRATION_VOICE_TEXT = '暂无可用音色，无法插入旁白配音；请先在资料库的「音频库」中添加音色'
 const NO_NARRATION_TEXT = '旁白文案为空，无法插入旁白配音；请先输入文案'
 
 /**
@@ -740,7 +739,7 @@ type CaptionRowProps = {
   onSeek: () => void
   /** 译文语言下的人声配置（右上角附单句配音控件，见 `LineVoiceChip`）；原文语言为 `undefined`。 */
   voice: VoiceControl | undefined
-  /** 这句和台词不一样时的台词对照；没有时为 `undefined`。 */
+  /** 当前字幕与原始台词存在差异时的台词对照；无差异或无台词时为 `undefined`。 */
   script: ScriptNote | undefined
 }
 
@@ -805,7 +804,7 @@ function CaptionRow({
   )
 }
 
-/** 对照的各段加上列表 key：种类和它在整行里的起点。 */
+/** 为差异对照片段生成稳定列表 key（片段类型与字符起始偏移）。 */
 const keyedParts = (parts: ScriptNote['parts']) => {
   let at = 0
   return parts.map((part) => {
@@ -816,8 +815,8 @@ const keyedParts = (parts: ScriptNote['parts']) => {
 }
 
 /**
- * 字幕文字框下的台词对照行：台词写一遍，字幕有、台词没有的字划掉，台词有、字幕没有的字加下划线；行尾「采用」
- * 把这句字幕换成台词。
+ * 字幕输入框下方的台词对照行：仅字幕多出的文字加删除线，仅台词存在的文字加下划线；
+ * 点击行尾「采用」将当前句字幕替换为对应台词。
  */
 function ScriptLine({
   note,
@@ -855,7 +854,7 @@ function ScriptLine({
           </button>
         </TooltipTrigger>
         <TooltipContent className="wf-tip" side="top">
-          用台词替换这句字幕
+          使用台词替换本句字幕
         </TooltipContent>
       </TooltipRoot>
     </p>

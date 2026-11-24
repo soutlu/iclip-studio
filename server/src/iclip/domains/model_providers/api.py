@@ -68,7 +68,7 @@ def create_model_providers_router(
     async def model_provider_declarations(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """可以接入的供应商声明：显示名、密钥表单字段、能不能自己加模型、内置的模型。"""
+        """列出可接入的模型供应商声明（显示名、接口协议、密钥字段及各接口支持的原生工具）与原生工具名录。"""
 
         return await relay(runtime, "GET", "model-providers/declarations", actor=principal.user_id)
 
@@ -76,7 +76,7 @@ def create_model_providers_router(
     async def model_providers(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """接入的全部供应商，带打码的密钥、默认密钥与合并后的模型列表。"""
+        """列出已接入的全部模型供应商，包含脱敏密钥、默认密钥与模型列表。"""
 
         return await relay(runtime, "GET", "model-providers", actor=principal.user_id)
 
@@ -85,7 +85,7 @@ def create_model_providers_router(
         body: ModelProviderCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """按一份声明接入一个供应商，启用、还没有密钥。"""
+        """按供应商声明接入新供应商（默认启用，初始不含密钥与模型）。"""
 
         return await relay(runtime, "POST", "model-providers", actor=principal.user_id, body=body)
 
@@ -95,7 +95,7 @@ def create_model_providers_router(
         body: ModelProviderUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """改显示名、启停或默认密钥。"""
+        """修改供应商的显示名、启停状态或默认密钥。"""
 
         return await relay(
             runtime,
@@ -110,7 +110,7 @@ def create_model_providers_router(
         provider_id: uuid.UUID,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """删一个供应商连同它的密钥与模型；有 agent 的草稿或当前版本写着它、或它有默认模型是 409。"""
+        """删除供应商及其全部密钥与模型；仍被 Agent 草稿或当前版本引用或包含默认模型时返回 409。"""
 
         return await relay(
             runtime,
@@ -125,8 +125,8 @@ def create_model_providers_router(
         body: CredentialCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """新建一把密钥，不试连；供应商的第一把成为默认密钥。``modelGroup`` 给了就归进这个配置组，
-        组不在部署配置里 422。"""
+        """新增密钥（不强制联网测试）；供应商的首把密钥自动设为默认密钥。传入 ``modelGroup`` 时归属至对应配置组，
+        不在部署配置中返回 422。"""
 
         check_group(body.model_group)
         return await relay(
@@ -143,7 +143,7 @@ def create_model_providers_router(
         body: CredentialTestIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """试连，不保存；结果在答复里，没通过也是 200。"""
+        """测试密钥连通性（不落库）；无论通过与否均返回 200，以响应体 ``ok`` 字段为准。"""
 
         return await relay(
             runtime,
@@ -160,8 +160,8 @@ def create_model_providers_router(
         body: CredentialUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """改名、改字段或改配置组，不试连。``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成这个组；
-        组不在部署配置里 422。"""
+        """修改密钥名称、字段或配置组（不联网测试）。``modelGroup`` 未传入保持不变，传入 ``null`` 清空归组，
+        传入组名则更新归组；组不在部署配置中返回 422。"""
 
         check_group(body.model_group)
         return await relay(
@@ -178,7 +178,7 @@ def create_model_providers_router(
         credential_id: uuid.UUID,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """删一把密钥；默认密钥不能删。"""
+        """删除指定密钥；默认密钥须先切换默认后方可删除。"""
 
         return await relay(
             runtime,
@@ -193,7 +193,7 @@ def create_model_providers_router(
         body: CustomModelCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """自己加一个模型；声明允许自己加模型时才能加。"""
+        """为供应商添加模型，添加后默认启用。"""
 
         return await relay(
             runtime,
@@ -209,7 +209,7 @@ def create_model_providers_router(
         body: ModelTestIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """用一把密钥（不给就是默认密钥）测试一个 llm 模型，不保存；结果在答复里，没通过也是 200。"""
+        """使用指定密钥（缺省时用默认密钥）测试单个 ``llm`` 模型连通性（不落库）；失败亦返回 200。"""
 
         return await relay(
             runtime,
@@ -229,7 +229,7 @@ def create_model_providers_router(
         body: ModelUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """启停一个模型，或改自己加的模型的属性。模型名放在路径最后，可以带斜杠。"""
+        """启停模型或修改其属性。模型名置于路径末尾，支持包含斜杠。"""
 
         return await relay(
             runtime,
@@ -246,7 +246,7 @@ def create_model_providers_router(
         model_name: str,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """删一个自己加的模型；声明里的模型只能停用。"""
+        """删除模型；正被 Agent 引用或已设为默认模型时返回 409。"""
 
         return await relay(
             runtime,
@@ -265,7 +265,7 @@ def create_default_models_router(runtime: RuntimeClient) -> APIRouter:
     async def default_models(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """各类型的默认模型。"""
+        """查询各模型类型的全局默认模型。"""
 
         return await relay(runtime, "GET", "default-models", actor=principal.user_id)
 
@@ -275,7 +275,7 @@ def create_default_models_router(runtime: RuntimeClient) -> APIRouter:
         body: DefaultModelIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """把这个类型的默认模型设成某供应商一个已启用的模型。"""
+        """将指定模型类型的全局默认模型设为某供应商下已启用的模型。"""
 
         return await relay(
             runtime,

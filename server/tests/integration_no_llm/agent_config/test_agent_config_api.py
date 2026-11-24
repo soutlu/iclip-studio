@@ -153,6 +153,29 @@ async def test_root_manages_an_agent_end_to_end(
     assert archived.status_code == 200 and archived.json()["status"] == "archived"
 
 
+async def test_a_drafts_native_tools_are_saved_and_read_back(
+    client: httpx.AsyncClient, migrated_pg: str
+) -> None:
+    await login_as_root(client, migrated_pg)
+    assert (await client.post("/agents", json={"id": "director", "name": "导演"})).is_success
+    model = {
+        "provider": "bailian-main",
+        "name": "qwen3.8-flash",
+        "credential_id": None,
+        "settings": {"thinking": "low", "native_tools": ["web_search", "web_extractor"]},
+    }
+
+    saved = await client.put(
+        "/agents/director/draft",
+        json={"config": {"schema_version": 1, "model": model}, "skillIds": [], "lockVersion": 0},
+    )
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["draft"]["config"]["model"] == model
+    read = await client.get("/agents/director")
+    assert read.json()["draft"]["config"]["model"] == model
+
+
 async def save_subagents(client: httpx.AsyncClient, agent_id: str, subagents: list[str]) -> None:
     detail = (await client.get(f"/agents/{agent_id}")).json()
     saved = await client.put(

@@ -10,10 +10,13 @@ from pydantic.alias_generators import to_camel
 from iclip.platform.runtime_api.agent_usage import AgentUsageOut
 from iclip.platform.runtime_api.config.model_providers.models import (
     CredentialFieldType,
-    ModelSource,
     ModelType,
 )
-from iclip.platform.runtime_api.model_vocab import MODEL_GROUP_PATTERN, ModelApi, ThinkingEffort
+from iclip.platform.runtime_api.model_vocab import (
+    MODEL_GROUP_PATTERN,
+    ModelApi,
+    ThinkingEffort,
+)
 
 ModelGroupField = Annotated[str, Field(pattern=MODEL_GROUP_PATTERN)]
 
@@ -24,8 +27,16 @@ class CamelModel(BaseModel):
     )
 
 
+class NativeToolOut(CamelModel):
+    """原生工具定义：接口类型名、显示名及其前置依赖列表。"""
+
+    name: str
+    label: str
+    requires: list[str]
+
+
 class CredentialFieldOut(CamelModel):
-    """密钥表单的一个字段。``secret`` 的值只会以打码形式返回。"""
+    """密钥表单字段定义。``secret`` 类型字段仅以打码形式返回。"""
 
     name: str
     label: str
@@ -40,33 +51,35 @@ class DeclaredModelOut(CamelModel):
     api: ModelApi | None
     context_size: int | None
     thinking: list[ThinkingEffort]
+    native_tools: list[str]
 
 
 class DeclarationOut(CamelModel):
-    """一家可以接入的供应商。"""
+    """可接入的模型供应商声明。``nativeToolsByApi`` 按接口协议列出允许配置的原生工具名。"""
 
     name: str
     label: str
     apis: list[ModelApi]
     credential_fields: list[CredentialFieldOut]
-    custom_models: bool
-    models: list[DeclaredModelOut]
+    native_tools_by_api: dict[ModelApi, list[str]]
 
 
 class DeclarationsOut(CamelModel):
+    """可接入供应商声明及全部原生工具名录（``nativeTools``）。"""
+
     declarations: list[DeclarationOut]
+    native_tools: list[NativeToolOut]
 
 
 class ProviderModelOut(DeclaredModelOut):
-    """供应商的一个模型：声明里的叠加停用设置，或自己加的。"""
+    """供应商下的单个模型配置。"""
 
-    source: ModelSource
     enabled: bool
     used_by: list[AgentUsageOut]
 
 
 class CredentialOut(CamelModel):
-    """``modelGroup`` 是这把密钥归的配置组，为空即不归任何组。"""
+    """供应商密钥。``modelGroup`` 为归属配置组，为空表示不归属任何组。"""
 
     id: uuid.UUID
     name: str
@@ -101,7 +114,7 @@ class ModelProviderCreateIn(CamelModel):
 
 
 class ModelProviderUpdateIn(CamelModel):
-    """不给或给 ``null`` 的项不动。"""
+    """未传入或传入 ``null`` 的字段保持不变。"""
 
     label: str | None = None
     enabled: bool | None = None
@@ -109,7 +122,7 @@ class ModelProviderUpdateIn(CamelModel):
 
 
 class CredentialCreateIn(CamelModel):
-    """``modelGroup`` 给了就把这把密钥归进这个配置组；同一供应商下一个组最多一把。"""
+    """传入 ``modelGroup`` 时将该密钥绑定至对应配置组；同一供应商下每个配置组最多绑定一把密钥。"""
 
     name: str
     fields: dict[str, str]
@@ -117,8 +130,8 @@ class CredentialCreateIn(CamelModel):
 
 
 class CredentialUpdateIn(CamelModel):
-    """``name`` 与 ``fields`` 不给或给 ``null`` 都不动；``modelGroup`` 不给不动，给 ``null`` 清掉，给值改成
-    这个组。"""
+    """``name`` 与 ``fields`` 未传入或传入 ``null`` 时保持不变；``modelGroup`` 未传入保持不变，传入 ``null``
+    清空归组，传入组名则更新归组。"""
 
     name: str | None = None
     fields: dict[str, str] | None = None
@@ -126,16 +139,15 @@ class CredentialUpdateIn(CamelModel):
 
 
 class CredentialTestIn(CamelModel):
-    """``credentialId`` 与 ``fields`` 至少给一个：只给 ``credentialId`` 试已保存的那一把；只给
-    ``fields`` 试一组还没保存的字段（规则同新建）；两个都给就是把 ``fields`` 叠到已保存的那一把上再试
-    （规则同修改）。"""
+    """``credentialId`` 与 ``fields`` 至少传入其一：仅传 ``credentialId`` 测试已保存密钥；仅传 ``fields``
+    按新建规则测试未保存字段；两者同传则将 ``fields`` 按更新规则覆盖至已保存密钥后测试。"""
 
     credential_id: uuid.UUID | None = None
     fields: dict[str, str] | None = None
 
 
 class ModelTestIn(CamelModel):
-    """测试供应商的一个模型：用 ``credentialId`` 那把密钥，不给就用供应商的默认密钥。"""
+    """测试供应商下的指定模型；未传 ``credentialId`` 时使用该供应商的默认密钥。"""
 
     name: str
     type: ModelType
@@ -154,16 +166,17 @@ class CustomModelCreateIn(CamelModel):
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] = []
+    native_tools: list[str] = []
 
 
 class ModelUpdateIn(CamelModel):
-    """不给的项不动。``enabled`` 声明里的模型与自己加的都能改；其余三项只有自己加的模型能改，
-    ``contextSize`` 给 ``null`` 即清掉。"""
+    """未传入的字段保持不变；``contextSize`` 传入 ``null`` 表示清空上下文窗口配置。"""
 
     enabled: bool | None = None
     api: ModelApi | None = None
     context_size: int | None = None
     thinking: list[ThinkingEffort] | None = None
+    native_tools: list[str] | None = None
 
 
 class DefaultModelOut(CamelModel):
@@ -184,15 +197,16 @@ class DefaultModelIn(CamelModel):
 
 
 class ModelOptionOut(CamelModel):
-    """agent 能选的一个对话模型。"""
+    """Agent 可选的单个对话模型。"""
 
     name: str
     context_size: int | None
     thinking: list[ThinkingEffort]
+    native_tools: list[str]
 
 
 class CredentialOptionOut(CamelModel):
-    """agent 能选的一把密钥。"""
+    """Agent 可选的单把密钥。"""
 
     id: uuid.UUID
     name: str
@@ -201,7 +215,7 @@ class CredentialOptionOut(CamelModel):
 
 
 class ProviderOptionOut(CamelModel):
-    """agent 能选的一个供应商。"""
+    """Agent 可选的单个供应商。"""
 
     id: uuid.UUID
     name: str
@@ -211,9 +225,10 @@ class ProviderOptionOut(CamelModel):
 
 
 class ModelOptionsOut(CamelModel):
-    """agent 编辑页选模型用：只读，只列启用的供应商。"""
+    """Agent 编辑页的模型可选项（只读，仅含已启用供应商），附带全部原生工具名录（``nativeTools``）。"""
 
     providers: list[ProviderOptionOut]
+    native_tools: list[NativeToolOut]
 
 
 __all__ = [
@@ -239,6 +254,7 @@ __all__ = [
     "ModelProvidersOut",
     "ModelTestIn",
     "ModelUpdateIn",
+    "NativeToolOut",
     "ProbeOut",
     "ProviderModelOut",
     "ProviderOptionOut",

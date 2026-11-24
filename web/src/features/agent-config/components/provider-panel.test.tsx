@@ -127,7 +127,7 @@ describe('添加供应商', () => {
     ).toEqual(['阿里云百炼', 'Google Gemini', 'OpenAI 兼容', 'OpenRouter', '火山方舟'])
   })
 
-  it('建好供应商后选中它，直接展开「添加密钥」并聚焦第一个字段；测试连接通过后存上第一把密钥', async () => {
+  it('建好供应商后选中它，没有模型，直接展开「添加密钥」并聚焦第一个字段；保存后存上第一把密钥', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -144,13 +144,11 @@ describe('添加供应商', () => {
     expect(within(panel()).getByRole('textbox', { name: '供应商显示名' })).toHaveValue(
       '海外模型服务',
     )
-    expect(within(card('海外模型服务')).getByText('2 个模型 · 0 个密钥')).toBeVisible()
+    expect(within(card('海外模型服务')).getByText('0 个模型 · 0 个密钥')).toBeVisible()
     expect(keyForm.getByLabelText('名称')).toHaveFocus()
 
     await user.type(keyForm.getByLabelText('名称'), '海外账号')
     await user.type(keyForm.getByLabelText('API Key'), 'sk-overseas-1234')
-    await user.click(keyForm.getByRole('button', { name: '测试连接' }))
-    expect(await keyForm.findByText('236 ms')).toBeVisible()
     await user.click(keyForm.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
@@ -178,13 +176,13 @@ describe('添加供应商', () => {
     await user.type(keyForm.getByLabelText('名称'), '海外账号')
     await user.type(keyForm.getByLabelText('API Key'), 'sk-invalid-9999')
     await user.click(keyForm.getByRole('button', { name: '测试连接' }))
-    expect(await keyForm.findByText('接口返回 401，API Key 无效')).toBeVisible()
+    expect(await keyForm.findByText('先添加一个模型再试连')).toBeVisible()
     expect(keyForm.getByRole('button', { name: '保存' })).toBeEnabled()
 
     await user.click(keyForm.getByRole('button', { name: '取消' }))
     expect(within(panel()).queryByRole('form')).toBeNull()
     expect(card('海外模型服务')).toHaveAttribute('aria-current', 'true')
-    expect(within(card('海外模型服务')).getByText('2 个模型 · 0 个密钥')).toBeVisible()
+    expect(within(card('海外模型服务')).getByText('0 个模型 · 0 个密钥')).toBeVisible()
     expect(within(panel()).getByText('暂无密钥，请点击「添加密钥」接入')).toBeVisible()
     expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
       'POST /api/model-providers',
@@ -194,7 +192,7 @@ describe('添加供应商', () => {
 })
 
 describe('密钥', () => {
-  it('测试连接没通过时写出原因，不拦保存；保存时不测试连接', async () => {
+  it('测试连接没通过时写出原因，通过时写出耗时，都不拦保存；保存时不测试连接', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -207,10 +205,15 @@ describe('密钥', () => {
     expect(await form.findByText('接口返回 401，API Key 无效')).toBeVisible()
     await user.type(form.getByLabelText('API Key'), '1')
     expect(form.queryByText('接口返回 401，API Key 无效')).toBeNull()
+    await user.clear(form.getByLabelText('API Key'))
+    await user.type(form.getByLabelText('API Key'), 'sk-backup-0001')
+    await user.click(form.getByRole('button', { name: '测试连接' }))
+    expect(await form.findByText('236 ms')).toBeVisible()
     await user.click(form.getByRole('button', { name: '保存' }))
 
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
     expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      expect.stringMatching(/^POST .*\/credentials\/test$/),
       expect.stringMatching(/^POST .*\/credentials\/test$/),
       expect.stringMatching(/^POST .*\/credentials$/),
     ])
@@ -262,7 +265,7 @@ describe('密钥', () => {
     await user.click(main)
     expect(sent).toEqual([])
 
-    await user.click(within(panel()).getByRole('button', { name: '把 创作团队 设为默认密钥' }))
+    await user.click(within(panel()).getByRole('button', { name: '将 创作团队 设为默认密钥' }))
     await waitFor(() =>
       expect(rowOf(within(panel()).getByText('创作团队')).getByText('默认')).toBeVisible(),
     )
@@ -397,8 +400,8 @@ describe('模型', () => {
     await user.type(keyForm.getByLabelText('API Key'), 'AIza-mock-0001')
     await user.click(keyForm.getByRole('button', { name: '测试连接' }))
     const status = keyForm.getByRole('status')
-    expect(await within(status).findByText('先添加一个模型再试连')).toBeVisible()
-    expect(within(status).getByRole('img', { name: '测试连接没通过' })).toBeVisible()
+    expect(await within(status).findByRole('img', { name: '测试连接未通过' })).toBeVisible()
+    expect(status).not.toBeEmptyDOMElement()
     expect(keyForm.queryByRole('alert')).toBeNull()
     await user.click(keyForm.getByRole('button', { name: '保存' }))
     await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
@@ -419,6 +422,7 @@ describe('模型', () => {
           api: 'gemini',
           contextSize: null,
           name: 'gemini-3.8-flash',
+          nativeTools: [],
           thinking: [],
           type: 'llm',
         },
@@ -469,15 +473,17 @@ describe('模型', () => {
 
     await createProviderFor(user, null, '新服务', 'fresh')
     await user.click(within(panel()).getByRole('button', { name: '取消' }))
-    await user.click(within(panel()).getByRole('button', { name: '测试模型 ZHIPU/GLM-5.3-Flash' }))
-    const fresh = rowOf(
-      within(panel()).getByRole('switch', { name: '启用模型 ZHIPU/GLM-5.3-Flash' }),
-    )
-    expect(await fresh.findByText('没法测试：先添加密钥')).toBeVisible()
-    expect(fresh.getByRole('img', { name: '测试没通过' })).toBeVisible()
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    await user.type(formNamed('添加模型').getByLabelText('模型名'), 'fresh-chat')
+    await user.click(formNamed('添加模型').getByRole('button', { name: '保存' }))
+    const freshSwitch = await within(panel()).findByRole('switch', { name: '启用模型 fresh-chat' })
+    await user.click(within(panel()).getByRole('button', { name: '测试模型 fresh-chat' }))
+    const fresh = rowOf(freshSwitch)
+    expect(await fresh.findByRole('img', { name: '测试未通过' })).toBeVisible()
+    expect(fresh.getByRole('status')).not.toBeEmptyDOMElement()
   })
 
-  it('添加自己的模型，agent 的「模型设置」随之能选到它', async () => {
+  it('添加模型，agent 的「模型设置」随之能选到它', async () => {
     const user = await renderPage()
     await openProviders(user)
     const sent = recordWrites()
@@ -497,6 +503,7 @@ describe('模型', () => {
           api: 'responses',
           contextSize: 131_072,
           name: 'qwen3.8-turbo',
+          nativeTools: [],
           thinking: ['medium'],
           type: 'llm',
         },
@@ -509,6 +516,108 @@ describe('模型', () => {
     await user.click(screen.getByRole('button', { name: /^模型设置：/ }))
     const models = screen.getByRole('region', { name: '模型设置' })
     expect(await within(models).findByRole('radio', { name: /qwen3.8-turbo/ })).toBeVisible()
+  })
+
+  it('添加模型的「原生工具」按所选接口列出；依赖没开的开不了，关掉被依赖的连带关掉；换接口清掉新接口没有的', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '添加模型' }))
+    const form = formNamed('添加模型')
+    const tools = () => within(form.getByRole('group', { name: '原生工具' }))
+    const toggle = (name: string) => tools().getByRole('switch', { name })
+
+    expect(
+      tools()
+        .getAllByRole('listitem')
+        .map((node) => node.textContent),
+    ).toEqual(['联网搜索', '读取网页', '以图搜图'])
+    expect(toggle('读取网页')).toBeDisabled()
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读取网页'))
+    expect(toggle('读取网页')).toBeChecked()
+    await user.click(toggle('联网搜索'))
+    expect(toggle('读取网页')).not.toBeChecked()
+    expect(toggle('读取网页')).toBeDisabled()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读取网页'))
+    const apis = within(form.getByRole('radiogroup', { name: '模型接口' }))
+    await user.click(apis.getByRole('radio', { name: 'chat' }))
+    expect(form.queryByRole('group', { name: '原生工具' })).toBeNull()
+    await user.click(apis.getByRole('radio', { name: 'responses' }))
+    expect(toggle('联网搜索')).not.toBeChecked()
+    expect(toggle('读取网页')).not.toBeChecked()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读取网页'))
+    await user.type(form.getByLabelText('模型名'), 'qwen3.8-search')
+    await user.click(form.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]?.body).toMatchObject({
+      api: 'responses',
+      name: 'qwen3.8-search',
+      nativeTools: ['web_search', 'web_extractor'],
+    })
+  })
+
+  it('每个模型都能编辑、删除，每家供应商都能添加模型；在用的模型删除被拦下', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+
+    expect(within(panel()).getByRole('button', { name: '删除模型 qwen3.8-flash' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
+    await user.click(within(panel()).getByRole('button', { name: '编辑模型 ZHIPU/GLM-5.3-Flash' }))
+    const form = formNamed('编辑模型')
+    await user.clear(form.getByLabelText('上下文长度'))
+    await user.type(form.getByLabelText('上下文长度'), '128K')
+    await user.click(form.getByRole('button', { name: '保存' }))
+    await waitFor(() => expect(within(panel()).queryByRole('form')).toBeNull())
+    const glm = rowOf(within(panel()).getByRole('switch', { name: '启用模型 ZHIPU/GLM-5.3-Flash' }))
+    expect(glm.getByText('128K')).toBeVisible()
+
+    await user.click(within(panel()).getByRole('button', { name: '删除模型 ZHIPU/GLM-5.3-Flash' }))
+    await waitFor(() =>
+      expect(
+        within(panel()).queryByRole('switch', { name: '启用模型 ZHIPU/GLM-5.3-Flash' }),
+      ).toBeNull(),
+    )
+    expect(sent.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      expect.stringMatching(
+        /^PATCH \/api\/model-providers\/[\w-]+\/models\/llm\/ZHIPU\/GLM-5.3-Flash$/,
+      ),
+      expect.stringMatching(
+        /^DELETE \/api\/model-providers\/[\w-]+\/models\/llm\/ZHIPU\/GLM-5.3-Flash$/,
+      ),
+    ])
+    expect(sent[0]?.body).toMatchObject({ contextSize: 131_072 })
+
+    await user.click(card('团队模型服务'))
+    expect(await within(panel()).findByRole('button', { name: '添加模型' })).toBeVisible()
+  })
+
+  it('编辑模型时开一个原生工具，修改请求带上它', async () => {
+    const user = await renderPage()
+    await openProviders(user)
+    const sent = recordWrites()
+    await user.click(within(panel()).getByRole('button', { name: '编辑模型 qwen3.8-plus' }))
+    const form = formNamed('编辑模型')
+    await user.click(
+      within(form.getByRole('group', { name: '原生工具' })).getByRole('switch', {
+        name: '以图搜图',
+      }),
+    )
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toMatchObject({
+      body: { nativeTools: ['image_search'] },
+      method: 'PATCH',
+      path: expect.stringMatching(/\/models\/llm\/qwen3\.8-plus$/),
+    })
   })
 
   it('停用名字带斜杠的模型；在用的模型开关被拦下，后端拦下的 409 写在那一行', async () => {

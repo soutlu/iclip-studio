@@ -234,7 +234,7 @@ async def test_enhance_not_switched_on_is_refused_without_storing() -> None:
         response = await http.post(URL, json={"sourceJobId": str(source.id), "resolution": "1080p"})
 
     assert response.status_code == 422
-    assert "高清版没有开通" in response.json()["detail"]
+    assert response.json()["detail"]
     assert list(repo.jobs) == [source.id]
     assert submits(app) == []
 

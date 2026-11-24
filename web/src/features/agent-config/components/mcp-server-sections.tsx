@@ -171,7 +171,7 @@ export function IdentityForm({
             placeholder={creating ? 'team-docs' : undefined}
             readOnly={!creating}
             spellCheck={false}
-            title={creating ? undefined : '标识创建后不能修改'}
+            title={creating ? undefined : '标识创建后无法修改'}
             value={values.id}
             {...errors.props('id')}
           />

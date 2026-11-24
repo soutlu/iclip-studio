@@ -76,7 +76,7 @@ export function AccountCard({
       {invalid ? (
         <p className="mt-2 text-body-sm text-error" role="alert">
           {(connection.scopes ?? []).some((scope) => closedScopes.includes(scope))
-            ? '这个连接带有已关闭的权限，请重新连接'
+            ? '该连接包含已关闭的权限，请重新连接'
             : '连接已失效，请重新连接'}
         </p>
       ) : null}

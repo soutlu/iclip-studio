@@ -114,7 +114,7 @@ def _parse[T](response: httpx.Response, parse: _Parser[T]) -> T:
     try:
         return parse(response.content, extra="ignore")
     except ValidationError as exc:
-        raise RuntimeUnavailable("运行时的答复体解析不了", status=response.status_code) from exc
+        raise RuntimeUnavailable("无法解析运行时响应内容", status=response.status_code) from exc
 
 
 class RuntimeClient:
@@ -339,7 +339,7 @@ class RuntimeClient:
                 timeout=timeout,
             )
         except httpx.TimeoutException as exc:
-            raise ModelCallTimedOut(f"等运行时答复超时：{type(exc).__name__}") from exc
+            raise ModelCallTimedOut(f"等待运行时响应超时：{type(exc).__name__}") from exc
         except httpx.HTTPError as exc:
             raise transport_failure(exc) from exc
         status = response.status_code
@@ -349,9 +349,9 @@ class RuntimeClient:
         if status == 409 and code == ModelUnavailable.code:
             raise error_for(response)
         if status == 504 and code == UPSTREAM_TIMEOUT_CODE:
-            raise ModelCallTimedOut("运行时等上游答复超时", status=status)
+            raise ModelCallTimedOut("运行时等待上游响应超时", status=status)
         if status == 502 and code == UPSTREAM_UNREACHABLE_CODE:
-            raise RuntimeUnavailable("运行时连不上上游", status=status)
+            raise RuntimeUnavailable("运行时无法连接到上游服务", status=status)
         return ModelCallResponse(
             status_code=status,
             content=response.content,

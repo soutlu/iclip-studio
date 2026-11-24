@@ -267,7 +267,7 @@ class SqlConversationRepository:
         async with self._engine.connect() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
         return _row(row)
 
     async def ancestry(self, conversation_id: uuid.UUID) -> tuple[tuple[uuid.UUID, datetime], ...]:
@@ -471,7 +471,7 @@ class SqlConversationRepository:
         except IntegrityError as exc:
             raise _reject_missing_reference(exc) from exc
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
         return _row(row)
 
     async def apply_generated_title(self, conversation_id: uuid.UUID, *, title: str) -> bool:
@@ -497,7 +497,7 @@ class SqlConversationRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
         return _row(row)
 
     async def set_completed(
@@ -512,7 +512,7 @@ class SqlConversationRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
         return _row(row)
 
     async def delete(self, conversation_id: uuid.UUID, *, owner: uuid.UUID) -> None:
@@ -525,7 +525,7 @@ class SqlConversationRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).first()
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
 
     async def touch_run(
         self, conversation_id: uuid.UUID, *, owner: uuid.UUID, agent_id: str, run_id: str
@@ -544,7 +544,7 @@ class SqlConversationRepository:
         async with self._engine.begin() as conn:
             row = (await conn.execute(statement)).mappings().one_or_none()
         if row is None:
-            raise NotFound("没有这段对话")
+            raise NotFound("对话不存在")
         return _row(row)
 
 

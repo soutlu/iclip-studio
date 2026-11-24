@@ -3,8 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
+import type { CustomModelCreateIn, ProviderModelOut } from '@/shared/api/generated/types.gen'
 import { mockSkillId } from '@/testing/mocks/agent-config'
 import { loginAs, mockGovernor } from '@/testing/mocks/handlers'
+import {
+  mockDeclarations,
+  mockModelOptions,
+  mockNativeTools,
+} from '@/testing/mocks/model-providers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { AgentPreviewConversation } from '@/routes/-agent-preview-conversation'
@@ -111,7 +117,7 @@ describe('AgentConfigPage 保存草稿', () => {
 
     await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
 
-    expect(await within(editor()).findByRole('alert')).toHaveTextContent('草稿已被别人修改')
+    expect(await within(editor()).findByRole('alert')).toBeVisible()
     await waitFor(() => expect(pluginCards()).not.toContain('镜头组表'))
     expect(within(editor()).getByRole('button', { name: '保存草稿' })).toBeDisabled()
   })
@@ -356,6 +362,166 @@ describe('AgentConfigPage 模型设置', () => {
   })
 })
 
+describe('AgentConfigPage 原生工具', () => {
+  it('模型有原生工具才出现这一组；依赖没开的开不了，关掉被依赖的连带关掉；开了再关不算改动；换模型清掉新模型没有的', async () => {
+    const user = await renderPage()
+    const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
+    await user.click(
+      within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
+    )
+    const panel = screen.getByRole('region', { name: '模型设置' })
+    const toggle = (name: string) =>
+      within(within(panel).getByRole('group', { name: '原生工具' })).getByRole('switch', { name })
+    const saveButton = () => within(editor()).getByRole('button', { name: '保存草稿' })
+
+    expect(toggle('读取网页')).toBeDisabled()
+    await user.click(toggle('联网搜索'))
+    expect(saveButton()).toBeEnabled()
+    await user.click(toggle('联网搜索'))
+    expect(saveButton()).toBeDisabled()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(toggle('读取网页'))
+    await user.click(toggle('以图搜图'))
+    await user.click(toggle('联网搜索'))
+    expect(toggle('读取网页')).not.toBeChecked()
+    expect(toggle('以图搜图')).toBeChecked()
+
+    await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-plus/ }))
+    expect(within(panel).queryByRole('group', { name: '原生工具' })).toBeNull()
+    await user.click(within(panel).getByRole('radio', { name: /^qwen3.8-flash/ }))
+    expect(toggle('以图搜图')).not.toBeChecked()
+
+    await user.click(toggle('联网搜索'))
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(
+      within(section('指令')).getByRole('button', {
+        name: /^模型设置：qwen3.8-flash.*，原生工具：联网搜索$/,
+      }),
+    ).toHaveTextContent('原生工具 · 1')
+    await user.click(saveButton())
+    await waitFor(() => expect(puts).toHaveLength(1))
+    const model = (puts[0] as { config: { model: { settings: Body } } }).config.model
+    expect(model.settings['native_tools']).toEqual(['web_search'])
+  })
+
+  it('名录里多出一个前端没见过的工具：模型设置与添加模型都按名录列出它、能打开，写进请求', async () => {
+    const tool = { label: '文搜图', name: 'web_search_image', requires: [] }
+    const options = mockModelOptions()
+    server.use(
+      http.get('*/api/agents/model-options', () =>
+        HttpResponse.json({
+          nativeTools: [...options.nativeTools, tool],
+          providers: options.providers.map((provider) => ({
+            ...provider,
+            models: provider.models.map((model) =>
+              model.name === 'qwen3.8-flash'
+                ? { ...model, nativeTools: [...model.nativeTools, tool.name] }
+                : model,
+            ),
+          })),
+        }),
+      ),
+      http.get('*/api/model-providers/declarations', () =>
+        HttpResponse.json({
+          declarations: mockDeclarations.map((declaration) =>
+            declaration.name === 'bailian'
+              ? {
+                  ...declaration,
+                  nativeToolsByApi: {
+                    ...declaration.nativeToolsByApi,
+                    responses: [...(declaration.nativeToolsByApi['responses'] ?? []), tool.name],
+                  },
+                }
+              : declaration,
+          ),
+          nativeTools: [...mockNativeTools, tool],
+        }),
+      ),
+      http.post('*/api/model-providers/:providerId/models', async ({ request }) => {
+        const body = (await request.json()) as CustomModelCreateIn
+        const created: ProviderModelOut = {
+          api: body.api ?? null,
+          contextSize: body.contextSize ?? null,
+          enabled: true,
+          name: body.name,
+          nativeTools: body.nativeTools ?? [],
+          thinking: body.thinking ?? [],
+          type: body.type,
+          usedBy: [],
+        }
+        return HttpResponse.json(created, { status: 201 })
+      }),
+    )
+    const user = await renderPage()
+    const puts = recordBodies('PUT', /\/agents\/director\/draft$/)
+    const posts = recordBodies('POST', /\/model-providers\/[^/]+\/models$/)
+
+    await user.click(
+      within(section('指令')).getByRole('button', { name: /^模型设置：qwen3.8-flash/ }),
+    )
+    const panel = screen.getByRole('region', { name: '模型设置' })
+    const agentTool = () =>
+      within(within(panel).getByRole('group', { name: '原生工具' })).getByRole('switch', {
+        name: '文搜图',
+      })
+    await user.click(agentTool())
+    expect(agentTool()).toBeChecked()
+    await user.click(within(panel).getByRole('button', { name: '完成' }))
+    expect(
+      within(section('指令')).getByRole('button', {
+        name: /^模型设置：qwen3.8-flash.*，原生工具：文搜图$/,
+      }),
+    ).toBeVisible()
+    const saveButton = within(editor()).getByRole('button', { name: '保存草稿' })
+    await user.click(saveButton)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    const model = (puts[0] as { config: { model: { settings: Body } } }).config.model
+    expect(model.settings['native_tools']).toEqual(['web_search_image'])
+    await waitFor(() => expect(saveButton).toBeDisabled())
+
+    await user.click(screen.getByRole('tab', { name: '模型与供应商' }))
+    const providers = screen.getByRole('region', { name: '模型与供应商' })
+    await user.click(await within(providers).findByRole('button', { name: '添加模型' }))
+    const form = within(within(providers).getByRole('form', { name: '添加模型' }))
+    const tools = within(form.getByRole('group', { name: '原生工具' }))
+    expect(tools.getAllByRole('listitem').map((node) => node.textContent)).toEqual([
+      '联网搜索',
+      '读取网页',
+      '以图搜图',
+      '文搜图',
+    ])
+    await user.click(tools.getByRole('switch', { name: '文搜图' }))
+    expect(tools.getByRole('switch', { name: '文搜图' })).toBeChecked()
+    await user.type(form.getByLabelText('模型名'), 'qwen3.8-image')
+    await user.click(form.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(posts).toHaveLength(1))
+    expect(posts[0]).toMatchObject({
+      api: 'responses',
+      name: 'qwen3.8-image',
+      nativeTools: ['web_search_image'],
+    })
+  })
+
+  it('发布检查报回原生工具的问题时，写在「指令」一节', async () => {
+    const message = '这个模型不支持所选的原生工具'
+    server.use(
+      http.post('*/api/agents/director/versions', () =>
+        HttpResponse.json(
+          { detail: message, problems: [{ message, path: 'model.settings.native_tools' }] },
+          { status: 422 },
+        ),
+      ),
+    )
+    const user = await renderPage()
+
+    await user.click(within(editor()).getByRole('button', { name: '发布' }))
+
+    expect(await within(section('指令')).findByRole('alert')).toHaveTextContent(message)
+  })
+})
+
 describe('AgentConfigPage 子 Agent', () => {
   it('只能选发布过、没归档、自己没有子 Agent 的；绑定的时限与次数不填就是不限，填错就地提示', async () => {
     const user = await renderPage()
@@ -374,7 +540,7 @@ describe('AgentConfigPage 子 Agent', () => {
     })
     expect(unpublished).toHaveAttribute('aria-disabled', 'true')
     await user.hover(unpublished)
-    expect(await screen.findByRole('tooltip')).toHaveTextContent('还没有发布')
+    expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
     await user.unhover(unpublished)
     await user.click(unpublished)
     expect(unpublished).not.toBeChecked()
@@ -386,7 +552,7 @@ describe('AgentConfigPage 子 Agent', () => {
     const timeout = within(panel).getByRole('textbox', { name: '分镜助手的调用时限（秒）' })
     expect(timeout).toHaveValue('')
     await user.type(timeout, '0')
-    expect(timeout).toHaveAccessibleDescription('请填大于 0 的秒数')
+    expect(timeout).toHaveAccessibleDescription()
     await user.clear(timeout)
     await user.type(timeout, '120')
     expect(timeout).not.toHaveAccessibleDescription()

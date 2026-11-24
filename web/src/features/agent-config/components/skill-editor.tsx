@@ -305,8 +305,8 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           void queryClient.invalidateQueries({ exact: true, queryKey: fileKey(path) })
           messages.push(
             edit.baseHash === null
-              ? `${label} 已有同名文件，已读取它的内容；刚才新建的内容已丢弃`
-              : `${label} 已被别人修改，已读取最新内容；刚才对它的修改已丢弃，请重新修改后保存`,
+              ? `${label} 已存在同名文件，已加载最新内容；此前新建的内容已丢弃`
+              : `${label} 已被他人修改，已加载最新内容；此前未保存的修改已丢弃，请重新修改后保存`,
           )
           continue
         }
@@ -330,7 +330,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       } catch (error) {
         ok = false
         if (error instanceof ApiError && error.status === 409) {
-          setErrors((current) => ({ ...current, name: errorMessageOf(error, '这个标识已被占用') }))
+          setErrors((current) => ({ ...current, name: errorMessageOf(error, '该标识已被占用') }))
           nameRef.current?.focus()
         } else {
           messages.push(errorMessageOf(error, '技能名称或标识保存失败，请重试保存'))
@@ -412,7 +412,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
             active === SKILL_MD ? withSkillBody(current, text) : text,
           )
         }
-        placeholder="写下这个文件的内容"
+        placeholder="输入文件内容"
         value={active === SKILL_MD ? skillBody(activeContent) : activeContent}
       />
     ) : (
@@ -566,7 +566,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault()
           }}
-          placeholder="一句话说明这个技能做什么"
+          placeholder="用一句话说明该技能的用途"
           ref={attachDescription}
           rows={1}
           value={description}

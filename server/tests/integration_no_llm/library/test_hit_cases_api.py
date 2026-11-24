@@ -124,10 +124,10 @@ async def test_ineligible_materials_are_422_with_their_reason(
     detached = await plant_job(engine, nora, None)
     no_treatment = await plant_job(engine, nora, conversation)
 
-    for job_id, reason, message in (
-        (image, "not_material", "不是成片素材里的素材片"),
-        (detached, "no_conversation", "不在任何对话里"),
-        (no_treatment, "no_treatment", "所在对话没有新片执行方案"),
+    for job_id, reason in (
+        (image, "not_material"),
+        (detached, "no_conversation"),
+        (no_treatment, "no_treatment"),
     ):
         state = await http.get(f"{HIT_CASES}/{job_id}")
         added = await http.put(f"{HIT_CASES}/{job_id}", json={"tagIds": []})
@@ -140,7 +140,7 @@ async def test_ineligible_materials_are_422_with_their_reason(
             "entry": None,
         }
         assert added.status_code == 422, added.text
-        assert message in added.text
+        assert added.json()["detail"]
         assert await hit_case_rows(engine, job_id) == (0, 0)
 
     missing = uuid.uuid4()

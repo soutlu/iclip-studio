@@ -46,7 +46,7 @@ class ClipModel:
 # Seedance 2.5 与 2.5 flash 仅在显式指定原生子任务时按视频编辑执行。
 _SEEDANCE_EDIT: Final = UpstreamMode(provider_options={"omni_reference_task_type": "edit"})
 
-# 按子串先到先得：上游 flash 的模型名里也含 seedance-2-5，须排在 2.5 前面。
+# 按子串优先匹配：上游 flash 模型名同样包含 seedance-2-5，须排在 2.5 之前。
 _MODELS = (
     ClipModel(
         VideoClipModelOut(

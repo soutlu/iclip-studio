@@ -16,8 +16,8 @@ export const CAPTION_MS = 2000
 export const NEW_CAPTION_TEXT = '新字幕'
 
 export const CAPTION_REFUSAL_TEXT = {
-  taken: '播放头处已有字幕，无法再加一句；请把播放头移到没有字幕的地方',
-  tight: '播放头离下一句字幕不到 0.1 秒，无法加一句；请把播放头往前移',
+  taken: '播放头位置已有字幕，无法继续添加；请将播放头移至无字幕区间',
+  tight: '播放头距下一条字幕不足 0.1 秒，无法添加字幕；请将播放头前移',
 } as const
 
 /**
@@ -109,8 +109,8 @@ export function captionsFocus(
 export type CaptionFollowRefusal = 'overlap' | 'early'
 
 export const CAPTION_FOLLOW_REFUSAL_TEXT: Readonly<Record<CaptionFollowRefusal, string>> = {
-  overlap: '字幕跟着挪动后会和别的字幕重叠，无法完成这次编辑；请先挪开或删掉挡住的字幕',
-  early: '字幕跟着配音片段挪动后会早于 0 秒，无法完成这次编辑；请把配音片段往后挪',
+  overlap: '字幕联动移动后将与其他字幕重叠，无法完成本次编辑；请先移开或移除冲突字幕',
+  early: '字幕随配音片段移动后将早于 0 秒，无法完成本次编辑；请将配音片段后移',
 }
 
 /** 一步编辑里字幕要怎么跟着走：挪到的新起点（编号 → 毫秒）、要删掉的字幕；做不到时是原因。 */
@@ -242,9 +242,9 @@ export type RecognitionTarget = { clipId: string; sourceJobId: string }
 export type RecognitionRefusal = 'empty' | 'captioned' | 'unusable'
 
 export const RECOGNITION_REFUSAL_TEXT: Readonly<Record<RecognitionRefusal, string>> = {
-  empty: 'final-cut 里暂无视频片段，无法识别字幕；请先加入镜头',
-  captioned: '视频片段都已有字幕，无法再识别；删掉一个片段的全部字幕后可重新识别',
-  unusable: '视频片段都关闭了原声或找不到素材记录，无法识别字幕；请先打开原声',
+  empty: 'final-cut 中暂无视频片段，无法识别字幕；请先添加镜头',
+  captioned: '所有视频片段均已有字幕，无需重复识别；移除某一视频片段的全部字幕后可重新识别',
+  unusable: '所有视频片段均已静音或无对应素材记录，无法识别字幕；请先开启原声',
 }
 
 /** 视频片段有没有声音可识别：没关闭原声，或者它的原声分离出来了。 */
@@ -273,27 +273,27 @@ export function recognitionTargets(
   return targets.length === 0 ? { refusal: 'unusable' } : { targets }
 }
 
-/** 识别出来的一句：在素材里的起止（毫秒）和字。 */
+/** 语音识别产出的单句：在源素材中的起止时刻（毫秒）与识别文本。 */
 export type Sentence = Pick<SubtitleSentence, 'startMs' | 'endMs' | 'text'>
 
 /** 待加入轨道的单句字幕：起止时间（毫秒）、文本及归属的视频片段 ID（手动添加时为 `null`）。 */
 export type NewCaption = Span & { text: string; owner: string | null }
 
-/** 视频片段用掉的那段素材（从入点起、长 时长 × 速度）里有没有素材时间 `ms`。 */
+/** 判断视频片段所播放的素材区间（`[mediaStart, mediaStart + duration * playbackRate)`）是否包含时刻 `ms`。 */
 const playsAt = (video: VideoClip, ms: number) =>
   video.mediaStart <= ms && ms < video.mediaStart + video.duration * video.playbackRate
 
-/** 视频片段用掉的那段素材和句子在素材里的起止有没有重叠。 */
+/** 判断视频片段所播放的素材区间与句子在源素材中的时间区间是否存在重叠。 */
 const playsPart = (video: VideoClip, sentence: Sentence) =>
   video.mediaStart < sentence.endMs &&
   sentence.startMs < video.mediaStart + video.duration * video.playbackRate
 
 /**
- * 视频片段 `video` 名下要加的字幕，一句一条、字是整句：一句话只由播出它开头的片段写（句子开头在片段用掉的那段
- * 素材里），这样一句话跨过两个相接的片段时只在前一个片段名下写一条整句；开头哪个有声的片段都没播出（被裁掉了）
- * 时，由时间线上第一个播出这句一部分的有声片段写。`clips` 是 final-cut 里的全部片段，用来找同一条素材的有声片段。
- * 时间是 `片段开始 + (句子时间 − 入点) ÷ 速度`：开头被裁掉的截到片段开头，结尾不截，照句子的结尾，所以跨过接缝的
- * 一句占到它说完为止。不到最短长度的、字是空的不要。
+ * 计算归属视频片段 `video` 的待写入字幕（每句一条完整文本）：
+ * - 句子仅归属播放其起点的有声片段，避免跨镜头的一句话在相邻片段下重复生成；
+ * - 若句子起点未被任何同源有声片段播放（被裁去），则归属时间线上首个播放其部分内容的有声片段；
+ * - 映射时间按 `片段起点 + (句子时刻 − 入点) ÷ 速度` 计算：起点被裁时截断至片段起点，终点保留句子完整结尾；
+ * - 空文本及短于最短片段时长的条目将被忽略。`clips` 为工程全部片段，用于定位同源有声视频片段。
  */
 export function sentenceCaptions(
   video: VideoClip,
@@ -322,8 +322,8 @@ export function sentenceCaptions(
 }
 
 /**
- * 把 `wanted` 按开始时间一句句放进已有的字幕（`existing`）之间：和已有的（含先放进去的）重叠的那一句截短到
- * 它自己那段时间里没被占的最长一截（一样长取靠前的），不到最短长度就不要。答复放进去的和没放下的句数。
+ * 按起始时间依次将 `wanted` 填入 `existing` 字幕之间的空隙：与已有字幕（含已放置项）重叠时，
+ * 截取其自身区间内最长的空闲子段（等长取靠前者）；剩余时长不足最短片段时长则跳过。返回成功放置的字幕与跳过句数。
  */
 export function placeCaptions(
   existing: readonly Span[],
@@ -356,9 +356,9 @@ export function placeCaptions(
 
 /**
  * 将语音识别结果（视频片段 ID → 对应素材识别出的句子列表）换算为待加入轨道的字幕：
- * 先按各片段取它名下的句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
- * `silent` 记录用掉的那段素材里没有一句话的片段 ID；`elsewhere` 记录用掉的那段素材里有话、但一句都没写到它名下
- * （句子都由播出开头的别的片段写）的片段 ID。
+ * 先按各片段提取归属句子并映射时间（见 `sentenceCaptions`），再经 `placeCaptions` 避让已有字幕。
+ * `silent` 记录所播素材区间内无任何口播句子的片段 ID；`elsewhere` 记录所播素材区间内有口播但句子均归属
+ * 其他播放起点片段的片段 ID。
  */
 export function recognizedCaptions(
   clips: readonly FilmClip[],

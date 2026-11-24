@@ -51,7 +51,7 @@ class PromptAttachmentImporter:
         imported: dict[str, str] = {}
         for (url, ordinal), result in zip(ordinals.items(), results, strict=True):
             if isinstance(result, ValidationFailed):
-                raise ValidationFailed(f"第 {ordinal} 张附件转存不了：{result}") from result
+                raise ValidationFailed(f"第 {ordinal} 张附件转存失败：{result}") from result
             if isinstance(result, BaseException):
                 raise result
             imported[url] = result

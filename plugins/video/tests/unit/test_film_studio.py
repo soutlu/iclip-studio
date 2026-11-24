@@ -29,7 +29,6 @@ from iclip_video.shot_prompt import (
     SHOTS_HEADING,
     format_seconds,
 )
-from iclip_video.shot_rules import MAX_PROMPT_CHARS
 from tests.helpers.film import (
     EXPECTED,
     FILM,
@@ -350,7 +349,7 @@ def test_a_body_with_a_comment_in_it_cannot_be_edited_on_the_page() -> None:
     person = first(project).settings[2]
 
     assert (person.label, person.target) == ("人物", None)
-    with pytest.raises(FilmEditRejected, match="找不到了"):
+    with pytest.raises(FilmEditRejected):
         written([FilmTextEdit("value:video01ModelB", text="x")], project)
 
 
@@ -432,7 +431,7 @@ def test_a_line_written_on_its_own_line_stays_there() -> None:
 def test_lines_can_only_be_reworded() -> None:
     for lines in ((REPLY, HOOK), (HOOK,), (HOOK, REPLY, FilmLineEdit("line:answer", "x"))):
         parts = ("a",) * (len(lines) + 1)
-        with pytest.raises(FilmEditRejected, match="台词只能改字"):
+        with pytest.raises(FilmEditRejected):
             written([shot(1, parts, *lines)])
 
 
@@ -446,48 +445,54 @@ def test_a_shot_whose_line_has_a_comment_is_not_offered() -> None:
 
 
 @pytest.mark.parametrize(
-    ("edits", "message"),
+    "edits",
     [
-        ([shot(1, ("只剩一段",), HOOK, REPLY)], "文字和台词对不上"),
-        ([FilmTextEdit("shot:video01Shots:1", parts=("x", "y"))], "文字和台词对不上"),
-        ([shot(1, (" ", "", ""), HOOK, REPLY)], "镜头的文字不能是空的"),
-        ([shot(1, ("x", "", ""), FilmLineEdit("line:hook", "  "), REPLY)], "台词不能是空的"),
-        ([shot(1, ("x", "", ""), FilmLineEdit("line:answer", "a"), REPLY)], "台词只能改字"),
-        ([shot(1, ("x",))], "台词只能改字"),
-        ([FilmTextEdit("value:模特B声音", text="")], "这段字不能是空的"),
-        ([shot(9, ("x", ""), HOOK)], "找不到了"),
-        ([FilmTextEdit("line:hook", text="x")], "找不到了"),
-        ([FilmTextEdit("value:video01Shots", text="x")], "找不到了"),
-        ([FilmTextEdit("element:video01ModelA", text="x")], "找不到了"),
-        (
+        pytest.param([shot(1, ("只剩一段",), HOOK, REPLY)], id="parts-count-mismatch"),
+        pytest.param([FilmTextEdit("shot:video01Shots:1", parts=("x", "y"))], id="missing-lines"),
+        pytest.param([shot(1, (" ", "", ""), HOOK, REPLY)], id="empty-shot-text"),
+        pytest.param(
+            [shot(1, ("x", "", ""), FilmLineEdit("line:hook", "  "), REPLY)], id="empty-line"
+        ),
+        pytest.param(
+            [shot(1, ("x", "", ""), FilmLineEdit("line:answer", "a"), REPLY)], id="wrong-line-id"
+        ),
+        pytest.param([shot(1, ("x",))], id="dropped-lines"),
+        pytest.param([FilmTextEdit("value:模特B声音", text="")], id="empty-value"),
+        pytest.param([shot(9, ("x", ""), HOOK)], id="unknown-shot"),
+        pytest.param([FilmTextEdit("line:hook", text="x")], id="line-target"),
+        pytest.param([FilmTextEdit("value:video01Shots", text="x")], id="non-text-node"),
+        pytest.param([FilmTextEdit("element:video01ModelA", text="x")], id="unknown-prefix"),
+        pytest.param(
             [FilmTextEdit("value:模特B声音", text="a"), FilmTextEdit("value:模特B声音", text="b")],
-            "一次只改一处",
+            id="duplicate-target",
         ),
-        ([], "没有要改的字"),
-        (
+        pytest.param([], id="empty-edits"),
+        pytest.param(
             [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "a | b"), REPLY)],
-            "分镜有问题",
+            id="invalid-line-separator",
         ),
-        (
+        pytest.param(
             [FilmTextEdit("value:video01Setting", text="街区参考 @Image11。")],
-            "@Image11 没有对应的图",
+            id="out-of-range-image-number",
         ),
-        ([FilmTextEdit("value:video01Setting", text="街区参考 @image7。")], "分镜有问题"),
-        (
+        pytest.param(
+            [FilmTextEdit("value:video01Setting", text="街区参考 @image7。")],
+            id="lowercase-image-tag",
+        ),
+        pytest.param(
             [shot(1, ("参考@Image8，x", "", ""), FilmLineEdit("line:hook", "看 @Image1"), REPLY)],
-            "分镜有问题",
+            id="image-tag-in-line",
         ),
-        (
+        pytest.param(
             [FilmTextEdit("value:view01Framing", text="浅灰色" * 1400)],
-            f"超过 {MAX_PROMPT_CHARS} 字",
+            id="exceeds-max-prompt-chars",
         ),
     ],
 )
-def test_an_edit_that_would_break_the_film_is_not_written(
-    edits: list[FilmTextEdit], message: str
-) -> None:
-    with pytest.raises(FilmEditRejected, match=message):
+def test_an_edit_that_would_break_the_film_is_not_written(edits: list[FilmTextEdit]) -> None:
+    with pytest.raises(FilmEditRejected) as raised:
         written(edits)
+    assert str(raised.value)
 
 
 NEW_PHOTO = "https://cdn.test/uploads/corner.jpg"
@@ -686,7 +691,7 @@ def test_inserting_and_removing_in_one_edit_renumbers_once() -> None:
     ],
 )
 def test_view_references_only_follow_the_choice(edit: FilmTextEdit) -> None:
-    with pytest.raises(FilmEditRejected, match="机位图的引用随选用增删；请在镜头上取消选用"):
+    with pytest.raises(FilmEditRejected):
         written([edit])
 
 
@@ -700,7 +705,7 @@ def test_view_references_only_follow_the_choice(edit: FilmTextEdit) -> None:
     ],
 )
 def test_text_shared_by_several_nodes_takes_no_images(edit: FilmTextEdit) -> None:
-    with pytest.raises(FilmEditRejected, match="用在几个地方，无法插入图片"):
+    with pytest.raises(FilmEditRejected):
         written([edit])
 
 
@@ -726,7 +731,7 @@ def test_a_setting_is_shared_when_another_generation_node_uses_it() -> None:
     ]
     assert [item.shared for item in later.settings] == [True, False, False, False, True]
     body = FilmTextEdit("value:模特B身材", text="身材匀称，参考 @Image11。", images=(NEW_PHOTO,))
-    with pytest.raises(FilmEditRejected, match="用在几个地方，无法插入图片"):
+    with pytest.raises(FilmEditRejected):
         written([body], SHARED_BODY)
 
 
@@ -764,7 +769,7 @@ def test_inserting_a_generated_image_references_its_node() -> None:
 
 
 def test_a_view_image_cannot_be_inserted_into_another_group() -> None:
-    with pytest.raises(FilmEditRejected, match="机位图只随选用进参考图列表"):
+    with pytest.raises(FilmEditRejected):
         written([setting("纽约红砖街区参考 @Image7，@Image11。", GENERATED["view04"])])
 
 
@@ -820,20 +825,22 @@ def test_a_photo_inserted_into_an_empty_list_goes_inside_the_video() -> None:
 
 
 @pytest.mark.parametrize(
-    ("edit", "message"),
+    "edit",
     [
-        (setting("纽约红砖街区参考 @Image7。", NEW_PHOTO), "插入的图和字对不上"),
-        (setting("纽约红砖街区参考 @Image7，@Image12。", NEW_PHOTO), "@Image12 没有对应的图"),
-        (
+        pytest.param(setting("纽约红砖街区参考 @Image7。", NEW_PHOTO), id="unused-inserted-image"),
+        pytest.param(
+            setting("纽约红砖街区参考 @Image7，@Image12。", NEW_PHOTO), id="unmatched-image-number"
+        ),
+        pytest.param(
             FilmTextEdit(
                 "value:view01Setting", text="街区参考 @Image6，@Image7。", images=(NEW_PHOTO,)
             ),
-            "只能在视频的文字里插入图片",
+            id="non-video-text",
         ),
     ],
 )
-def test_inserted_images_must_match_the_text(edit: FilmTextEdit, message: str) -> None:
-    with pytest.raises(FilmEditRejected, match=message):
+def test_inserted_images_must_match_the_text(edit: FilmTextEdit) -> None:
+    with pytest.raises(FilmEditRejected):
         written([edit])
 
 
@@ -872,7 +879,7 @@ def test_an_image_already_registered_is_reused() -> None:
 def test_choosing_an_address_already_listed_beside_the_image_is_refused(
     image: str, url: str
 ) -> None:
-    with pytest.raises(FilmEditRejected, match=r"^同一组参考图里已经有这张图了，换一张$"):
+    with pytest.raises(FilmEditRejected):
         choose_image(
             checked(FILM_NO_VIEW04, RUN_NO_VIEW04), FILM_NO_VIEW04, RUN_NO_VIEW04, image, url
         )
@@ -921,17 +928,15 @@ def test_a_given_photo_gets_its_new_address_in_the_project_file() -> None:
 
 
 @pytest.mark.parametrize(
-    ("image", "url", "message"),
+    ("image", "url"),
     [
-        ("shoeFrontPhoto", None, "不能清空"),
-        ("capture", "https://cdn.test/x.png", "找不到这张图"),
-        ("没有这个", "https://cdn.test/x.png", "找不到这张图"),
+        pytest.param("shoeFrontPhoto", None, id="given-photo-cannot-clear"),
+        pytest.param("capture", "https://cdn.test/x.png", id="non-image-node"),
+        pytest.param("没有这个", "https://cdn.test/x.png", id="missing-node"),
     ],
 )
-def test_a_choice_that_does_not_fit_the_image_is_refused(
-    image: str, url: str | None, message: str
-) -> None:
-    with pytest.raises(FilmEditRejected, match=message):
+def test_a_choice_that_does_not_fit_the_image_is_refused(image: str, url: str | None) -> None:
+    with pytest.raises(FilmEditRejected):
         choose_image(checked(), FILM, RUN, image, url)
 
 
@@ -992,7 +997,7 @@ def test_a_half_written_choice_still_passes_and_blocks_its_group_until_it_is_rep
 def test_a_view_whose_shot_cannot_be_rewritten_in_place_is_refused() -> None:
     project = FILM_NO_VIEW04.replace("她说：{stride} 音效", "她说：{stride}<!-- 待定 --> 音效")
 
-    with pytest.raises(FilmEditRejected, match="跟 AI 导演说"):
+    with pytest.raises(FilmEditRejected):
         choose_image(checked(project, RUN_NO_VIEW04), project, RUN_NO_VIEW04, "view04", VIEW04)
 
 

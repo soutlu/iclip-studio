@@ -42,7 +42,7 @@ export function TestStatus({
       ) : test.kind === 'failed' ? (
         <>
           <span
-            aria-label={`${action}没通过`}
+            aria-label={`${action}未通过`}
             className="size-1.5 shrink-0 rounded-full bg-error"
             role="img"
           />

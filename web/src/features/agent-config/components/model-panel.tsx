@@ -15,9 +15,12 @@ import {
   formatContextSize,
   maskedCredential,
   setCredential,
+  setNativeTools,
   setThinking,
 } from '../agent-draft'
 import type { AgentConfig, ProviderOption } from '../agents.api'
+import type { NativeTool } from '../native-tools'
+import { NativeToolOptions } from './native-tool-options'
 import { PanelShell } from './panel-shell'
 import { CardBadge } from './resource-card'
 import { ThinkingFader } from './thinking-controls'
@@ -28,12 +31,14 @@ const modelKey = (provider: string, model: string) => `${provider}\u0000${model}
 
 export function ModelPanel({
   config,
+  nativeTools,
   onChange,
   onClose,
   providers,
 }: {
   config: AgentConfig
   providers: readonly ProviderOption[]
+  nativeTools: readonly NativeTool[]
   onChange: (config: AgentConfig) => void
   onClose: () => void
 }) {
@@ -58,7 +63,8 @@ export function ModelPanel({
         onValueChange={(key) => {
           for (const option of providers) {
             const picked = option.models.find((item) => modelKey(option.name, item.name) === key)
-            if (picked !== undefined) return onChange(chooseModel(config, option, picked))
+            if (picked !== undefined)
+              return onChange(chooseModel(config, option, picked, nativeTools))
           }
         }}
         value={current === null ? '' : modelKey(current.provider, current.name)}
@@ -104,6 +110,13 @@ export function ModelPanel({
             value={current?.settings?.thinking ?? null}
           />
         </div>
+        <NativeToolOptions
+          catalog={nativeTools}
+          className="border-b border-hairline px-2.5 py-4"
+          offered={model?.nativeTools ?? []}
+          onChange={(names) => onChange(setNativeTools(config, names))}
+          value={current?.settings?.native_tools ?? []}
+        />
         <div className="flex min-h-14 items-center justify-between gap-4 border-b border-hairline px-2.5">
           <span className="font-medium text-on-surface-variant">密钥</span>
           <MenuRoot>

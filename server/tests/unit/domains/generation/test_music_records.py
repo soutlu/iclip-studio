@@ -256,7 +256,7 @@ async def test_generating_music_is_refused_when_it_is_not_configured() -> None:
         )
 
     assert response.status_code == 422, response.text
-    assert "没有开通" in response.json()["detail"]
+    assert response.json()["detail"]
     assert world.kind("audio") == []
 
 

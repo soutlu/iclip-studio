@@ -84,7 +84,7 @@ export function AudioLibrary({ active, query, search, onNotice, renderRow }: Aud
       ) : items.length === 0 ? (
         <EmptyNote icon="final-cut-music">
           {keyword === ''
-            ? `音频库里暂无${kindLabel}，可在资料库的「音频库」中添加`
+            ? `音频库中暂无${kindLabel}，可在资料库的「音频库」中添加`
             : '暂无符合条件的音频，请更换关键词'}
         </EmptyNote>
       ) : (

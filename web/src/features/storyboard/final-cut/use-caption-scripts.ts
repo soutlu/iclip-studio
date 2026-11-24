@@ -13,18 +13,18 @@ const sentencesOfResults = (results: readonly UseQueryResult<GenerationJob[]>[])
 
 type CaptionScriptsInput = {
   conversationId: string
-  /** 「字幕」页签可见且当前是原文时为真；为假时不读识别记录，答复空表。 */
+  /** 仅当「字幕」页签可见且处于原文视图时为 `true`；否则不查询识别记录并返回空映射。 */
   enabled: boolean
   clips: readonly FilmClip[]
-  /** 视频片段的地址对上的素材片记录编号。 */
+  /** 按视频片段地址查找对应素材片记录 ID。 */
   takeOf: (src: string) => string | undefined
-  /** 对话里的素材片记录。 */
+  /** 当前对话的素材片记录列表。 */
   takes: readonly GenerationJob[] | undefined
 }
 
 /**
- * 和台词不一样的字幕：字幕编号 → 台词对照（见 `captionScripts`）。只读名下有字幕、且有台词的素材片已有的字幕识别
- * 记录，不发起识别。
+ * 返回与原始台词存在差异的字幕映射（字幕 ID → 台词对照，见 `captionScripts`）。
+ * 仅查询名下有字幕且含台词的素材片已有识别记录，不主动发起识别。
  */
 export function useCaptionScripts({
   conversationId,

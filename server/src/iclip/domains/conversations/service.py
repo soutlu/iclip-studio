@@ -269,9 +269,9 @@ class WholeFilmExports(Protocol):
     ) -> None: ...
 
 
-_EXPORTS_OFF = "成片导出没有开通"
+_EXPORTS_OFF = "成片导出尚未开通"
 _FINAL_CUT_EMPTY = "final-cut 暂无内容，无法导出"
-_NO_LOCALE_TABLE = "final-cut 里没有这种语言的语言文件，无法导出这种语言的版本"
+_NO_LOCALE_TABLE = "final-cut 工程中缺少该语言的语言文件，无法导出该语言版本"
 
 
 class WorkspaceDocumentValidator(Protocol):
@@ -295,7 +295,7 @@ def _as_conversation_id(raw: str) -> uuid.UUID:
     try:
         return uuid.UUID(raw)
     except ValueError as exc:
-        raise NotFound("没有这段对话") from exc
+        raise NotFound("对话不存在") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -466,7 +466,7 @@ class ConversationService:
         session = await self._session(principal, conversation_id, writing=False)
         found = await self._read_derived_file(session.owner_user_id, session.id, path)
         if found is None:
-            raise NotFound("这段对话里没有这个文件")
+            raise NotFound("当前对话中不存在该文件")
         return found
 
     async def write_file(
@@ -490,7 +490,7 @@ class ConversationService:
         conversation = await self._readable(principal, conversation_id)
         found = await self._film.view(principal, conversation.owner_user_id, conversation.id)
         if found is None:
-            raise NotFound("这段对话里没有 AI 导演写的分镜")
+            raise NotFound("当前对话中不存在 AI 导演生成的分镜")
         return found
 
     async def edit_film_text(
@@ -663,9 +663,9 @@ class ConversationService:
     ) -> Conversation:
         conversation = await self._readable(principal, conversation_id)
         if conversation.owner_user_id != principal.user_id:
-            raise PermissionDenied("只有属主能改这段对话")
+            raise PermissionDenied("仅对话属主可修改当前对话")
         if conversation.deleted_at is not None:
-            raise PermissionDenied("已删除的对话不能再改")
+            raise PermissionDenied("已删除的对话无法修改")
         return conversation
 
     async def create(
@@ -730,10 +730,10 @@ class ConversationService:
 
     async def _same_as_owner(self, principal: Principal, source_id: uuid.UUID) -> uuid.UUID:
         if not principal.has("generation:read"):
-            raise NotFound("资料库里没有这条视频")
+            raise NotFound("资料库中不存在该视频")
         source_owner = await self._same_style_source(source_id)
         if source_owner is None:
-            raise NotFound("资料库里没有这条视频")
+            raise NotFound("资料库中不存在该视频")
         return source_owner
 
     async def _copy_same_as(
@@ -753,7 +753,7 @@ class ConversationService:
             files=same_style.files,
             require_any=same_style.require_any,
         ):
-            raise ValidationFailed("这段对话没有工程文件或分镜文件，做不了同款")
+            raise ValidationFailed("该对话缺少工程文件或分镜文件，无法制作同款")
 
     async def fork(
         self,

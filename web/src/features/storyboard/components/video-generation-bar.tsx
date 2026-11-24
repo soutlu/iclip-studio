@@ -187,7 +187,7 @@ function QualityPicker({
             {quality === DRAFT_QUALITY ? DRAFT_LABEL : quality}
           </FilterChip>
         )
-        // 提示的触发器会把自己的 data-state 盖到分段上，选中态靠它显示，所以只包置灰的那一格。
+        // Tooltip 触发器会覆盖分段项的 data-state 属性从而干扰选中态样式，因此仅包裹禁用项。
         return blocked(quality) ? (
           <BlockedReason key={quality} reason="该模型不支持样片">
             {segment}

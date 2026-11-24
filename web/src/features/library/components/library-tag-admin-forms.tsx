@@ -210,7 +210,7 @@ export function RulesEditor({
             <div className="tag-admin__rule-mode">
               <div>
                 <p>AI 自动打标</p>
-                <span>开启后，AI 将根据判断说明选择这个维度的标签</span>
+                <span>开启后，AI 将根据判断说明选择该维度的标签</span>
               </div>
               <Switch
                 aria-label="AI 自动打标"

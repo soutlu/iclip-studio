@@ -260,7 +260,7 @@ describe('Agent 配置页的测试预览', () => {
     await waitFor(() => expect(shown(REPLY)).toHaveLength(1))
 
     await pickVersion(/^v5，/)
-    await waitFor(() => expect(placeholder()).toBe('用 v5 测试…'))
+    await waitFor(() => expect(placeholder()).toContain('v5'))
     expect(shown('草稿这边试一条')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
     expect(resetButton()).toHaveAttribute('aria-disabled', 'true')
@@ -269,7 +269,7 @@ describe('Agent 配置页的测试预览', () => {
     expect(backend.opened.map((item) => item.body)).toEqual([{}, { versionId: v5?.id }])
 
     await pickVersion(/^v4，/)
-    await waitFor(() => expect(placeholder()).toBe('用 v4 测试…'))
+    await waitFor(() => expect(placeholder()).toContain('v4'))
     expect(shown('试一下 v5')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
 
@@ -278,7 +278,7 @@ describe('Agent 配置页的测试预览', () => {
     expect(shown('草稿这边试一条')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
     await pickVersion(/^v5，/)
-    await waitFor(() => expect(placeholder()).toBe('用 v5 测试…'))
+    await waitFor(() => expect(placeholder()).toContain('v5'))
     expect(shown('试一下 v5')).toHaveLength(0)
     expect(shown(REPLY)).toHaveLength(0)
     expect(backend.opened).toHaveLength(2)

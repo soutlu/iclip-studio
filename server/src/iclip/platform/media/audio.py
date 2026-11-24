@@ -43,9 +43,9 @@ _UNIFORM: Final = (
 
 async def extract_speech_audio(source: Path, *, dest: Path) -> None:
     if not source.is_file():
-        raise MediaError(f"要抽音频的素材不在: {source.name}")
+        raise MediaError(f"待提取音频的素材文件不存在：{source.name}")
     if not await has_audio_stream(source):
-        raise NoAudioStream(f"这条素材里没有音轨: {source.name}")
+        raise NoAudioStream(f"该素材不包含音轨：{source.name}")
     await run(
         [
             "ffmpeg", "-v", "error", "-y", "-i", str(source),
@@ -62,9 +62,9 @@ async def extract_audio_clip(source: Path, *, dest: Path, start_ms: int, duratio
     PCM 的 WAV（``AUDIO_RATE``）。没有音轨抛 ``NoAudioStream``。"""
 
     if not source.is_file():
-        raise MediaError(f"要截音频的素材不在: {source.name}")
+        raise MediaError(f"待截取音频的素材文件不存在：{source.name}")
     if not await has_audio_stream(source):
-        raise NoAudioStream(f"这条素材里没有音轨: {source.name}")
+        raise NoAudioStream(f"该素材不包含音轨：{source.name}")
     await run(
         [
             "ffmpeg", "-v", "error", "-y",
@@ -82,9 +82,9 @@ async def decode_audio(source: Path, *, dest: Path) -> int:
     不是音频、没有音轨抛 ``MediaError``。"""
 
     if not source.is_file():
-        raise MediaError(f"要解码的音频不在: {source.name}")
+        raise MediaError(f"待解码的音频文件不存在：{source.name}")
     if not await has_audio_stream(source):
-        raise NoAudioStream(f"这段音频里没有音轨: {source.name}")
+        raise NoAudioStream(f"该音频不包含音轨：{source.name}")
     await run(
         [
             "ffmpeg", "-v", "error", "-y", "-i", str(source), "-map", "0:a:0", "-vn",
@@ -172,9 +172,9 @@ def _samples(ms: int) -> int:
 
 async def normalize_music(source: Path, *, dest: Path) -> int:
     if not source.is_file():
-        raise MediaError(f"要规整的音频不在: {source.name}")
+        raise MediaError(f"待响度规整的音频文件不存在：{source.name}")
     if not await has_audio_stream(source):
-        raise NoAudioStream(f"这段素材里没有音轨: {source.name}")
+        raise NoAudioStream(f"该素材不包含音轨：{source.name}")
     measured = await _measure_music_loudness(source)
     loudnorm = (
         f"loudnorm=I={MUSIC_LOUDNESS_LUFS}:TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}"
@@ -203,7 +203,7 @@ async def _measure_music_loudness(source: Path) -> dict[str, float]:
         f":TP={MUSIC_TRUE_PEAK_DBTP}:LRA={MUSIC_LOUDNESS_RANGE}:print_format=json",
     )
     if not all(math.isfinite(value) for value in measured.values()):
-        raise MediaError("这段音频去掉首尾静音后没有声音")
+        raise MediaError("该音频移除首尾静音后无有效声音")
     return measured
 
 
@@ -221,9 +221,9 @@ async def _loudnorm_measure(source: Path, audio_filter: str) -> dict[str, float]
         report = json.loads(text[start : end + 1]) if 0 <= start < end else None
         measured = {key: float(report[key]) for key in _LOUDNESS_KEYS} if report else None
     except (ValueError, KeyError, TypeError) as exc:
-        raise MediaError("loudnorm 的测量结果看不懂") from exc
+        raise MediaError("无法解析响度测量结果") from exc
     if measured is None:
-        raise MediaError("loudnorm 没有给出测量结果")
+        raise MediaError("响度分析未返回测量结果")
     return measured
 
 

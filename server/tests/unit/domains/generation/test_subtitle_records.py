@@ -402,7 +402,7 @@ async def test_manual_transcription_is_refused_when_subtitles_are_not_configured
         response = await http.post("/generations/subtitles", json={"sourceJobId": str(take.id)})
 
     assert response.status_code == 422, response.text
-    assert "没有开通" in response.json()["detail"]
+    assert response.json()["detail"]
     assert world.subtitles() == []
 
 

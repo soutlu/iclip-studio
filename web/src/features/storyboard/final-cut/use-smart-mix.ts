@@ -46,9 +46,9 @@ export type SmartMix = {
 /** 改片段曲线（`data-automation`）的一步：拿现在的曲线，给出改好的。 */
 export type AutomationChange = (automation: HfAutomation) => HfAutomation
 
-const CARVE_FAILED_TEXT = '自动压低没有生效：人声或配乐的声音读取失败，请重试'
-const LEVEL_FAILED_TEXT = '自动平稳音量没有生效：声音读取失败，请重试'
-const ALREADY_EVEN_TEXT = '这段声音已经很平稳，不用再调'
+const CARVE_FAILED_TEXT = '自动压低未生效：人声或配乐音频读取失败，请重试'
+const LEVEL_FAILED_TEXT = '自动平稳音量未生效：音频读取失败，请重试'
+const ALREADY_EVEN_TEXT = '该片段音量已较平稳，无需调整'
 
 /** 量的时候用到的片段的样子：量完以后变了，量的结果就不对了。 */
 const inputsKey = (clips: readonly MediaClip[]) =>

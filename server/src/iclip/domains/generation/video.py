@@ -31,7 +31,7 @@ PROVIDER_NAME: Final = "video_api"
 
 _REQUESTS: Final = (VideoGenerationIn, VideoEnhanceRequest)
 
-# 转 1080p 入口只收这三个键，多一个（包括 model）就 400，模型由上游沿用样片的。
+# 样片转 1080p 上游接口仅接受以下三个字段，传入多余字段（含 model）将返回 400，模型由上游自动沿用样片配置。
 _DRAFT_COMPLETE_FIELDS: Final = frozenset({DRAFT_TASK_FIELD, "resolution", "user_name"})
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -162,19 +162,19 @@ class HttpVideoProvider:
                 )
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise ProviderError(
-                f"视频接口连不上: {exc}",
+                f"无法连接到视频接口：{exc}",
                 code="PROVIDER_UNREACHABLE",
                 retryable=True,
             ) from exc
         except httpx.HTTPError as exc:
             if result_unknown_on_transport_error:
                 raise ProviderError(
-                    f"视频提交请求已发出但没拿到结果，不重试以免重复计费: {exc}",
+                    f"视频提交请求已发送但未收到结果，为避免重复计费不自动重试：{exc}",
                     code="PROVIDER_RESULT_UNKNOWN",
                     retryable=False,
                 ) from exc
             raise ProviderError(
-                f"视频接口不可达: {exc}",
+                f"视频接口不可达：{exc}",
                 code="PROVIDER_UNREACHABLE",
                 retryable=True,
             ) from exc

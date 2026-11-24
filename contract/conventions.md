@@ -26,7 +26,7 @@
   - `POST /conversations/{id}/prompts`（`user_name`）
   - 对话运行控制（`user_name`，原本可以不带请求体的照样可以不带）：`POST /conversations/{id}:abort`、`POST /conversations/{id}/prompts/{promptId}:abort`、`POST /conversations/{id}/prompts:steer`、`POST /conversations/{id}/interactions/{interactionId}`、`POST /conversations/{id}/turns/{turnId}:regenerate`
   - `PUT /conversations/{id}/workspace/file`（`userName`）
-  - `POST /generations/*`（`user_name` 或 `userName`；其中 `POST /generations/video-draft-completions` 的 `userName` 只切换归属，发给上游的 `user_name` 固定取样片记录上的，见 §11）
+  - `POST /generations/*`（`user_name` 或 `userName`；其中 `POST /generations/video-draft-completions` 的 `userName` 仅用于切换归属，发给上游的 `user_name` 固定沿用样片记录中的取值，见 §11）
   - `POST /references/videos/{id}/test-generations`（`userName`）
   - `POST /references/audios`（`userName`）
   - `POST /uploads/{uploadId}/confirm`（`userName`）
@@ -154,7 +154,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
   - **修改文案与增删参考图** `PATCH .../film/text`：校验 `filmVersion`，支持修改设定描述、镜头正文与台词文字（不可增删台词句数或调换顺序，多组共用设定不可插入图片）。在独占镜头文字中通过 `images` 新插入图片（`@Image(M+1)`）时，写文件前仅校验新增图片的可达性与图片类型，再追加进参考图列表并顺延后续机位图编号；删除某元素图全部引用时自动移除并重排编号。
   - **选用或更换图片** `PUT .../film/image`：校验 `filmVersion` 与 `runVersion`，为指定节点选用图片或取消选用（`url: null`）。选用非空 `url` 前校验地址可达且为图片（不可用返回 `422` 并说明位置与原因，不回显地址）。首次选用或取消选用镜头机位图时，后端自动在 `film.icml` 参考图列表和对应镜头开头同步增删 `参考@ImageN，`。
   - **一键修改全片画幅** `PUT .../film/aspect-ratio`：校验 `filmVersion`，统一修改所有视频节点和机位图画幅（人物/场景设定图比例不变）。
-  - **在制作页发起生图或出片** `POST .../film/image-generations` 与 `POST .../film/video-generations`：先校验该节点或视频组参考图列表无缺图（缺图返回 `422` 列出缺失项），再校验本次引用的参考图地址可达且为图片，通过后创建生成任务（返回 `202 { jobId }`，在 `metadata.film_node` 记录节点名）。出片请求带 `draft: true` 时出样片（`provider_options.draft: true`，分辨率仍取请求里的 `resolution`），转 1080p 见 §11。新生成的图片不会自动替换当前选用图片，需调用 `PUT .../film/image` 写入 `film.icrun`。
+  - **在制作页发起生图或出片** `POST .../film/image-generations` 与 `POST .../film/video-generations`：先校验该节点或视频组参考图列表无缺图（缺图返回 `422` 列出缺失项），再校验本次引用的参考图地址可达且为图片，通过后创建生成任务（返回 `202 { jobId }`，在 `metadata.film_node` 记录节点名）。出片请求传入 `draft: true` 时生成样片（透传 `provider_options.draft: true`，分辨率仍按请求传入的 `resolution` 发送），转 1080p 见 §11。新生成的图片不会自动替换当前选用图片，需调用 `PUT .../film/image` 写入 `film.icrun`。
 
 ### final-cut 工程格式
 
@@ -274,8 +274,8 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
-| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。带 `provider_options.draft: true` 即出样片（原样发给上游，可出样片的模型见 `GET /generations/video-models` 的 `draftModels`）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
-| `POST /generations/video-draft-completions` | `video` / `generate`（样片转出的 1080p） | 传入 `{ draftJobId, conversationId?, userName? }`。样片须是本对话自己的或继承来的已完成出片，带 `provider_options.draft: true` 且有上游任务号，否则 `422`；未开通样片（部署未配 `media_generation.video.draft_complete_url`）返回 `422`。新记录不记来源与原作，镜号、需求单与 `metadata` 随样片，对话取 `conversationId`；请求快照为样片请求改 `resolution: "1080p"`、去掉 `provider_options`，并以 `draft_job_id` 记下样片。发给上游的 `user_name` 固定取样片记录上的（上游要求与样片一致），配置组与上游 `model_id` 也照抄样片。同一样片在同一对话已有未失败的转出记录时直接返回该条，不新建 |
+| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。传入 `provider_options.draft: true` 即生成样片（原样转发上游，支持样片的模型见 `GET /generations/video-models` 的 `draftModels`）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
+| `POST /generations/video-draft-completions` | `video` / `generate`（样片转出的 1080p） | 传入 `{ draftJobId, conversationId?, userName? }`。样片须为本对话自有或继承的已完成出片，携带 `provider_options.draft: true` 且具备上游任务号，否则返回 `422`；未开通样片功能（未配置 `media_generation.video.draft_complete_url`）返回 `422`。新记录不设来源与原作，沿用样片的镜号、需求单与 `metadata`，对话取 `conversationId`；请求快照在样片请求基础上将 `resolution` 改为 `"1080p"`、移除 `provider_options`，并通过 `draft_job_id` 记录样片 ID。发给上游的 `user_name` 固定沿用样片记录中的取值（上游要求与样片一致），配置组与上游 `model_id` 同样沿用样片。同一样片在同一对话下已有未失败转出记录时幂等返回该记录，不新建任务 |
 | `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于已完成素材片（`sourceJobId`）替换 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 ms）。不传参考视频为**图生模式**（1 张首帧、2 张首尾帧、≥3 张参考图）；传入 1 条本人视频上传或未移除在库参考视频地址为**视频编辑模式**（按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 拼装模型参数）。不接收分辨率参数，两种模式均沿用最初出片请求的 `resolution`（未传时同样不传） |
 | `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 与 1～100 段 `segments: [{ sourceJobId, start, end? }]`（须取自该基底本身或基于该基底完成的编辑段），本地 ffmpeg 对齐画幅帧率重编码拼接，期间通过 `clipStage`（`fetching | processing | uploading`）反馈阶段 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率与可选 `channel` 须在 `GET /generations/image-models` 声明范围内。帧图编辑传入 `sourceUrl` 时，在本对话及继承生成图片中匹配关联 `sourceJobId`，未命中（含上传图片）记为外部底图地址 |
@@ -364,7 +364,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 ## 19. Agent 配置 (Agents)
 
 管理后台 Agent 配置接口（路径 `/agents`，概念见 [CONTEXT.md「Agent 标识、草稿与版本」](../docs/CONTEXT.md#agent-标识草稿与版本agent-config)）：
-- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包共用结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking? } }`、`tools`（`type: "cap"` 插件或 `type: "mcp"` 远程服务）及 `subagents`；有序技能列表通过同级 `skillIds` 传入。MCP 挂载项 `{ type: "mcp", server, tools, approval_tools? }` 表达工具三态（见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#mcp-服务mcp-server)）：在 `tools` 内为允许，同时在 `approval_tools`（须为 `tools` 子集，为空省略）内为要求审批，不在 `tools` 内为关闭；新挂载写 `tools: []`，历史 `tools: null` 代表包含后续新增工具在内的全部工具。
+- **配置文档格式（`snake_case`）**：草稿、历史版本与 YAML 导出包共用结构：`schema_version: 1`、`instructions`、`model: { provider, name, credential_id?, settings: { thinking?, native_tools? } }`（`native_tools` 为空省略）、`tools`（`type: "cap"` 插件或 `type: "mcp"` 远程服务）及 `subagents`；有序技能列表通过同级 `skillIds` 传入。MCP 挂载项 `{ type: "mcp", server, tools, approval_tools? }` 表达工具三态（见 [CONTEXT.md「MCP 服务」](../docs/CONTEXT.md#mcp-服务mcp-server)）：在 `tools` 内为允许，同时在 `approval_tools`（须为 `tools` 子集，为空省略）内为要求审批，不在 `tools` 内为关闭；新挂载写 `tools: []`，历史 `tools: null` 代表包含后续新增工具在内的全部工具。
 - **乐观锁与发布编译检查**：保存草稿（`PUT /agents/{id}/draft`）、发布版本（`POST .../versions`）和恢复版本（`POST .../restore`）均须传入 `lockVersion`（不一致返回 `409`）。发布编译不通过返回 `422 { detail, problems: [{ path, message }] }`，无改动返回 `422`。
 - **YAML 导出与导入**：`GET /agents/{id}/export` 打包主 Agent 及其当前版本引用的子 Agent（剔除 `credential_id`）；`POST /agents/import` 支持 `dryRun=true` 预检，正式导入在单事务内创建或覆盖草稿，不自动发布。
 - **反向引用保护（`usedBy` 与 `409`）**：技能、模型、密钥、MCP 服务和 Agent 详情均附带 `usedBy: [{ agentId, agentName, inDraft, inActiveVersion }]`；`usedBy` 非空时归档、停用或删除均返回 `409`。

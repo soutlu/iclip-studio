@@ -1,5 +1,6 @@
 import type { ThinkingLevel } from '@/shared/ui/thinking-level'
 import type { Agent, AgentConfig, AgentPlugin, AgentProblem, ProviderOption } from './agents.api'
+import { keepNativeTools, type NativeTool, type NativeToolName } from './native-tools'
 
 type Tool = NonNullable<AgentConfig['tools']>[number]
 type CapTool = Extract<Tool, { type: 'cap' }>
@@ -73,10 +74,19 @@ export const missingRequiresReason = (
   return `需要同时启用${labels.map((label) => `「${label}」`).join('、')}`
 }
 
+type ModelSettings = NonNullable<NonNullable<AgentConfig['model']>['settings']>
+
+// 未启用原生工具时省略 native_tools 字段：回读空配置不含该键，写成空数组会误判为未保存修改，同时兼容旧版运行时。
+const withNativeTools = (
+  settings: Omit<ModelSettings, 'native_tools'>,
+  names: readonly NativeToolName[],
+): ModelSettings => (names.length === 0 ? settings : { ...settings, native_tools: [...names] })
+
 export const chooseModel = (
   config: AgentConfig,
   provider: ProviderOption,
   model: ProviderOption['models'][number],
+  catalog: readonly NativeTool[],
 ): AgentConfig => {
   const current = config.model ?? null
   const sameProvider = current?.provider === provider.name
@@ -89,7 +99,11 @@ export const chooseModel = (
         : model.thinking.includes('medium')
           ? 'medium'
           : (model.thinking[0] ?? null)
-  const { thinking: _dropped, ...otherSettings } = current?.settings ?? {}
+  const {
+    thinking: _dropped,
+    native_tools: previousTools = [],
+    ...otherSettings
+  } = current?.settings ?? {}
   return {
     ...config,
     model: {
@@ -97,7 +111,10 @@ export const chooseModel = (
       credential_id: sameProvider ? (current.credential_id ?? null) : null,
       name: model.name,
       provider: provider.name,
-      settings: thinking === null ? otherSettings : { ...otherSettings, thinking },
+      settings: withNativeTools(
+        thinking === null ? otherSettings : { ...otherSettings, thinking },
+        keepNativeTools(catalog, previousTools, model.nativeTools),
+      ),
     },
   }
 }
@@ -112,6 +129,15 @@ export const setThinking = (config: AgentConfig, thinking: ThinkingLevel | null)
       settings: thinking === null ? settings : { ...settings, thinking },
     },
   }
+}
+
+export const setNativeTools = (
+  config: AgentConfig,
+  names: readonly NativeToolName[],
+): AgentConfig => {
+  if (config.model === null || config.model === undefined) return config
+  const { native_tools: _previous, ...settings } = config.model.settings ?? {}
+  return { ...config, model: { ...config.model, settings: withNativeTools(settings, names) } }
 }
 
 export const setCredential = (config: AgentConfig, credentialId: string | null): AgentConfig =>
@@ -139,10 +165,10 @@ export const subagentBlockReason = (
   candidate: Agent,
   current: { isSubagent: boolean },
 ): string | undefined => {
-  if (current.isSubagent) return '当前 Agent 正被用作子 Agent，不能再添加子 Agent'
-  if (candidate.status === 'archived') return '已归档，不能选作子 Agent'
-  if (candidate.activeVersion === null) return '还没有发布，发布后才能选作子 Agent'
-  if (candidate.hasSubagents) return '它自己有子 Agent，不能再被选作子 Agent'
+  if (current.isSubagent) return '当前 Agent 正被用作子 Agent，无法再添加子 Agent'
+  if (candidate.status === 'archived') return '已归档，无法选作子 Agent'
+  if (candidate.activeVersion === null) return '尚未发布版本，发布后方可选作子 Agent'
+  if (candidate.hasSubagents) return '该 Agent 已配置子 Agent，无法选作子 Agent'
   return undefined
 }
 

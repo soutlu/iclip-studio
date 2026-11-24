@@ -164,7 +164,7 @@ def create_runtime_internal_router(
         payload = await _hook_payload(request, GatePayload)
         owner = await user_principal(payload.owner_user_id)
         if payload.preview and not owner.has(AGENT_MANAGE_PERMISSION):
-            raise PermissionDenied("预览的属主已不能管理 agent")
+            raise PermissionDenied("预览会话属主已无 Agent 管理权限")
         return Response(status_code=204)
 
     @router.post("/hooks/run-started", status_code=204)

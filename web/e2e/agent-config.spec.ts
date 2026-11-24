@@ -39,6 +39,36 @@ test('Agent 配置：从侧栏进入，改系统提示词、保存草稿、发�
   await expect(menu.getByRole('menuitemradio', { name: /^v6，陈思远/ })).toBeVisible()
 })
 
+test('Agent 配置：模型设置里开一个原生工具，保存草稿带上它；换成没有原生工具的模型时这一组不出现', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await login(page, 'governor')
+  await page.getByRole('button', { name: 'Agent 配置' }).click()
+
+  const main = page.getByRole('main', { name: 'Agent 配置' })
+  const editor = main.getByRole('region', { name: 'Agent 配置编辑器' })
+  await editor.getByRole('button', { name: /^模型设置：qwen3.8-flash/ }).click()
+  const panel = main.getByRole('region', { name: '模型设置' })
+  const tools = panel.getByRole('group', { name: '原生工具' })
+  await tools.getByRole('switch', { name: '联网搜索' }).click()
+
+  const saved = page.waitForRequest(
+    (request) => request.method() === 'PUT' && request.url().endsWith('/agents/director/draft'),
+  )
+  await editor.getByRole('button', { name: '保存草稿' }).click()
+  const body = (await saved).postDataJSON() as {
+    config: { model: { settings: { native_tools?: string[] } } }
+  }
+  expect(body.config.model.settings.native_tools).toEqual(['web_search'])
+
+  const plain = panel.getByRole('radio', { name: /^studio-chat\s?128K$/ })
+  await plain.click()
+  await expect(plain).toBeChecked()
+  await expect(tools).toHaveCount(0)
+})
+
 test('Agent 配置：在右栏试聊草稿，回复出现后切到运行过程看每一步与耗时', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/')

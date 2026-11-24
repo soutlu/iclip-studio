@@ -75,7 +75,7 @@ class UploadService:
         kind, ext, normalized = _accepted_type(body.content_type)
         if kind == "image":
             if body.width is None or body.height is None:
-                raise ValidationFailed("传图要报宽高")
+                raise ValidationFailed("上传图片须提供宽高信息")
             _check_dimensions(body.width, body.height)
         upload_id = uuid.uuid4()
         return signed_upload_ticket(
@@ -109,7 +109,7 @@ class UploadService:
             prefix=MEDIA_PATHS.upload_prefix(upload_id=upload_id)
         )
         if found is None:
-            raise Conflict("这个文件还没传上来，传完再确认")
+            raise Conflict("文件尚未上传完成，请上传完成后再确认")
         kind = _checked_kind(found)
         if kind == "image" and width is not None and height is not None:
             _check_dimensions(width, height)
@@ -156,19 +156,19 @@ class UploadService:
         except FetchTooLarge as exc:
             raise ValidationFailed(_too_large(limit)) from exc
         except FetchFailed as exc:
-            raise ValidationFailed(f"这张图下载不下来：{exc}") from exc
+            raise ValidationFailed(f"图片下载失败：{exc}") from exc
         if len(content) > limit:
             raise ValidationFailed(_too_large(limit))
         header = read_image_header(content)
         if header is None:
-            raise ValidationFailed("下载下来的不是能读的图片")
+            raise ValidationFailed("下载的文件不是有效的图片")
         known = UPLOAD_TYPES.get(header.mime or "")
         if header.mime is None or known is None or known[0] != "image":
             allowed = "、".join(
                 sorted(mime for mime, (kind, _) in UPLOAD_TYPES.items() if kind == "image")
             )
             raise ValidationFailed(
-                f"下载下来的图片是 {header.mime or '认不出类型的'} 格式，只收：{allowed}"
+                f"下载的图片格式不受支持（{header.mime or '未知类型'}），仅支持：{allowed}"
             )
         _check_dimensions(header.width, header.height)
         stored = await self._objects.put_public_object(
@@ -212,12 +212,12 @@ class UploadService:
 
         check_limit(limit)
         if not await self._lineage.readable(principal, conversation_id):
-            raise NotFound(f"没有这段对话: {conversation_id}")
+            raise NotFound(f"对话不存在：{conversation_id}")
         anchor = None
         if before is not None:
             anchor = await self._repo.get(before)
             if anchor is None:
-                raise NotFound(f"没有这条上传: {before}")
+                raise NotFound(f"上传记录不存在：{before}")
         return await self._repo.list_in_conversation(
             conversation_id,
             limit=limit,
@@ -260,7 +260,7 @@ class UploadService:
 def _checked_kind(found: StoredObject) -> MediaKind:
     known = UPLOAD_TYPES.get(found.content_type)
     if known is None:
-        raise ValidationFailed(f"桶里那个对象的类型是 {found.content_type}，不在收的范围内")
+        raise ValidationFailed(f"已上传文件的类型 {found.content_type} 不在允许范围内")
     kind: MediaKind = known[0]
     if found.size_bytes > MAX_BYTES[kind]:
         raise ValidationFailed(_too_large(MAX_BYTES[kind]))
@@ -268,7 +268,7 @@ def _checked_kind(found: StoredObject) -> MediaKind:
 
 
 def _too_large(limit: int) -> str:
-    return f"超过 {limit // (1024 * 1024)}MB 上限，这个文件不能用"
+    return f"文件大小超出 {limit // (1024 * 1024)} MB 上限，无法使用"
 
 
 def _content_md5(kind: MediaKind, found: StoredObject) -> str | None:
@@ -284,18 +284,18 @@ def _accepted_type(content_type: str) -> tuple[MediaKind, str, str]:
     known = UPLOAD_TYPES.get(normalized)
     if known is None:
         allowed = "、".join(sorted(UPLOAD_TYPES))
-        raise ValidationFailed(f"不收 {normalized or '空'} 这个类型，只收：{allowed}")
+        raise ValidationFailed(f"不支持 {normalized or '空'} 文件类型，仅支持：{allowed}")
     return known[0], known[1], normalized
 
 
 def _check_dimensions(width: int, height: int) -> None:
     if min(width, height) < MIN_SHORT_EDGE_PIXELS:
         raise ValidationFailed(
-            f"{width}×{height} 的短边不到 {MIN_SHORT_EDGE_PIXELS}px，这张图太小了"
+            f"图片尺寸 {width}×{height} 的短边不足 {MIN_SHORT_EDGE_PIXELS}px，无法上传"
         )
     if max(width, height) > MAX_LONG_EDGE_PIXELS:
         raise ValidationFailed(
-            f"{width}×{height} 的长边超过 {MAX_LONG_EDGE_PIXELS}px，先缩一下再传"
+            f"图片尺寸 {width}×{height} 的长边超出 {MAX_LONG_EDGE_PIXELS}px，请缩放后重试"
         )
 
 

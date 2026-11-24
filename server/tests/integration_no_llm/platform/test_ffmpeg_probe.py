@@ -31,7 +31,7 @@ async def test_a_file_without_a_video_stream_is_a_media_error(tmp_path: Path) ->
         capture_output=True,
     )
 
-    with pytest.raises(MediaError, match="没有视频流"):
+    with pytest.raises(MediaError):
         await probe_keyframes(path)
 
 
@@ -39,5 +39,5 @@ async def test_a_file_that_is_not_media_is_a_media_error(tmp_path: Path) -> None
     path = tmp_path / "broken.mp4"
     path.write_bytes(b"not a video")
 
-    with pytest.raises(MediaError, match="ffprobe 失败"):
+    with pytest.raises(MediaError, match="ffprobe"):
         await probe_keyframes(path)

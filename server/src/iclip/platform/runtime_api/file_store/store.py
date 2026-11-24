@@ -42,26 +42,26 @@ class FileEntry:
 def normalize_path(path: str) -> str:
     value = unicodedata.normalize("NFC", path)
     if any(unicodedata.category(ch) == "Cc" for ch in value):
-        raise InvalidPath(f"路径 {path!r} 里有控制字符")
+        raise InvalidPath(f"路径 {path!r} 包含控制字符")
     if "\\" in value:
-        raise InvalidPath(f"路径 {path!r} 用了反斜杠，请用 /")
+        raise InvalidPath(f"路径 {path!r} 包含反斜杠，请使用 / 分隔")
     while "//" in value:
         value = value.replace("//", "/")
     value = value.removeprefix("/")
     if value.endswith("/"):
-        raise InvalidPath(f"路径 {path!r} 以 / 结尾；路径指向文件，不是目录")
+        raise InvalidPath(f"路径 {path!r} 以 / 结尾；路径须指向文件而非目录")
     if not value:
-        raise InvalidPath("路径是空的")
+        raise InvalidPath("路径不可为空")
     if len(value) > MAX_PATH_CHARS:
-        raise InvalidPath(f"路径 {path!r} 超过 {MAX_PATH_CHARS} 个字符")
+        raise InvalidPath(f"路径 {path!r} 长度超出 {MAX_PATH_CHARS} 个字符")
     segments = value.split("/")
     if len(segments) > MAX_SEGMENTS:
-        raise InvalidPath(f"路径 {path!r} 超过 {MAX_SEGMENTS} 层")
+        raise InvalidPath(f"路径 {path!r} 目录层级超出 {MAX_SEGMENTS} 层")
     for segment in segments:
         if segment in (".", ".."):
-            raise InvalidPath(f"路径 {path!r} 里不许出现 . 或 .. 这样的段")
+            raise InvalidPath(f"路径 {path!r} 不可包含 . 或 ..")
         if len(segment) > MAX_SEGMENT_CHARS:
-            raise InvalidPath(f"路径 {path!r} 有一段超过 {MAX_SEGMENT_CHARS} 个字符")
+            raise InvalidPath(f"路径 {path!r} 中存在超出 {MAX_SEGMENT_CHARS} 个字符的目录或文件名")
     return value
 
 

@@ -182,7 +182,7 @@ class GenerationService:
             unlisted = await self._references.unlisted(request.reference_ids)
             if unlisted:
                 raise ValidationFailed(
-                    f"reference_ids 里这些参考不在资料库里或已移除：{'、'.join(map(str, unlisted))}"
+                    f"reference_ids 中以下参考不存在于资料库或已移除：{'、'.join(map(str, unlisted))}"
                 )
         model_group, upstream_model = await self._model_groups.video_model_of(
             principal.user_id, request.model
@@ -240,7 +240,7 @@ class GenerationService:
             (clip_url,) = request.reference_video_urls
             if not await self._references.usable_clip(principal, clip_url):
                 raise ValidationFailed(
-                    "reference_video_urls 必须是调用者本人上传的视频，或资料库里的一条参考视频"
+                    "reference_video_urls 须为调用者本人上传的视频或资料库中的参考视频"
                 )
         base_ms = base.output.duration_ms
         if base_ms is None:
@@ -296,7 +296,7 @@ class GenerationService:
                 continue
             edit = await self._check_source(principal, source_id, request.conversation_id)
             if not is_finished_edit(edit) or edit.source_job_id != base.id:
-                raise ValidationFailed("每段必须出自基底本身，或基于这个基底的一条已完成编辑段")
+                raise ValidationFailed("每段须出自基底本身或基于该基底的已完成编辑段")
             sources[source_id] = edit
         segments: list[ComposeSegment] = []
         for position, segment in enumerate(request.segments, start=1):
@@ -329,11 +329,11 @@ class GenerationService:
         self, principal: Principal, request: VideoDraftCompletionIn
     ) -> GenerationJob:
         if not self._drafts:
-            raise ValidationFailed("样片转 1080p 没有开通，暂时不能转")
+            raise ValidationFailed("样片转 1080p 尚未开通，无法转换")
         draft = await self._check_source(principal, request.draft_job_id, request.conversation_id)
         sample = finished_draft_request(draft)
         if sample is None:
-            raise ValidationFailed("只有做好的样片能转 1080p，请等样片生成完成后再转")
+            raise ValidationFailed("仅已完成的样片支持转 1080p，请等待样片生成完成后重试")
         for existing in await self._repo.draft_completions_of(
             draft.id, conversation_id=request.conversation_id
         ):
@@ -372,7 +372,7 @@ class GenerationService:
             inheritance=await self._inheritance(principal, conversation_id),
         )
         if source is None:
-            raise ValidationFailed("来源不是这段对话自己的或继承来的一条记录")
+            raise ValidationFailed("来源记录不属于当前对话或其继承的对话")
         return source
 
     async def _original_aspect_ratio(
@@ -387,7 +387,7 @@ class GenerationService:
         ratio = request.aspect_ratio if isinstance(request, VideoGenerationIn) else None
         if ratio is None or _CONCRETE_RATIO.fullmatch(ratio) is None:
             raise ValidationFailed(
-                f"原片没有记录画幅，无法用 {_MAX_FIRST_FRAMES + 1} 张及以上图片生成；"
+                f"原片未记录画幅，无法使用 {_MAX_FIRST_FRAMES + 1} 张及以上图片生成；"
                 f"请改用 {_MAX_FIRST_FRAMES} 张以内的图片"
             )
         return ratio
@@ -399,7 +399,7 @@ class GenerationService:
             return await self._media_probe.duration_ms(url)
         except MediaError as exc:
             _logger.warning("受理时探不出时长", what=what, job_id=job_id, error=str(exc))
-            raise ValidationFailed(f"读不出{what}的时长，请稍后重试") from exc
+            raise ValidationFailed(f"无法读取{what}时长，请稍后重试") from exc
 
     def _require_video_model(self, model: str) -> None:
         if model not in self._video_allowed_models:
@@ -501,7 +501,7 @@ class GenerationService:
             inheritance=await self._inheritance(principal, conversation_id),
         )
         if video is None:
-            raise NotFound(f"没有这次生成: {source_job_id}")
+            raise NotFound(f"未找到该生成记录：{source_job_id}")
         if not is_base_master(video) or video.output.url is None:
             raise ValidationFailed(refusal)
         return video, video.output.url
@@ -512,7 +512,7 @@ class GenerationService:
             principal,
             request.source_job_id,
             request.conversation_id,
-            refusal="只能识别素材片：已完成的出片或合成",
+            refusal="仅支持识别素材片（已完成的出片或合成视频）",
         )
         return await self._queue_new(
             _pending_job(
@@ -531,7 +531,7 @@ class GenerationService:
 
     def _require_subtitles(self) -> ProviderTarget:
         if self._subtitles is None:
-            raise ValidationFailed("字幕识别没有开通，暂时不能识别")
+            raise ValidationFailed("字幕识别尚未开通，暂时无法识别")
         return self._subtitles
 
     async def submit_dubbing(self, principal: Principal, request: DubbingIn) -> GenerationJob:
@@ -541,7 +541,7 @@ class GenerationService:
             principal,
             request.source_job_id,
             request.conversation_id,
-            refusal="只能给素材片配音：已完成的出片或合成",
+            refusal="仅支持为素材片（已完成的出片或合成视频）配音",
         )
         duration_ms = video.output.duration_ms
         if duration_ms is None:
@@ -578,7 +578,7 @@ class GenerationService:
         if request.conversation_id is not None and not await self._lineage.readable(
             principal, request.conversation_id
         ):
-            raise NotFound(f"没有这段对话: {request.conversation_id}")
+            raise NotFound(f"对话不存在：{request.conversation_id}")
         return await self._queue_new(
             _pending_job(
                 SpeechRequest(
@@ -600,7 +600,7 @@ class GenerationService:
 
     def _require_dubbing(self) -> str:
         if self._dubbing_provider is None:
-            raise ValidationFailed("配音没有开通，暂时不能配音")
+            raise ValidationFailed("配音功能尚未开通，暂时无法配音")
         return self._dubbing_provider
 
     async def _dubbing_reference(
@@ -615,13 +615,13 @@ class GenerationService:
             return await self._voice_reference(reference)
         url = await self._references.own_audio_upload(principal, reference.upload_id)
         if url is None:
-            raise ValidationFailed("参考音频要用调用者本人的一条音频上传")
+            raise ValidationFailed("参考音频须为调用者本人上传的音频")
         return DubbingUploadReference(kind="upload", upload_id=reference.upload_id, url=url)
 
     async def _voice_reference(self, reference: DubbingVoiceReferenceIn) -> DubbingVoiceReference:
         voice = await self._references.voice(reference.reference_id)
         if voice is None:
-            raise ValidationFailed("参考音频要用参考音频库里一条没移除的音色")
+            raise ValidationFailed("参考音频须为参考音频库中未移除的音色")
         return DubbingVoiceReference(
             kind="reference_audio",
             reference_id=reference.reference_id,
@@ -631,9 +631,9 @@ class GenerationService:
 
     async def submit_music(self, principal: Principal, request: MusicIn) -> GenerationJob:
         if self._music is None:
-            raise ValidationFailed("生成背景音乐没有开通，暂时不能生成")
+            raise ValidationFailed("背景音乐生成尚未开通，暂时无法生成")
         if not await self._lineage.readable(principal, request.conversation_id):
-            raise NotFound(f"没有这段对话: {request.conversation_id}")
+            raise NotFound(f"对话不存在：{request.conversation_id}")
         return await self._queue_new(
             _pending_job(
                 MusicRequest(model=self._music.model, prompt=request.prompt),
@@ -672,7 +672,7 @@ class GenerationService:
                 return
             job = await self._repo.get(job.id, owner=None)
         if job.status == STATUS_SUBMITTING:
-            raise Conflict("正在交给渲染服务，稍后再取消")
+            raise Conflict("正在提交至渲染服务，请稍后再取消")
         if job.status != STATUS_SUBMITTED:
             return
         await render.cancel(job.id)
@@ -691,7 +691,7 @@ class GenerationService:
 
     def _require_render(self) -> RenderClient:
         if self._render is None:
-            raise ValidationFailed("成片导出没有开通")
+            raise ValidationFailed("成片导出尚未开通")
         return self._render
 
     async def submit_video_enhance(
@@ -700,13 +700,13 @@ class GenerationService:
         enhance = self._require_enhance()
         source = await self._repo.get(request.source_job_id, owner=None)
         if not _enhanceable(source) or source.output.url is None:
-            raise ValidationFailed("只有素材片（已完成的出片或合成）与导出完成的成片能做高清版")
+            raise ValidationFailed("仅素材片（已完成的出片或合成视频）与已导出成片支持生成高清版")
         tiers = await self._enhance_tiers(enhance, source)
         if request.resolution not in tiers:
             if not tiers:
-                raise ValidationFailed("这条视频已经足够清晰，没有更高的高清版可做")
+                raise ValidationFailed("当前视频清晰度已达上限，暂无更高规格的高清版可生成")
             raise ValidationFailed(
-                f"这条视频做不了 {request.resolution} 高清版，可选 {'、'.join(tiers)}"
+                f"当前视频不支持生成 {request.resolution} 高清版，可选规格：{'、'.join(tiers)}"
             )
         for existing in await self._repo.enhancements_of(source.id):
             if existing.status != STATUS_FAILED and _enhanced_to(existing) == request.resolution:
@@ -756,7 +756,7 @@ class GenerationService:
 
     def _require_enhance(self) -> VideoEnhanceSpec:
         if self._enhance is None:
-            raise ValidationFailed("高清版没有开通，暂时不能生成")
+            raise ValidationFailed("高清版功能尚未开通，暂时无法生成")
         return self._enhance
 
     async def _enhance_tiers(
@@ -825,7 +825,7 @@ class GenerationService:
                 f"{model} 不支持分辨率 {request.resolution}，可选 {'、'.join(spec.resolutions)}"
             )
         if request.channel is not None and not spec.channels:
-            raise ValidationFailed(f"{model} 没有渠道这个轴，不要传 channel")
+            raise ValidationFailed(f"{model} 不支持渠道参数，请勿传入 channel")
         if request.channel is not None and request.channel not in spec.channels:
             raise ValidationFailed(
                 f"{model} 不支持渠道 {request.channel}，可选 {'、'.join(spec.channels)}"
@@ -865,7 +865,7 @@ class GenerationService:
     async def get_video(self, principal: Principal, job_id: uuid.UUID) -> GenerationJob:
         job = await self.get(principal, job_id)
         if job.kind != KIND_VIDEO or job.operation not in (OPERATION_GENERATE, OPERATION_TRIAL):
-            raise NotFound(f"没有这个视频任务: {job_id}")
+            raise NotFound(f"未找到该视频任务：{job_id}")
         return job
 
     async def in_flight_by_conversation(

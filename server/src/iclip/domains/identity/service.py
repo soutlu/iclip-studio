@@ -100,16 +100,16 @@ class IdentityService:
         self, principal: Principal, command: CreateApiKey
     ) -> tuple[ApiKeyRecord, str]:
         if principal.kind != "user":
-            raise PermissionDenied("API key 不能签发新的 API key")
+            raise PermissionDenied("API key 无法签发新的 API key")
         name = command.name.strip()
         if not name or len(name) > _MAX_KEY_NAME_LENGTH:
-            raise ValidationFailed(f"key 名称必须非空且不超过 {_MAX_KEY_NAME_LENGTH} 字符")
+            raise ValidationFailed(f"key 名称须非空且不超过 {_MAX_KEY_NAME_LENGTH} 个字符")
         if not command.permissions:
-            raise ValidationFailed("key 至少授予一项权限")
+            raise ValidationFailed("key 至少须授予一项权限")
         if not command.permissions <= principal.permissions:
-            raise PermissionDenied("key 权限不能超出属主当前权限")
+            raise PermissionDenied("key 权限不可超出属主当前权限")
         if command.expires_at is not None and command.expires_at <= _now():
-            raise ValidationFailed("过期时间必须在未来")
+            raise ValidationFailed("过期时间须晚于当前时间")
 
         token = generate_api_key_token()
         record = ApiKeyRecord(
@@ -154,9 +154,9 @@ class IdentityService:
                 raise ValidationFailed(f"未知角色: {', '.join(sorted(unknown_roles))}")
         if user_id == principal.user_id:
             if changes_access:
-                raise SelfManagementForbidden("不能修改自己的授权")
+                raise SelfManagementForbidden("无法修改本人的授权")
             if patch.is_active is False:
-                raise SelfManagementForbidden("不能停用自己")
+                raise SelfManagementForbidden("无法停用本人账号")
         else:
             target = await self.get_account(user_id)
             before = effective_permissions(target.roles, target.direct_permissions)
@@ -169,7 +169,7 @@ class IdentityService:
                 ),
             )
             if not before | after <= principal.permissions:
-                raise PermissionDenied("不能修改权限超出自己的用户，也不能授予超出自己的权限")
+                raise PermissionDenied("无法修改权限高于本人的用户，也无法授予超出本人范围的权限")
         updated = await self._users.update_access_fields(
             user_id,
             roles=patch.roles,

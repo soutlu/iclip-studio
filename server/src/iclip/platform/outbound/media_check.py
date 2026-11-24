@@ -36,13 +36,13 @@ async def _problem(probe: UrlProber, url: str) -> str | None:
     try:
         parts = urlsplit(url)
     except ValueError:
-        return "打不开"
+        return "无法访问"
     if parts.scheme not in ("http", "https") or not parts.hostname:
-        return "打不开"
+        return "无法访问"
     try:
         media_type = await _probe_twice(probe, url)
     except (FetchFailed, TimeoutError):
-        return "打不开"
+        return "无法访问"
     return None if _is_image(url, media_type) else "不是图片"
 
 

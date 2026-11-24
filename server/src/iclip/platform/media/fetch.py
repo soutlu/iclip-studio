@@ -68,14 +68,14 @@ async def download(client: httpx.AsyncClient, url: str, dest: Path, *, max_bytes
                 async for chunk in response.aiter_bytes(_DOWNLOAD_CHUNK):
                     written += len(chunk)
                     if written > max_bytes:
-                        raise MediaError(f"素材超过 {max_bytes} 字节的上限: {url}")
+                        raise MediaError(f"素材大小超出上限（{max_bytes} 字节）：{url}")
                     handle.write(chunk)
     except (httpx.HTTPError, httpx.InvalidURL, UnicodeError) as exc:
-        raise MediaError(f"取不到素材（{failure_of(exc)}）: {url}") from exc
+        raise MediaError(f"素材下载失败（{failure_of(exc)}）：{url}") from exc
     except FetchFailed as exc:
-        raise MediaError(f"取不到素材（{exc}）: {url}") from exc
+        raise MediaError(f"素材下载失败（{exc}）：{url}") from exc
     if written == 0:
-        raise MediaError(f"取到的素材是空的: {url}")
+        raise MediaError(f"下载的素材文件为空：{url}")
 
 
 def without_query(url: str) -> str:

@@ -399,6 +399,14 @@ const publishProblems = (item: MockAgent): AgentProblemOut[] => {
       !option.thinking.includes(model.settings.thinking)
     )
       problems.push({ message: '这个模型不支持所选的思考档位', path: 'model.settings.thinking' })
+    if (
+      option !== undefined &&
+      (model.settings?.native_tools ?? []).some((name) => !option.nativeTools.includes(name))
+    )
+      problems.push({
+        message: '这个模型不支持所选的原生工具',
+        path: 'model.settings.native_tools',
+      })
   }
   const enabled = new Set(
     (config.tools ?? []).flatMap((tool) =>

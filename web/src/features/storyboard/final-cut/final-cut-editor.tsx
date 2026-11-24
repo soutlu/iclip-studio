@@ -207,8 +207,8 @@ const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入�
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
-const NO_TAKES_DUBBING_TEXT = '找不到视频片段用的素材片记录，无法生成配音'
-const ALL_UNVOICED_TEXT = '每句都选了「不配音」，无需重新生成'
+const NO_TAKES_DUBBING_TEXT = '未找到视频片段对应的素材片记录，无法生成配音'
+const ALL_UNVOICED_TEXT = '全部字幕均已设为「不配音」，无需重新生成'
 const DUBBING_BUSY_TEXT = '正在生成配音，请等待生成完成'
 const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 const NO_LINKS: Links = new Map()
@@ -1054,12 +1054,12 @@ function EditorBody({
     return id
   }
 
-  // 「字幕」页签里的「识别字幕」：识别中照常编辑，全部有了结果后按那时的 final-cut 一次写进去
+  // 「字幕」页签的「识别字幕」：识别期间不阻塞编辑，全部完成后按最新工程状态一次性写入。
   const takeOf = useCallback((src: string) => takeOfUrl.get(src), [takeOfUrl])
   const recognizable = recognitionTargets(clips, takeOf)
   /**
-   * 识别结果按 `current`（那时的片段）换算：哪些片段失败了，要加的字幕，跳过的句数，没识别出话的片段，
-   * 有话但句子都归别的片段的片段。
+   * 按写入时刻的工程片段 `current` 汇总识别结果：失败片段、待新增字幕、重叠跳过句数、
+   * 无口播片段，以及虽有口播但句子均归属其他片段的片段。
    */
   const recognitionResult = (
     current: readonly FilmClip[],
@@ -1067,7 +1067,7 @@ function EditorBody({
     outcomes: ReadonlyMap<string, RecognitionOutcome>,
   ) => {
     const wanted = new Set(clipIds)
-    // 识别期间片段删掉了、有了字幕的不再写
+    // 跳过识别期间已删除或已存在字幕的片段。
     const found = recognitionTargets(current, takeOf)
     const targets = 'targets' in found ? found.targets.filter((t) => wanted.has(t.clipId)) : []
     const failed: string[] = []
@@ -1096,9 +1096,9 @@ function EditorBody({
       ids.map((id) => clips.find((clip) => clip.id === id)?.label ?? id).join('、')
     if (added > 0) notice(`已加入 ${added} 句字幕`)
     if (result.skipped > 0) notice(`${result.skipped} 句与已有字幕重叠，已跳过`)
-    if (result.silent.length > 0) notice(`${labels(result.silent)} 没有识别出说话，未加字幕`)
+    if (result.silent.length > 0) notice(`${labels(result.silent)} 未识别到口播内容，未新增字幕`)
     if (added === 0 && result.elsewhere.length > 0)
-      notice(`${labels(result.elsewhere)} 里的话从别的片段说起，字幕归开头所在的片段，未加字幕`)
+      notice(`${labels(result.elsewhere)} 的口播起始于其他片段，对应字幕已归属起始片段，未新增字幕`)
     if (result.failed.length > 0)
       notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
   }
@@ -1309,7 +1309,7 @@ function EditorBody({
       }
     })
     if (added > 0) notice(phraseWith(`已生成 ${added} 句`, code, '配音'))
-    if (trimmed > 0) notice(`${trimmed} 句配音太长，已截短`)
+    if (trimmed > 0) notice(`${trimmed} 条配音时长超出上限，已截短`)
     for (const { target: request, outcome } of results)
       if (outcome.kind === 'failed')
         notice(`${sourceName(request.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)

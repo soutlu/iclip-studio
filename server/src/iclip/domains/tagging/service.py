@@ -161,7 +161,7 @@ class TaggingService:
         await self._store.ensure(key, created_by=created_by)
         entry_id = await self._store.request(key)
         if entry_id is None:
-            raise Conflict("正在打标，打完再重新打标")
+            raise Conflict("正在打标中，请待完成后再重新打标")
         await self._defer(queue, entry_id)
 
     async def replace(
@@ -173,10 +173,10 @@ class TaggingService:
             if node is None:
                 raise ValidationFailed(f"标签 {tag_id} 不存在")
             if node.parent_id is None:
-                raise ValidationFailed(f"「{node.name}」是维度，不能当标签打")
+                raise ValidationFailed(f"「{node.name}」为维度，无法作为标签使用")
         await self._store.ensure(key, created_by=created_by)
         if not await self._store.replace(key, set(tag_ids)):
-            raise Conflict("正在打标，打完再改标签")
+            raise Conflict("正在打标中，请待完成后再修改标签")
 
     async def remove(self, key: EntryKey) -> None:
         await self._store.remove(key)

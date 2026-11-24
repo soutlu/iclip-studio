@@ -28,11 +28,11 @@ def public_client(*, timeout: float, policy: OutboundPolicy = PUBLIC_INTERNET) -
     async def refuse_before_connecting(request: httpx.Request) -> None:
         url = request.url
         if url.userinfo:
-            raise FetchFailed("地址里不能带用户名密码")
+            raise FetchFailed("地址不可包含用户名或密码")
         # httpx-secure 先发起 TCP 连接选择 IP 后才校验端口，需在连接前拦截非标准端口。
         port = url.port or _DEFAULT_PORTS.get(url.scheme)
         if port is not None and port not in policy.ports:
-            raise FetchFailed(f"不连 {port} 端口")
+            raise FetchFailed(f"不支持访问 {port} 端口")
 
     client = httpx.AsyncClient(
         trust_env=False,
@@ -55,11 +55,11 @@ def public_client(*, timeout: float, policy: OutboundPolicy = PUBLIC_INTERNET) -
 def failure_of(exc: httpx.HTTPError | httpx.InvalidURL | UnicodeError) -> FetchFailed:
     if isinstance(exc, SSRFProtectionError):
         return FetchFailed(
-            f"{exc.hostname} 连到的 {exc.ip_addr}:{exc.port} 不是允许的公网地址与端口"
+            f"{exc.hostname} 解析至 {exc.ip_addr}:{exc.port}，不在允许的公网地址与端口范围内"
         )
     if isinstance(exc, httpx.UnsupportedProtocol | httpx.InvalidURL | UnicodeError):
-        return FetchFailed(f"地址格式不对：{exc}")
-    return FetchFailed(f"下载出错：{type(exc).__name__}")
+        return FetchFailed(f"地址格式无效：{exc}")
+    return FetchFailed(f"下载失败：{type(exc).__name__}")
 
 
 __all__ = [

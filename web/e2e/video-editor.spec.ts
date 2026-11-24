@@ -59,7 +59,7 @@ const shotEye = (dialog: Locator, no: number) =>
 const partEye = (dialog: Locator, name: string) =>
   lane(dialog)
     .getByRole('group', { name, exact: true })
-    .getByRole('button', { name: /选用这一段$/ })
+    .getByRole('button', { name: /选用该片段$/ })
 const capsule = (dialog: Locator) => dialog.getByRole('button', { name: /^展开镜头 \d/ })
 const requestBox = (dialog: Locator) =>
   card(dialog).getByRole('textbox', { name: '修改要求', exact: true })
@@ -188,7 +188,7 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   await expect(
     lane(dialog).getByRole('button', { name: /^镜头 2–3 的编辑片段 · 第 \d 段 · 1\.0 秒$/ }),
   ).toHaveCount(3, { timeout: STEP_TIMEOUT })
-  await expect(partEye(dialog, partName(1))).toHaveAccessibleName('选用这一段')
+  await expect(partEye(dialog, partName(1))).toHaveAccessibleName('选用该片段')
   await expect(controls(dialog)).toContainText('共 6.0 秒')
 
   const part = lane(dialog).getByRole('button', { name: partName(1), exact: true })
@@ -282,7 +282,7 @@ test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿�
   const inDraft = draft(dialog).getByRole('button', { name: `${partName} · 已选用` })
   await expect(inDraft).toBeVisible()
   await expect(shotEye(dialog, 2)).toHaveAccessibleName('开启镜头 2')
-  await expect(partEye(dialog, partName)).toHaveAccessibleName('取消选用这一段')
+  await expect(partEye(dialog, partName)).toHaveAccessibleName('取消选用该片段')
   await expect(inDraft).toHaveAttribute('aria-pressed', 'false')
   await expect(controls(dialog)).toContainText('共 5.0 秒')
 
@@ -294,7 +294,7 @@ test('拖放：编辑段拖到草稿上出落点占位、松手选用；草稿�
   await page.mouse.up()
   await expect(inDraft).toHaveCount(0)
   await expect(shotEye(dialog, 2)).toHaveAccessibleName('关闭镜头 2')
-  await expect(partEye(dialog, partName)).toHaveAccessibleName('选用这一段')
+  await expect(partEye(dialog, partName)).toHaveAccessibleName('选用该片段')
   await expect(controls(dialog)).toContainText('共 6.0 秒')
 })
 
@@ -644,7 +644,7 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
   await end.focus()
   for (let i = 0; i < 5; i += 1) await page.keyboard.press('ArrowLeft')
   await expect(
-    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.5 秒（这个镜头 1\.0 秒）/ }),
+    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.5 秒（该镜头 1\.0 秒）/ }),
   ).toBeVisible()
   const viewport = timelineOf(dialog).getByRole('region', { name: '时间线轨道，可横向滚动' })
   await viewport.evaluate((element) => {
@@ -686,7 +686,7 @@ test('草稿比原片长、时间线能横向滚动时，拖草稿块的结尾�
   expect(await scrollLeft()).toBe(last)
   await page.mouse.up()
   await expect(
-    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.8 秒（这个镜头 1\.0 秒）/ }),
+    draft(dialog).getByRole('button', { name: /^镜头 4 · 0\.8 秒（该镜头 1\.0 秒）/ }),
   ).toBeVisible()
   await expect(controls(dialog)).toContainText('共 7.8 秒')
 })

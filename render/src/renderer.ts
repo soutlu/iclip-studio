@@ -209,7 +209,7 @@ export function createProducerWorker(options: RendererOptions): ExportWorker {
           throw new ExportFailure('media-mismatch', SILENT_SOURCE_TEXT)
         const unusable = unusableCompositions(error)
         if (unusable !== undefined)
-          throw new ExportFailure('render-failed', `工程里的组件文件无法使用：${unusable}`)
+          throw new ExportFailure('render-failed', `工程中的组件文件无法使用：${unusable}`)
         throw new ExportFailure(
           'render-failed',
           error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error),

@@ -567,14 +567,14 @@ export function GenerateMusic({
         : text === ''
           ? '尚未填写音乐描述，无法生成；请用一句话描述想要的音乐'
           : text.length > MAX_PROMPT_CHARS
-            ? `描述超过 ${MAX_PROMPT_CHARS} 字，无法生成；请删减到 ${MAX_PROMPT_CHARS} 字以内`
+            ? `描述超过 ${MAX_PROMPT_CHARS} 字，无法生成；请精简至 ${MAX_PROMPT_CHARS} 字以内`
             : undefined
   const hint =
     reason ??
     (initialPrompt !== undefined && text === initialPrompt.trim()
       ? '已填入上次的描述，可直接修改'
       : initialPrompt === undefined && text === musicDescription.trim()
-        ? '已填入工程文件里的配乐描述，可直接修改'
+        ? '已填入工程文件中的配乐描述，可直接修改'
         : '生成后可在「配乐」页签的列表中查看')
 
   const fill = useEffectEvent((target: ComposerHandle) =>
@@ -658,7 +658,7 @@ export function GenerateMusic({
           onSubmit={(submission) => void generate(submission.text)}
           placeholder={
             film.isPending && open
-              ? '正在读取工程文件里的配乐…'
+              ? '正在读取工程文件中的配乐…'
               : '描述想要的音乐：风格、情绪、乐器、节奏'
           }
           ref={setComposer}

@@ -46,7 +46,7 @@ async def probe_remote_duration_ms(url: str) -> int:
 
 async def _run_remote(entries: tuple[str, ...], url: str) -> bytes:
     if not is_http_url(url):
-        raise MediaError(f"要探的地址不是 http(s): {without_query(url)}")
+        raise MediaError(f"待探测的地址不是有效的 http(s) URL：{without_query(url)}")
     try:
         return await run(
             ["ffprobe", "-v", "error", *REMOTE_INPUT, *entries, url],
@@ -61,9 +61,9 @@ def _duration_ms(stdout: bytes) -> int:
     try:
         seconds = float(text)
     except ValueError as exc:
-        raise MediaError(f"ffprobe 报的时长看不懂: {text!r}") from exc
+        raise MediaError(f"无法解析媒体时长：{text!r}") from exc
     if seconds <= 0:
-        raise MediaError(f"ffprobe 报的时长不是正数: {seconds}")
+        raise MediaError(f"媒体时长无效：{seconds}")
     return round(seconds * 1000)
 
 
@@ -78,16 +78,16 @@ def _video_profile(stdout: bytes, name: str) -> VideoProfile:
     try:
         streams = json.loads(stdout)["streams"]
     except (ValueError, KeyError, TypeError) as exc:
-        raise MediaError("ffprobe 的流信息看不懂") from exc
+        raise MediaError("无法解析媒体流信息") from exc
     video = next((item for item in streams if item.get("codec_type") == "video"), None)
     if video is None:
-        raise MediaError(f"这条素材里没有视频流: {name}")
+        raise MediaError(f"该素材不包含视频流：{name}")
     width, height = video.get("width"), video.get("height")
     if not isinstance(width, int) or not isinstance(height, int) or width <= 0 or height <= 0:
-        raise MediaError(f"ffprobe 报的画幅看不懂: {width!r}×{height!r}")
+        raise MediaError(f"无法解析媒体分辨率：{width!r}×{height!r}")
     rate = video.get("r_frame_rate")
     if not isinstance(rate, str) or not _positive_fraction(rate):
-        raise MediaError(f"ffprobe 报的帧率看不懂: {rate!r}")
+        raise MediaError(f"无法解析媒体帧率：{rate!r}")
     return VideoProfile(
         width=width,
         height=height,
@@ -131,11 +131,11 @@ async def probe_keyframes(path: Path) -> list[float]:
             if "K" in packet.get("flags", "")
         )
     except (ValueError, KeyError, TypeError, AttributeError) as exc:
-        raise MediaError("ffprobe 的关键帧信息看不懂") from exc
+        raise MediaError("无法解析视频关键帧信息") from exc
     if not streams:
-        raise MediaError(f"这条素材里没有视频流: {path.name}")
+        raise MediaError(f"该素材不包含视频流：{path.name}")
     if not keyframes:
-        raise MediaError(f"这条素材的视频流里没有关键帧: {path.name}")
+        raise MediaError(f"该素材的视频流不包含关键帧：{path.name}")
     return keyframes
 
 
@@ -158,7 +158,7 @@ async def has_audio_stream(path: Path) -> bool:
     try:
         streams = json.loads(stdout)["streams"]
     except (ValueError, KeyError, TypeError) as exc:
-        raise MediaError("ffprobe 的音轨信息看不懂") from exc
+        raise MediaError("无法解析媒体音轨信息") from exc
     return isinstance(streams, list) and len(streams) > 0
 
 

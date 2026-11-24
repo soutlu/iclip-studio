@@ -705,7 +705,7 @@ type SplitHalf = {
   variables: readonly (readonly [from: string, to: string])[]
 }
 
-const SPLIT_FAILED_TEXT = '片段里带有无法复制的内容，无法切开'
+const SPLIT_FAILED_TEXT = '片段包含无法复制的内容，无法切开'
 
 /** 有一个后半段没能原样加进去（引擎不收这段 HTML）：整次切开退回去。 */
 class HalfRejected extends Error {}

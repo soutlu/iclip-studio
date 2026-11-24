@@ -159,7 +159,7 @@ export function SkillCreateForm({
               id={`${baseId}-description`}
               maxLength={MAX_DESCRIPTION}
               onChange={(event) => change('description', event.currentTarget.value)}
-              placeholder="这个技能可以完成什么"
+              placeholder="简述该技能的用途"
               ref={descriptionRef}
               rows={3}
               value={values.description}

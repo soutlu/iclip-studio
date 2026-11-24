@@ -58,10 +58,10 @@ export type DubbingRefusal = 'empty' | 'uncaptioned' | 'untranslated'
 /** 配不了的原因，`code` 是要配的语言。 */
 export const dubbingRefusalText = (refusal: DubbingRefusal, code: LocaleCode): string =>
   refusal === 'empty'
-    ? 'final-cut 里暂无视频片段，无法生成配音；请先加入镜头'
+    ? 'final-cut 中暂无视频片段，无法生成配音；请先添加镜头'
     : refusal === 'uncaptioned'
-      ? `视频片段都没有识别出的字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
-      : phraseWith('字幕还没有翻成', code, '，无法生成配音；请先点击「翻译」')
+      ? `视频片段均无已识别字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
+      : phraseWith('字幕尚未翻译为', code, '，无法生成配音；请先点击「翻译」')
 
 const isCaption = (clip: FilmClip): clip is CaptionClip => clip.kind === 'caption'
 
@@ -71,12 +71,12 @@ export type LineRefusal = 'unowned' | 'untranslated' | 'untaken' | 'crowded'
 /** 一句配不了音的原因，`code` 是要配的语言。 */
 export const lineRefusalText = (refusal: LineRefusal, code: LocaleCode): string =>
   refusal === 'unowned'
-    ? '这句字幕不属于任何视频片段，无法配音'
+    ? '该条字幕不属于任何视频片段，无法配音'
     : refusal === 'untranslated'
-      ? phraseWith('这句还没有翻成', code, '，无法配音；请先点击「翻译」')
+      ? phraseWith('该条字幕尚未翻译为', code, '，无法配音；请先点击「翻译」')
       : refusal === 'untaken'
-        ? '找不到这句所在视频片段的素材片记录，无法配音'
-        : '这句和前一句重叠太多，无法配音'
+        ? '未找到该条字幕所属视频片段的素材片记录，无法配音'
+        : '该条字幕与前一条重叠过多，无法配音'
 
 /**
  * 各句字幕在一种语言（值表 `values`）下为什么配不了音，配得了的不在里面。`clips` 要含原文的旁白片段（这种语言
@@ -331,15 +331,14 @@ export type NewDub = Pick<
   'label' | 'src' | 'start' | 'duration' | 'mediaStart' | 'playbackRate'
 > & { caption: string; trimmed: boolean }
 
-/** 一条素材片配好的配音记录里用得到的：音轨地址、总长（毫秒）和每句的结果。 */
+/** 素材片已完成配音记录的关键信息：音轨地址、总时长（毫秒）与单句结果列表。 */
 export type DubbedTrack = { url: string; durationMs: number | null; lines: readonly DubbedLine[] }
 
 /**
- * 一条素材片的配音（`request` 是发起时的各句，`track` 是配好的音轨）按 `clips`（这一刻的片段）建成配音片段：
- * 每句一个，和它配的那句字幕对齐（从字幕的开始放），从音轨里这句的开始放起，速度跟着字幕所属的视频片段；
- * 长度照配音的规则占到这句的 `slotEndMs`（没有时到音轨结尾），再按速度换算，不超出那个视频片段的结尾和这句字幕的
- * 结尾里晚的那个（识别出来的一句跨过接缝时字幕比它的片段长，配音要能配完这句）。字幕或它的视频片段已经不在、
- * 放不下最短长度的句子不建。截了尾的句子标出来。
+ * 根据当前工程片段 `clips` 将单条素材片的配音结果（`request` 为发起请求，`track` 为产出音轨）构建为配音片段：
+ * 每句与对应字幕起点对齐、沿用所属视频片段的播放倍速；长度按 `slotEndMs`（缺省为音轨结尾）经倍速换算，
+ * 上限取所属视频片段结尾与该句字幕结尾的较晚者（跨镜头识别的字幕长于其归属片段时确保配音完整播放）。
+ * 对应字幕或视频片段已移除、或可用时长不足最短片段时长的条目不生成，截尾条目保留标记。
  */
 export function dubClips(
   clips: readonly FilmClip[],
@@ -351,7 +350,7 @@ export function dubClips(
     const caption = byId.get(line.caption)
     const video = caption?.kind === 'caption' ? byId.get(caption.owner ?? '') : undefined
     if (caption === undefined || video?.kind !== 'video') return []
-    // 请求里的下一句不会早于 `slotEndMs`（它不晚于这条素材片上下一句要配的开始），和后端的取法一样
+    // 后续句起点不早于 slotEndMs，与后端槽位计算规则保持一致。
     const slotEnd = line.slotEndMs ?? track.durationMs ?? line.endMs
     const duration = Math.min(
       Math.round((slotEnd - line.startMs) / video.playbackRate),

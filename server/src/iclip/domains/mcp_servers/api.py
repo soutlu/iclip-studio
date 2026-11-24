@@ -179,7 +179,7 @@ def create_mcp_connections_router(
 
         if conversation_id is not None:
             if agent_id is not None or draft:
-                raise ValidationFailed("conversationId 不能与 agentId 或 draft 一起给")
+                raise ValidationFailed("conversationId 不可与 agentId 或 draft 同时传入")
             await conversations.agent_of(principal, str(conversation_id), writing=True)
         elif draft and not principal.has(_MANAGE):
             raise PermissionDenied(f"需要 {_MANAGE} 权限")

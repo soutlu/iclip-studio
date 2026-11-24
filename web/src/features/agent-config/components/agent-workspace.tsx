@@ -37,7 +37,7 @@ import { ProviderPanel } from './provider-panel'
 import { SkillPanel } from './skill-panel'
 import { SubagentPanel } from './subagent-panel'
 
-const STALE_NOTICE = '草稿已被别人修改，已读取最新的草稿；刚才没保存的修改已丢弃，请重新修改后保存'
+const STALE_NOTICE = '草稿已被他人修改，已加载最新草稿；此前未保存的修改已丢弃，请重新修改后保存'
 
 const draftOf = (detail: AgentDetail): DraftValue => ({
   config: detail.draft.config,
@@ -59,7 +59,7 @@ type AgentWorkspaceProps = {
   draftSaverRef: Ref<DraftSaver>
 }
 
-/** 把页面上没保存的修改存进草稿；没有修改时什么都不做，存不上时拒绝。 */
+/** 将页面上未保存的修改写入草稿；无修改时直接成功，保存失败时返回拒绝的 Promise。 */
 export type DraftSaver = { saveUnsaved: () => Promise<void> }
 
 export function AgentWorkspace(props: AgentWorkspaceProps) {
@@ -190,7 +190,7 @@ function LoadedWorkspace({
       onEditChange(undefined)
       setProblems([])
       onViewVersion(null)
-      toast.success(version === undefined ? '已恢复到草稿' : `已把 v${version.version} 恢复到草稿`)
+      toast.success(version === undefined ? '已恢复至草稿' : `已将 v${version.version} 恢复至草稿`)
     } catch (error) {
       fail(error, '恢复失败，请重试恢复')
     }
@@ -245,6 +245,7 @@ function LoadedWorkspace({
           <AgentEditorPane
             agents={agents}
             current={current}
+            nativeTools={modelOptions.data?.nativeTools ?? []}
             onOpenPanel={onPanelChange}
             panel={panel}
             plugins={plugins.data ?? []}
@@ -314,8 +315,9 @@ function LoadedWorkspace({
           <ModelPanel
             config={draft.config}
             onChange={changeConfig}
+            nativeTools={modelOptions.data?.nativeTools ?? []}
             onClose={closePanel}
-            providers={modelOptions.data ?? []}
+            providers={modelOptions.data?.providers ?? []}
           />
         ) : panel.type === 'plugins' ? (
           <PluginPanel

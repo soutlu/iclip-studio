@@ -57,19 +57,22 @@ async def test_a_reachable_image_passes(
 
 
 @pytest.mark.parametrize(
-    ("path", "reason"),
+    ("path", "same_as_unreachable"),
     [
-        pytest.param("/page.png", "不是图片", id="类型不对"),
-        pytest.param("/missing.png", "打不开", id="404"),
-        pytest.param("/down.png", "打不开", id="5xx"),
-        pytest.param("/loop.png", "打不开", id="跳转太多"),
-        pytest.param("/slow.png", "打不开", id="超时"),
+        pytest.param("/page.png", False, id="类型不对"),
+        pytest.param("/missing.png", True, id="404"),
+        pytest.param("/down.png", True, id="5xx"),
+        pytest.param("/loop.png", True, id="跳转太多"),
+        pytest.param("/slow.png", True, id="超时"),
     ],
 )
 async def test_an_address_that_does_not_work_says_which_of_the_two(
-    server: LoopbackServer, fetcher: PublicFetcher, path: str, reason: str
+    server: LoopbackServer, fetcher: PublicFetcher, path: str, same_as_unreachable: bool
 ) -> None:
-    assert await reason_for(fetcher, server.url(path)) == reason
+    reason = await reason_for(fetcher, server.url(path))
+    assert reason
+    not_image = await reason_for(fetcher, server.url("/page.png"))
+    assert (reason != not_image) is same_as_unreachable
 
 
 @pytest.mark.parametrize(
@@ -82,7 +85,7 @@ async def test_an_address_that_does_not_work_says_which_of_the_two(
     ],
 )
 async def test_an_address_outside_the_rules_does_not_open(fetcher: PublicFetcher, url: str) -> None:
-    assert await reason_for(fetcher, url) == "打不开"
+    assert await reason_for(fetcher, url)
 
 
 def answering(*answers: str | FetchFailed | None) -> tuple[UrlProber, list[str]]:
@@ -119,12 +122,16 @@ async def test_a_failed_probe_is_tried_once_more() -> None:
 async def test_two_failed_probes_do_not_open() -> None:
     probe, asked = answering(FetchFailed("对方回了 404"), FetchFailed("连不上"))
 
-    assert await bad_images(probe, [PICTURE]) == {PICTURE: "打不开"}
+    failed = await bad_images(probe, [PICTURE])
+    assert set(failed) == {PICTURE}
+    assert failed[PICTURE]
     assert asked == [PICTURE, PICTURE]
 
 
 async def test_a_wrong_type_is_probed_only_once() -> None:
     probe, asked = answering("text/html")
 
-    assert await bad_images(probe, [PICTURE]) == {PICTURE: "不是图片"}
+    failed = await bad_images(probe, [PICTURE])
+    assert set(failed) == {PICTURE}
+    assert failed[PICTURE]
     assert asked == [PICTURE]

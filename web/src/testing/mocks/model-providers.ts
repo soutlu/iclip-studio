@@ -11,6 +11,7 @@ import type {
   DefaultModelIn,
   DefaultModelOut,
   ModelOptionsOut,
+  NativeToolOut,
   ModelProviderCreateIn,
   ModelProviderOut,
   ModelProviderUpdateIn,
@@ -21,12 +22,11 @@ import type {
 } from '@/shared/api/generated/types.gen'
 
 type ModelType = ProviderModelOut['type']
-type CustomModel = Omit<ProviderModelOut, 'source' | 'usedBy'>
+type MockModel = Omit<ProviderModelOut, 'usedBy'>
 type MockCredential = Omit<CredentialOut, 'usedBy'>
 type MockProvider = Omit<ModelProviderOut, 'credentials' | 'models'> & {
   credentials: MockCredential[]
-  disabledDeclared: string[]
-  custom: CustomModel[]
+  models: MockModel[]
 }
 type Usage = (match: (model: AgentModelRef) => boolean) => AgentUsageOut[]
 
@@ -53,11 +53,16 @@ const openDeclaration = (
 ): DeclarationOut => ({
   apis,
   credentialFields: [apiKeyField, baseUrl],
-  customModels: true,
   label,
-  models: [],
   name,
+  nativeToolsByApi: Object.fromEntries(apis.map((api) => [api, []])),
 })
+
+export const mockNativeTools: NativeToolOut[] = [
+  { label: '联网搜索', name: 'web_search', requires: [] },
+  { label: '读取网页', name: 'web_extractor', requires: ['web_search'] },
+  { label: '以图搜图', name: 'image_search', requires: [] },
+]
 
 const optionalBaseUrl = {
   default: null,
@@ -67,32 +72,16 @@ const optionalBaseUrl = {
   type: 'text',
 } as const
 
-const mockDeclarations: DeclarationOut[] = [
+export const mockDeclarations: DeclarationOut[] = [
   {
     apis: ['responses', 'chat'],
     credentialFields: [
       { default: null, label: 'API Key', name: 'api_key', required: true, type: 'secret' },
       { default: BAILIAN_URL, label: '接口地址', name: 'base_url', required: true, type: 'text' },
     ],
-    customModels: true,
     label: '阿里云百炼',
-    models: [
-      {
-        api: 'responses',
-        contextSize: 1_048_576,
-        name: 'qwen3.8-flash',
-        thinking: ['none', 'low', 'medium', 'high'],
-        type: 'llm',
-      },
-      {
-        api: 'chat',
-        contextSize: 1_048_576,
-        name: 'ZHIPU/GLM-5.3-Flash',
-        thinking: ['none', 'low', 'medium', 'high'],
-        type: 'llm',
-      },
-    ],
     name: 'bailian',
+    nativeToolsByApi: { chat: [], responses: ['web_search', 'web_extractor', 'image_search'] },
   },
   openDeclaration('gemini', 'Google Gemini', ['gemini'], optionalBaseUrl),
   openDeclaration('openai-compatible', 'OpenAI 兼容', ['chat', 'responses'], {
@@ -128,9 +117,17 @@ const credential = (
 const llm = (
   name: string,
   contextSize: number,
-  thinking: CustomModel['thinking'],
+  thinking: MockModel['thinking'],
   api: 'chat' | 'responses' = 'responses',
-): CustomModel => ({ api, contextSize, enabled: true, name, thinking, type: 'llm' })
+): MockModel => ({
+  api,
+  contextSize,
+  enabled: true,
+  name,
+  nativeTools: [],
+  thinking,
+  type: 'llm',
+})
 
 const seedProviders = (): MockProvider[] => [
   {
@@ -148,7 +145,16 @@ const seedProviders = (): MockProvider[] => [
         'mkt',
       ),
     ],
-    custom: [
+    defaultCredentialId: uuid(2, 1),
+    enabled: true,
+    id: uuid(3, 1),
+    label: '阿里云百炼',
+    models: [
+      {
+        ...llm('qwen3.8-flash', 1_048_576, ['none', 'low', 'medium', 'high']),
+        nativeTools: ['web_search', 'web_extractor', 'image_search'],
+      },
+      llm('ZHIPU/GLM-5.3-Flash', 1_048_576, ['none', 'low', 'medium', 'high'], 'chat'),
       llm('qwen3.8-max', 262_144, ['low', 'medium', 'high']),
       llm('qwen3.8-plus', 262_144, ['none', 'low', 'medium', 'high']),
       {
@@ -156,15 +162,11 @@ const seedProviders = (): MockProvider[] => [
         contextSize: null,
         enabled: true,
         name: 'text-embedding-v4',
+        nativeTools: [],
         thinking: [],
         type: 'embedding',
       },
     ],
-    defaultCredentialId: uuid(2, 1),
-    disabledDeclared: [],
-    enabled: true,
-    id: uuid(3, 1),
-    label: '阿里云百炼',
     name: 'bailian',
     provider: 'bailian',
     updatedAt: ago(60),
@@ -177,15 +179,14 @@ const seedProviders = (): MockProvider[] => [
         base_url: 'https://models.example/v1',
       }),
     ],
-    custom: [
-      llm('studio-chat', 131_072, [], 'chat'),
-      llm('studio-chat-long', 1_048_576, ['minimal', 'xhigh'], 'chat'),
-    ],
     defaultCredentialId: uuid(2, 3),
-    disabledDeclared: ['llm:qwen3.8-flash', 'llm:ZHIPU/GLM-5.3-Flash'],
     enabled: true,
     id: uuid(3, 2),
     label: '团队模型服务',
+    models: [
+      llm('studio-chat', 131_072, [], 'chat'),
+      llm('studio-chat-long', 1_048_576, ['minimal', 'xhigh'], 'chat'),
+    ],
     name: 'team-models',
     provider: 'bailian',
     updatedAt: ago(60 * 24),
@@ -234,16 +235,10 @@ const maskedFields = (provider: MockProvider, fields: Record<string, string>) =>
   )
 }
 
-const modelsOf = (provider: MockProvider): Omit<ProviderModelOut, 'usedBy'>[] => [
-  ...(declarationOf(provider)?.models ?? []).map((model) => ({
-    ...model,
-    enabled: !provider.disabledDeclared.includes(`${model.type}:${model.name}`),
-    source: 'declared' as const,
-  })),
-  ...[...provider.custom]
-    .sort((a, b) => (a.type === b.type ? (a.name < b.name ? -1 : 1) : a.type < b.type ? -1 : 1))
-    .map((model) => ({ ...model, source: 'custom' as const })),
-]
+const modelsOf = (provider: MockProvider): MockModel[] =>
+  [...provider.models].sort((a, b) =>
+    a.type === b.type ? (a.name < b.name ? -1 : 1) : a.type < b.type ? -1 : 1,
+  )
 
 const byCreatedDesc = <T extends { createdAt: string }>(items: readonly T[]) =>
   [...items].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
@@ -262,9 +257,15 @@ export const mockModelOptions = (): ModelOptionsOut => ({
       label: provider.label,
       models: modelsOf(provider)
         .filter((model) => model.type === 'llm' && model.enabled)
-        .map(({ contextSize, name, thinking }) => ({ contextSize, name, thinking })),
+        .map(({ contextSize, name, nativeTools, thinking }) => ({
+          contextSize,
+          name,
+          nativeTools,
+          thinking,
+        })),
       name: provider.name,
     })),
+  nativeTools: mockNativeTools,
 })
 
 const detail = (message: string, status: number) =>
@@ -304,17 +305,23 @@ const withDefaults = (provider: MockProvider, fields: Record<string, string>) =>
   return filled
 }
 
-const checkCustomModel = (
+const checkModel = (
   provider: MockProvider,
-  model: Pick<CustomModel, 'api' | 'thinking' | 'type'>,
+  model: Pick<MockModel, 'api' | 'nativeTools' | 'thinking' | 'type'>,
 ) => {
   if (model.type === 'llm' && model.api === null) return 'llm 模型要写接口'
   const declaration = declarationOf(provider)
   if (model.api !== null && declaration !== undefined && !declaration.apis.includes(model.api))
     return `${declaration.label}的模型只能走 ${declaration.apis.join('、')} 接口，不能走 ${model.api}`
-  if (model.type !== 'llm' && (model.api !== null || model.thinking.length > 0))
-    return '只有 llm 模型能写接口与思考档位'
+  if (
+    model.type !== 'llm' &&
+    (model.api !== null || model.thinking.length > 0 || model.nativeTools.length > 0)
+  )
+    return '只有 llm 模型能写接口、思考档位与原生工具'
   if (new Set(model.thinking).size !== model.thinking.length) return '思考档位不能重复'
+  const offered = model.api === null ? [] : (declaration?.nativeToolsByApi[model.api] ?? [])
+  const unoffered = model.nativeTools.find((name) => !offered.includes(name))
+  if (unoffered !== undefined) return `${model.api ?? ''} 接口的模型不能有原生工具 ${unoffered}`
   return null
 }
 
@@ -353,7 +360,7 @@ export const modelProviderHandlers = (usage: Usage) => {
     ),
 
     http.get('*/api/model-providers/declarations', () =>
-      HttpResponse.json({ declarations: mockDeclarations }),
+      HttpResponse.json({ declarations: mockDeclarations, nativeTools: mockNativeTools }),
     ),
 
     http.get('*/api/model-providers/groups', () =>
@@ -372,12 +379,11 @@ export const modelProviderHandlers = (usage: Usage) => {
       const created: MockProvider = {
         createdAt: now,
         credentials: [],
-        custom: [],
         defaultCredentialId: null,
-        disabledDeclared: [],
         enabled: true,
         id: crypto.randomUUID(),
         label: body.label.trim(),
+        models: [],
         name: body.name,
         provider: body.provider,
         updatedAt: now,
@@ -515,23 +521,22 @@ export const modelProviderHandlers = (usage: Usage) => {
     http.post('*/api/model-providers/:providerId/models', async ({ params, request }) => {
       const provider = findProvider(params['providerId'])
       if (provider === undefined) return notFound()
-      if (declarationOf(provider)?.customModels !== true)
-        return detail('这个供应商不能自己加模型', 422)
       const body = (await request.json()) as CustomModelCreateIn
-      const model: CustomModel = {
+      const model: MockModel = {
         api: body.api ?? null,
         contextSize: body.contextSize ?? null,
         enabled: true,
         name: body.name.trim(),
+        nativeTools: body.nativeTools ?? [],
         thinking: body.thinking ?? [],
         type: body.type,
       }
       if (model.name === '') return detail('请填写模型名', 422)
       if (modelsOf(provider).some((item) => item.type === model.type && item.name === model.name))
         return detail(`已有同名同类型的模型 ${model.name}`, 422)
-      const problem = checkCustomModel(provider, model)
+      const problem = checkModel(provider, model)
       if (problem !== null) return detail(problem, 422)
-      provider.custom.push(model)
+      provider.models.push(model)
       return HttpResponse.json(modelOut(provider, model.type, model.name), { status: 201 })
     }),
 
@@ -542,33 +547,24 @@ export const modelProviderHandlers = (usage: Usage) => {
       const current = modelOut(provider, type, name)
       if (current === undefined) return detail('没有这个模型', 404)
       const body = (await request.json()) as ModelUpdateIn
-      const changesProperties = body.api != null || body.thinking != null || 'contextSize' in body
-      if (current.source === 'declared' && changesProperties)
-        return detail('声明里的模型只能启用或停用', 422)
       if (body.enabled === false && current.enabled) {
         if (current.usedBy.length > 0) return inUse(current.usedBy, '停用')
         if (isDefaultModel(provider, type, name))
           return detail(`它是 ${type} 的默认模型，不能停用；请先在「默认模型」里换掉`, 409)
       }
-      if (current.source === 'declared') {
-        const key = `${type}:${name}`
-        provider.disabledDeclared = provider.disabledDeclared.filter((item) => item !== key)
-        if (body.enabled === false || (body.enabled == null && !current.enabled))
-          provider.disabledDeclared.push(key)
-      } else {
-        const custom = provider.custom.find((item) => item.type === type && item.name === name)
-        if (custom === undefined) return detail('没有这个模型', 404)
-        const next: CustomModel = {
-          ...custom,
-          ...(body.api == null ? {} : { api: body.api }),
-          ...('contextSize' in body ? { contextSize: body.contextSize ?? null } : {}),
-          ...(body.thinking == null ? {} : { thinking: body.thinking }),
-          ...(body.enabled == null ? {} : { enabled: body.enabled }),
-        }
-        const problem = checkCustomModel(provider, next)
-        if (problem !== null) return detail(problem, 422)
-        Object.assign(custom, next)
+      const saved = provider.models.find((item) => item.type === type && item.name === name)
+      if (saved === undefined) return detail('没有这个模型', 404)
+      const next: MockModel = {
+        ...saved,
+        ...(body.api == null ? {} : { api: body.api }),
+        ...('contextSize' in body ? { contextSize: body.contextSize ?? null } : {}),
+        ...(body.thinking == null ? {} : { thinking: body.thinking }),
+        ...(body.nativeTools == null ? {} : { nativeTools: body.nativeTools }),
+        ...(body.enabled == null ? {} : { enabled: body.enabled }),
       }
+      const problem = checkModel(provider, next)
+      if (problem !== null) return detail(problem, 422)
+      Object.assign(saved, next)
       return HttpResponse.json(modelOut(provider, type, name))
     }),
 
@@ -578,11 +574,10 @@ export const modelProviderHandlers = (usage: Usage) => {
       const { name, type } = modelPathOf(request.url)
       const current = modelOut(provider, type, name)
       if (current === undefined) return detail('没有这个模型', 404)
-      if (current.source === 'declared') return detail('声明里的模型不能删除', 422)
       if (current.usedBy.length > 0) return inUse(current.usedBy, '删除')
       if (isDefaultModel(provider, type, name))
         return detail(`它是 ${type} 的默认模型，不能删除；请先在「默认模型」里换掉`, 409)
-      provider.custom = provider.custom.filter(
+      provider.models = provider.models.filter(
         (item) => !(item.type === type && item.name === name),
       )
       return new HttpResponse(null, { status: 204 })

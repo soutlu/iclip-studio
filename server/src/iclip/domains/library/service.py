@@ -137,7 +137,7 @@ class LibraryService:
     async def video(self, principal: Principal, card_id: uuid.UUID) -> LibraryVideoDetailOut:
         row = await self._reports.card_of(card_id)
         if row is None:
-            raise NotFound("资料库里没有这条视频")
+            raise NotFound("资料库中不存在该视频")
         groups = await self._reports.groups_of(card_id)
         video = _for_reader(principal, row)
         return LibraryVideoDetailOut(
@@ -189,9 +189,9 @@ class LibraryService:
 HasTreatment = Callable[[uuid.UUID, uuid.UUID], Awaitable[bool]]
 
 _INELIGIBLE: Final[Mapping[HitCaseIneligible, str]] = {
-    "not_material": "这条视频不是成片素材里的素材片，无法加入爆款素材库",
-    "no_conversation": "这条素材片不在任何对话里，没有新片执行方案，无法加入爆款素材库",
-    "no_treatment": "所在对话没有新片执行方案，无法加入爆款素材库",
+    "not_material": "该视频不属于成片素材中的素材片，无法加入爆款素材库",
+    "no_conversation": "该素材片未关联任何对话，缺少新片执行方案，无法加入爆款素材库",
+    "no_treatment": "所在对话缺少新片执行方案，无法加入爆款素材库",
 }
 
 
@@ -280,13 +280,13 @@ class HitCaseService:
     async def _source(self, job_id: uuid.UUID) -> MaterialSource:
         source = await self._reports.material_of(job_id)
         if source is None:
-            raise NotFound("没有这条视频")
+            raise NotFound("视频不存在")
         return source
 
     async def _entered(self, job_id: uuid.UUID) -> MaterialSource:
         source = await self._source(job_id)
         if await self._reports.hit_case_entry(job_id) is None:
-            raise NotFound("这条素材片不在爆款素材库里")
+            raise NotFound("该素材片不在爆款素材库中")
         return source
 
     async def _ineligible(self, source: MaterialSource) -> HitCaseIneligible | None:

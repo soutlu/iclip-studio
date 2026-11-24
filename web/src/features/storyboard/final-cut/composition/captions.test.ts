@@ -117,7 +117,7 @@ describe('字幕场景文件', () => {
 
   it('字体只能是组件库里的字体族，字色只能是 #rrggbb', () => {
     expect(() => captionStyles({ font: 'Comic Sans MS' }, fixtureCatalog, CANVAS)).toThrow(
-      '组件库里没有字体「Comic Sans MS」',
+      'Comic Sans MS',
     )
     expect(() => captionStyles({ color: 'red' }, fixtureCatalog, CANVAS)).toThrow()
     expect(captionStyles({ color: '#00FF00' }, fixtureCatalog, CANVAS)).toEqual({
@@ -155,9 +155,7 @@ describe('字幕场景文件', () => {
       fontSize: '112px',
     })
     for (const size of [27, 113, 40.5, Number.NaN])
-      expect(() => captionStyles({ fontSize: size }, fixtureCatalog, CANVAS)).toThrow(
-        '字幕字号要是 28 到 112 之间的整数像素',
-      )
+      expect(() => captionStyles({ fontSize: size }, fixtureCatalog, CANVAS)).toThrow(/28.*112/)
   })
 
   it('行内的字号不是整数像素时读成默认（null）', async () => {

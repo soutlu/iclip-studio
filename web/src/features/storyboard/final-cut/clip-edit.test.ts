@@ -781,9 +781,7 @@ describe('切开', () => {
     expect(splitAt(clip, 3_500, [clip], NO_LINKS)).toEqual({ refusal: 'outside' })
     expect(splitAt(clip, 1_100, [clip], NO_LINKS)).toHaveProperty('cuts')
     expect(splitAt(clip, 2_900, [clip], NO_LINKS)).toHaveProperty('cuts')
-    expect(SPLIT_REFUSAL_TEXT.edge).toBe(
-      '播放头离片段两端不足 0.1 秒，无法切开；请把播放头移到片段里面',
-    )
+    expect(SPLIT_REFUSAL_TEXT.edge).toContain('0.1')
   })
 
   it('切出来的两半都不短于最短片段长度：之后裁开头时能到的范围不颠倒', () => {

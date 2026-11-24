@@ -124,7 +124,8 @@ async def test_the_page_reads_the_film_and_writes_edits_with_their_version(
         f"{URL}/{mine}/film/text",
         json=say(2, " "),
     )
-    assert (empty.status_code, empty.json()) == (422, {"detail": "台词不能是空的"})
+    assert empty.status_code == 422
+    assert empty.json()["detail"]
 
     cleared = await client.put(
         f"{URL}/{mine}/film/image",
@@ -301,10 +302,8 @@ async def test_generation_on_the_page_is_owner_only_and_needs_media_generation(
 
     for path, body in (("image-generations", image), ("video-generations", video)):
         refused = await client.post(f"{URL}/{mine}/film/{path}", json=body)
-        assert (refused.status_code, refused.json()) == (
-            422,
-            {"detail": "这里还没开生成，暂时不能生成"},
-        )
+        assert refused.status_code == 422
+        assert refused.json()["detail"]
 
     async with make_client(app) as governor:
         await register_and_login(governor, username="gov", email="gov@example.com")

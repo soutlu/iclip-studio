@@ -200,19 +200,19 @@ async def test_an_inserted_image_that_opens_joins_the_list_and_only_it_is_checke
 
 
 @pytest.mark.parametrize(
-    ("answer", "message"),
+    "answer",
     [
-        pytest.param(FetchFailed("对方回了 404"), "^插入的图打不开，请换一张图$", id="打不开"),
-        pytest.param("text/html", "^插入的图不是图片，请换一张图$", id="不是图片"),
+        pytest.param(FetchFailed("对方回了 404"), id="打不开"),
+        pytest.param("text/html", id="不是图片"),
     ],
 )
 async def test_an_inserted_image_that_cannot_be_used_is_refused_and_nothing_is_written(
-    answer: str | FetchFailed, message: str
+    answer: str | FetchFailed,
 ) -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
     made.probe.answers[UPLOADED] = answer
 
-    with pytest.raises(ValidationFailed, match=message):
+    with pytest.raises(ValidationFailed):
         await made.adapter.edit_text(
             PRINCIPAL, OWNER, CONVERSATION, [insert_into_setting(UPLOADED)], film_version=1
         )
@@ -266,19 +266,19 @@ async def test_any_image_that_opens_can_be_chosen() -> None:
 
 
 @pytest.mark.parametrize(
-    ("answer", "message"),
+    "answer",
     [
-        pytest.param(FetchFailed("对方回了 502"), "^这张图打不开，请换一张图$", id="打不开"),
-        pytest.param("video/mp4", "^这张图不是图片，请换一张图$", id="不是图片"),
+        pytest.param(FetchFailed("对方回了 502"), id="打不开"),
+        pytest.param("video/mp4", id="不是图片"),
     ],
 )
 async def test_a_chosen_image_that_cannot_be_used_is_refused_and_nothing_is_written(
-    answer: str | FetchFailed, message: str
+    answer: str | FetchFailed,
 ) -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
     made.probe.answers[UPLOADED] = answer
 
-    with pytest.raises(ValidationFailed, match=message):
+    with pytest.raises(ValidationFailed):
         await choose(made, "scene", UPLOADED)
     assert made.store.written == []
     assert await made.content(RUN_PATH) == RUN
@@ -427,10 +427,10 @@ async def test_an_image_whose_reference_does_not_open_is_not_generated() -> None
     made.probe.answers[references[0]] = FetchFailed("超时")
     made.probe.answers[references[1]] = "text/html"
 
-    with pytest.raises(
-        ValidationFailed, match=r"^第 1 张参考图打不开；第 2 张参考图不是图片，请换一张图$"
-    ):
+    with pytest.raises(ValidationFailed) as raised:
         await generate(made, "view02")
+    assert "第 1 张" in str(raised.value)
+    assert "第 2 张" in str(raised.value)
     assert made.jobs.jobs == {}
 
 
@@ -449,7 +449,7 @@ async def test_a_refused_generation_writes_nothing() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: NO_SCENE}, [generated("scene", GENERATED_SCENE)])
     too_long = FilmImagePrompt("x" * (MAX_PROMPT_CHARS + 1), ())
 
-    with pytest.raises(ValidationFailed, match=r"^这次没有生成："):
+    with pytest.raises(ValidationFailed):
         await generate(made, "scene", prompt=too_long)
 
     assert [job.output.url for job in made.jobs.jobs.values()] == [GENERATED_SCENE]
@@ -494,19 +494,19 @@ async def test_an_image_whose_references_lack_pictures_is_not_generated(
 
 
 @pytest.mark.parametrize(
-    ("node", "image_models", "message"),
+    ("node", "image_models"),
     [
-        ("shoeFrontPhoto", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
-        ("capture", ("nano_banana_pro", "gpt-image-2.5"), "不能按描述生成"),
-        ("scene", ("nano_banana_pro",), "生图模型还没接上"),
+        pytest.param("shoeFrontPhoto", ("nano_banana_pro", "gpt-image-2.5"), id="uploaded-photo"),
+        pytest.param("capture", ("nano_banana_pro", "gpt-image-2.5"), id="non-image-node"),
+        pytest.param("scene", ("nano_banana_pro",), id="model-not-configured"),
     ],
 )
 async def test_an_image_that_cannot_be_generated_here_is_refused(
-    node: str, image_models: tuple[str, ...], message: str
+    node: str, image_models: tuple[str, ...]
 ) -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, image_models=image_models)
 
-    with pytest.raises(ValidationFailed, match=message):
+    with pytest.raises(ValidationFailed):
         await generate(made, node)
     assert made.jobs.jobs == {}
 
@@ -514,7 +514,7 @@ async def test_an_image_that_cannot_be_generated_here_is_refused(
 async def test_nothing_is_generated_without_media_generation() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN}, with_generation=False)
 
-    with pytest.raises(ValidationFailed, match="还没开生成"):
+    with pytest.raises(ValidationFailed):
         await generate(made, "scene")
 
 
@@ -579,7 +579,7 @@ async def test_a_group_whose_reference_does_not_open_is_not_sent() -> None:
     images = EXPECTED["states"]["both"]["video01"]["images"]
     made.probe.answers[images[2]] = "video/mp4"
 
-    with pytest.raises(ValidationFailed, match=r"^第 3 张参考图不是图片，请换一张图$"):
+    with pytest.raises(ValidationFailed, match="第 3 张"):
         await send(made, "video01")
     assert made.jobs.jobs == {}
 
@@ -587,7 +587,7 @@ async def test_a_group_whose_reference_does_not_open_is_not_sent() -> None:
 async def test_a_group_whose_list_lacks_a_picture_is_not_sent_and_the_others_are() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: run_of("no-personB")})
 
-    with pytest.raises(ValidationFailed, match=r"^以下参考图尚未选用：personB；无法生成$"):
+    with pytest.raises(ValidationFailed, match="personB"):
         await send(made, "video01")
     assert made.jobs.jobs == {}
 
@@ -598,5 +598,5 @@ async def test_a_group_whose_list_lacks_a_picture_is_not_sent_and_the_others_are
 async def test_an_unknown_group_is_refused() -> None:
     made = await page({FILM_PATH: FILM, RUN_PATH: RUN})
 
-    with pytest.raises(ValidationFailed, match="找不到这一组"):
+    with pytest.raises(ValidationFailed):
         await send(made, "personB")

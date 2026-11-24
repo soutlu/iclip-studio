@@ -5,17 +5,17 @@ import type { GenerationJob } from '../storyboard.api'
 import type { RecognitionTarget, Sentence } from './caption-edit'
 import { submitSubtitles, subtitleJobsQuery } from './final-cut.api'
 
-/** 一条素材片的识别结果：识别出的句子，或者识别失败了。 */
+/** 单条素材片的字幕识别结果：已识别的句子列表或识别失败。 */
 export type RecognitionOutcome =
   { kind: 'ready'; sentences: readonly Sentence[] } | { kind: 'failed' }
 
-/** 一条素材片的字幕识别记录（新的在前）里最新一条完成的识别出的句子；没有完成的时是 undefined。 */
+/** 从素材片字幕识别记录列表（按创建时间倒序）中取出最新已完成记录的句子列表；无完成记录时返回 `undefined`。 */
 export const recognizedSentences = (
   jobs: readonly GenerationJob[],
 ): readonly Sentence[] | undefined =>
   jobs.find((job) => job.status === 'completed' && job.sentences !== null)?.sentences ?? undefined
 
-/** 一条素材片的字幕识别记录（新的在前）现在能用到什么：有完成的就用它，没有时看有没有还在识别的。 */
+/** 判断素材片当前可用的字幕识别状态：优先复用已完成记录，其次等待运行中记录，否则返回 `none`。 */
 const subtitleStateOf = (
   jobs: readonly GenerationJob[],
 ): RecognitionOutcome | { kind: 'running' } | { kind: 'none' } => {
@@ -25,8 +25,8 @@ const subtitleStateOf = (
 }
 
 /**
- * 一次识别：要识别的视频片段，它们用到的素材片（不重复），还在查记录、发起识别时 `submitting` 为真，
- * `failed` 是查记录或发起识别出错的素材片。
+ * 单次批量识别状态：目标视频片段 ID、去重后的素材片 ID 列表、提交中标记 `submitting`，
+ * 以及查询或发起阶段出错的素材片 ID 集合 `failed`。
  */
 type Run = {
   clipIds: readonly string[]
@@ -35,13 +35,13 @@ type Run = {
   failed: ReadonlySet<string>
 }
 
-/** 结束了的一次识别：要识别的视频片段，素材片 → 结果。 */
+/** 已结束的单次识别批次：目标视频片段 ID 及素材片 → 识别结果映射。 */
 type Finished = {
   clipIds: readonly string[]
   outcomes: ReadonlyMap<string, RecognitionOutcome>
 }
 
-/** 各素材片都有了结果时是素材片 → 结果；还有在识别的时是 undefined。 */
+/** 全部素材片均已产出结果时返回映射表；仍有识别中项时返回 `undefined`。 */
 const outcomesOf = (
   run: Run,
   results: readonly UseQueryResult<GenerationJob[]>[],
@@ -60,16 +60,16 @@ const outcomesOf = (
     }
     const state = subtitleStateOf(result.data)
     if (state.kind === 'running') return undefined
-    // 这次已经按需发起过：没有完成的记录就是发起的那条失败了
+    // 本轮已按需提交识别：仍无完成记录说明已提交任务失败。
     outcomes.set(source, state.kind === 'none' ? { kind: 'failed' } : state)
   }
   return outcomes
 }
 
 /**
- * 「识别字幕」：对几个视频片段用到的素材片，各自有完成的字幕记录就用，在识别中的就等着，都没有或上次失败了才
- * 发起识别（同一条素材片只发起一次；发起只在 `start` 里做，轮询到失败也不会再发）。轮询照生成记录的写法。
- * 全部有了结果后调一次 `onDone`（要识别的片段、素材片 → 结果）。识别中再调 `start` 不做任何事。
+ * 驱动「识别字幕」流程：对各视频片段关联的素材片，已有完成记录直接复用，运行中则等待轮询结束，
+ * 仅当无记录或上次失败时在 `start` 中提交一次识别（轮询到失败不自动重试）。
+ * 全部完成后回调一次 `onDone`；识别进行期间再次调用 `start` 忽略。
  */
 export function useCaptionRecognition(
   conversationId: string,
@@ -77,7 +77,7 @@ export function useCaptionRecognition(
 ) {
   const queryClient = useQueryClient()
   const [run, setRun] = useState<Run | null>(null)
-  // 状态要到下一次渲染才变：连点两下时靠它挡住第二次发起
+  // React 状态更新在下次渲染生效，用 ref 立即拦截连点重复发起。
   const busyRef = useRef(false)
   const watched = run === null || run.submitting ? [] : run.sources
   const results = useQueries({
@@ -100,7 +100,7 @@ export function useCaptionRecognition(
           const job = await submitSubtitles({ conversationId, sourceJobId: source })
           queryClient.setQueryData(query.queryKey, [job, ...jobs])
         } catch {
-          // 读不到记录、发起不了：这条素材片算识别失败，结束后连同别的失败一起提示
+          // 查询或提交失败时标记该素材片失败，待整批完成后统一提示。
           failed.add(source)
         }
       }),
@@ -108,7 +108,7 @@ export function useCaptionRecognition(
     setRun({ clipIds, sources, submitting: false, failed })
   }
 
-  // 全部有了结果：这次识别结束，结果交给下面的副作用调 `onDone`
+  // 全部素材片均已结案时转存结果，由下方副作用统一触发 `onDone`。
   const [finished, setFinished] = useState<Finished | null>(null)
   const outcomes = run === null || run.submitting ? undefined : outcomesOf(run, results)
   if (run !== null && outcomes !== undefined) {
@@ -124,7 +124,7 @@ export function useCaptionRecognition(
   }, [finished])
 
   return {
-    /** 正在识别几个视频片段；没在识别时是 0。 */
+    /** 当前正在识别的视频片段数量；空闲时为 0。 */
     recognizing: run?.clipIds.length ?? 0,
     start,
   }

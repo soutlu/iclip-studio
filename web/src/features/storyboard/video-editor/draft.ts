@@ -313,7 +313,7 @@ const secondsText = (value: number) => value.toFixed(1)
 
 export const draftLineOf = (item: DraftItem): string => {
   const cut = item.t0 > item.b0 + EPSILON || item.t1 < item.b1 - EPSILON
-  const whole = item.kind === 'edit' ? '这一段' : '这个镜头'
+  const whole = item.kind === 'edit' ? '该片段' : '该镜头'
   const prefix = item.kind === 'edit' && item.edit.parts.length > 1 ? `第 ${item.seg} 段 · ` : ''
   const length = cut
     ? `${secondsText(item.d)} 秒（${whole} ${secondsText(item.b1 - item.b0)} 秒）`

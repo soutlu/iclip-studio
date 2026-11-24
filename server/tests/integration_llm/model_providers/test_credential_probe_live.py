@@ -5,9 +5,31 @@ import os
 import pytest
 from agent_runtime.assembly.models import PydanticAiCredentialProbe
 from agent_runtime.config.model_providers.catalog import load_declarations
-from agent_runtime.config.model_providers.models import ProviderModel
+from agent_runtime.config.model_providers.models import ModelProperties, ProviderModel
 
 REQUIRED_ENV = ("MODEL_API_KEY", "MODEL_BASE_URL")
+
+THINKING = ("none", "low", "medium", "high")
+
+BAILIAN_MODELS = (
+    ProviderModel(
+        name="qwen3.8-flash",
+        type="llm",
+        properties=ModelProperties(
+            api="responses",
+            context_size=1048576,
+            thinking=THINKING,
+            native_tools=("web_search", "web_extractor", "image_search"),
+        ),
+        enabled=True,
+    ),
+    ProviderModel(
+        name="ZHIPU/GLM-5.3-Flash",
+        type="llm",
+        properties=ModelProperties(api="chat", context_size=1048576, thinking=THINKING),
+        enabled=True,
+    ),
+)
 
 
 @pytest.fixture
@@ -21,21 +43,11 @@ def fields() -> dict[str, str]:
     }
 
 
-@pytest.mark.parametrize(
-    "model_name", [model.name for model in load_declarations()["bailian"].models]
-)
-async def test_bailian_declared_models_answer_the_probe(
-    fields: dict[str, str], model_name: str
+@pytest.mark.parametrize("model", BAILIAN_MODELS, ids=[model.name for model in BAILIAN_MODELS])
+async def test_bailian_models_answer_the_probe(
+    fields: dict[str, str], model: ProviderModel
 ) -> None:
     bailian = load_declarations()["bailian"]
-    (declared,) = [one for one in bailian.models if one.name == model_name]
-    model = ProviderModel(
-        name=declared.name,
-        type=declared.type,
-        source="declared",
-        properties=declared.properties(),
-        enabled=True,
-    )
 
     good = await PydanticAiCredentialProbe().probe(bailian, model, fields)
     bad = await PydanticAiCredentialProbe().probe(

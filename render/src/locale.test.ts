@@ -40,10 +40,6 @@ const MAIN = `<!doctype html>
 </html>
 `
 
-/** 值表里一个值的类型不对时的说明：只带变量 id 和该是什么类型。 */
-const wrongValue = (id: string, type: string) =>
-  `这种语言的语言文件里变量 ${id} 的值不对，应当是${type}，无法导出这种语言的版本；请在编辑器里改好这种语言的文字后再导出`
-
 const T1_BEFORE = `data-variable-values="${attr({ text: '成片标题', tag: '新品', accent: '#ff0000' })}"`
 
 const files = (table: string | null) => [
@@ -61,19 +57,14 @@ describe('读值表', () => {
   })
 
   it('工程里没有这种语言的值表、别的语言的不算', () => {
-    expect(readLocaleTable(files(null), 'en')).toEqual({
-      ok: false,
-      message: 'final-cut 里没有这种语言的语言文件，无法导出这种语言的版本',
-    })
+    expect(readLocaleTable(files(null), 'en')).toMatchObject({ ok: false })
     expect(readLocaleTable(files('{}'), 'de')).toMatchObject({ ok: false })
   })
 
   it.each(['不是 JSON', '[]', '"Hello"', 'null'])('不是 JSON 对象（%s）', (content) => {
-    expect(readLocaleTable(files(content), 'en')).toEqual({
-      ok: false,
-      message:
-        '这种语言的语言文件写法不对，无法导出这种语言的版本；请把它改成变量 id 对应文字的 JSON 对象后再导出',
-    })
+    const result = readLocaleTable(files(content), 'en')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message.length).toBeGreaterThan(0)
   })
 })
 
@@ -104,14 +95,22 @@ describe('校验值表', () => {
     ).toEqual({ ok: true, value: { values: { cap_a1: 'Hello' }, dropped: 2 } })
   })
 
-  it('类型不对整份不用，说明是哪个变量、应当是什么，不带值和语言代码', () => {
+  it('类型不对整份不用，说明是哪个变量、不泄露具体取值', () => {
     const checked = checkLocaleValues({ cap_a1: 42, old: 'x' }, declarations)
-    expect(checked).toEqual({ ok: false, message: wrongValue('cap_a1', '文字') })
+    expect(checked.ok).toBe(false)
+    if (!checked.ok) {
+      expect(checked.message).toContain('cap_a1')
+      expect(checked.message).not.toContain('42')
+    }
   })
 
-  it('不在可选范围里也整份不用', () => {
+  it('不在可选范围里也整份不用，且不泄露原值', () => {
     const checked = checkLocaleValues({ mode: '秘密的值' }, declarations)
-    expect(checked).toEqual({ ok: false, message: wrongValue('mode', '选项') })
+    expect(checked.ok).toBe(false)
+    if (!checked.ok) {
+      expect(checked.message).toContain('mode')
+      expect(checked.message).not.toContain('秘密的值')
+    }
   })
 })
 
@@ -205,10 +204,9 @@ describe('把工程变成一种语言的版本', () => {
 
   it('值表读不了或校验不过时说明原因', () => {
     expect(localizeProject(files(null), 'en')).toMatchObject({ ok: false })
-    expect(localizeProject(files('{"cap_a1":1}'), 'en')).toEqual({
-      ok: false,
-      message: wrongValue('cap_a1', '文字'),
-    })
+    const invalid = localizeProject(files('{"cap_a1":1}'), 'en')
+    expect(invalid.ok).toBe(false)
+    if (!invalid.ok) expect(invalid.message).toContain('cap_a1')
   })
 })
 

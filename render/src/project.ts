@@ -26,7 +26,7 @@ export function projectPathProblem(path: string): string | undefined {
   const segments = path.split('/')
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..'))
     return '路径不合规'
-  if (segments[0]?.toLowerCase() === VENDOR_DIR) return '路径不能以 vendor/ 开头'
+  if (segments[0]?.toLowerCase() === VENDOR_DIR) return '路径不可使用 vendor/ 开头'
   return undefined
 }
 

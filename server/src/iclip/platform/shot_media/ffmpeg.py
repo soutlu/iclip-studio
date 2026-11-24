@@ -18,7 +18,7 @@ DETECT_WIDTH = 640
 
 async def extract_frames(path: Path, *, fps: float, out_dir: Path, codec: MediaCodec) -> list[Path]:
     if fps <= 0:
-        raise MediaError(f"抽帧帧率必须为正: {fps}")
+        raise MediaError(f"抽帧帧率须为正数：{fps}")
     await run(
         [
             "ffmpeg",
@@ -39,7 +39,7 @@ async def extract_frames(path: Path, *, fps: float, out_dir: Path, codec: MediaC
     )
     frames = sorted(out_dir.glob("f*.jpg"))
     if not frames:
-        raise MediaError(f"整片抽帧没产出任何帧: {path.name}")
+        raise MediaError(f"整片抽帧未产出任何帧：{path.name}")
     return frames
 
 
@@ -86,15 +86,15 @@ async def _image_width(path: Path) -> int:
     try:
         width = int(text)
     except ValueError as exc:
-        raise MediaError(f"ffprobe 报的图宽看不懂: {text!r}") from exc
+        raise MediaError(f"无法解析 ffprobe 返回的图片宽度：{text!r}") from exc
     if width <= 0:
-        raise MediaError(f"ffprobe 报的图宽不是正数: {width}")
+        raise MediaError(f"ffprobe 返回的图片宽度须为正数：{width}")
     return width
 
 
 async def crop_cells(path: Path, boxes: Sequence[tuple[int, int, int, int]]) -> list[bytes]:
     if not boxes:
-        raise MediaError("没有要裁的区域")
+        raise MediaError("缺少待裁剪区域")
     with TemporaryDirectory(prefix="shot-video-cells-") as tmp:
         out_dir = Path(tmp)
         chains = ";".join(
@@ -116,7 +116,7 @@ async def crop_cells(path: Path, boxes: Sequence[tuple[int, int, int, int]]) -> 
         for index in range(len(boxes)):
             cell = out_dir / f"c{index}.jpg"
             if not cell.is_file() or cell.stat().st_size == 0:
-                raise MediaError(f"第 {index + 1} 格裁出来是空的")
+                raise MediaError(f"第 {index + 1} 格裁剪结果为空")
             cells.append(cell.read_bytes())
     return cells
 

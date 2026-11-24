@@ -23,7 +23,7 @@ from iclip.domains.tasks.schemas import (
 )
 from iclip.platform.paging import MAX_LIST_LIMIT, check_limit, decode_cursor, encode_cursor
 
-_CONFLICT_RACED = "这张需求单刚被别人改过，请重新读一次再试"
+_CONFLICT_RACED = "该需求单已被他人修改，请刷新后重试"
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,14 +92,14 @@ class TaskService:
     async def update(self, principal: Principal, task_id: uuid.UUID, body: TaskIn) -> Task:
         task = await self._repo.get(task_id)
         if task.status == STATUS_WITHDRAWN:
-            raise Conflict("已撤回的需求单改不动了")
+            raise Conflict("已撤回的需求单无法修改")
         if task.status == STATUS_DRAFT:
-            _require_creator_or_manager(principal, task, action="修改这张草稿")
+            _require_creator_or_manager(principal, task, action="修改该草稿")
         else:
             _require_frozen_input_unchanged(task.inputs, body.inputs)
 
         if _style_nos(body.inputs) != _style_nos(task.inputs):
-            raise Conflict("需求单创建后不能增减或更换商品款号")
+            raise Conflict("需求单创建后无法增减或更换商品款号")
 
         saved = await self._repo.save(
             task_id,
@@ -116,19 +116,19 @@ class TaskService:
     async def publish(self, principal: Principal, task_id: uuid.UUID) -> Task:
         task = await self._repo.get(task_id)
         _require_status(task, STATUS_DRAFT, action="发布")
-        _require_creator_or_manager(principal, task, action="发布这张需求单")
+        _require_creator_or_manager(principal, task, action="发布该需求单")
         if not _says_what_to_make(task.inputs):
-            raise ValidationFailed("发布前至少要说清做什么：创作要求、商品图片或参考素材填一项")
+            raise ValidationFailed("发布前须至少填写一项创作信息（创作要求、商品图片或参考素材）")
 
         published = await self._repo.publish(task_id)
         if published is None:
-            raise Conflict(f"发布失败：填了期限就必须晚于当前时间，或{_CONFLICT_RACED}")
+            raise Conflict(f"发布失败：截止期限须晚于当前时间，或{_CONFLICT_RACED}")
         return published
 
     async def confirm(self, principal: Principal, task_id: uuid.UUID) -> Task:
         task = await self._repo.get(task_id)
         if task.status not in ACTIVE_STATUSES:
-            raise Conflict(f"只有已下发或已确认的需求单能认领，这张是 {task.status}")
+            raise Conflict(f"仅已下发或已确认的需求单支持认领，当前状态为 {task.status}")
         confirmed = await self._repo.confirm(task_id, user_id=principal.user_id)
         if confirmed is None:
             raise Conflict(_CONFLICT_RACED)
@@ -140,7 +140,7 @@ class TaskService:
     async def withdraw(self, task_id: uuid.UUID) -> Task:
         task = await self._repo.get(task_id)
         if task.status not in ACTIVE_STATUSES:
-            raise Conflict(f"只有已下发或已确认的需求单能撤回，这张是 {task.status}")
+            raise Conflict(f"仅已下发或已确认的需求单支持撤回，当前状态为 {task.status}")
         withdrawn = await self._repo.set_status(
             task_id, expect=task.status, status=STATUS_WITHDRAWN
         )
@@ -151,20 +151,20 @@ class TaskService:
     async def delete(self, principal: Principal, task_id: uuid.UUID) -> None:
         task = await self._repo.get(task_id)
         _require_status(task, STATUS_DRAFT, action="删除")
-        _require_creator_or_manager(principal, task, action="删除这张草稿")
+        _require_creator_or_manager(principal, task, action="删除该草稿")
         if not await self._repo.delete(task_id, expect=STATUS_DRAFT):
             raise Conflict(_CONFLICT_RACED)
 
 
 def _require_status(task: Task, expected: TaskStatus, *, action: str) -> None:
     if task.status != expected:
-        raise Conflict(f"只有 {expected} 状态的需求单能{action}，这张是 {task.status}")
+        raise Conflict(f"仅 {expected} 状态的需求单支持{action}，当前状态为 {task.status}")
 
 
 def _require_creator_or_manager(principal: Principal, task: Task, *, action: str) -> None:
     if principal.user_id == task.creator_user_id or principal.has(MANAGE_PERMISSION):
         return
-    raise PermissionDenied(f"只有提出需求的人能{action}")
+    raise PermissionDenied(f"仅需求发起人可{action}")
 
 
 def _style_nos(inputs: TaskInputs) -> list[str]:
@@ -179,7 +179,7 @@ def _require_frozen_input_unchanged(stored: TaskInputs, incoming: TaskInputs) ->
         if getattr(stored.video_spec, name) != getattr(incoming.video_spec, name):
             changed.append(f"video_spec.{name}")
     if changed:
-        raise Conflict(f"需求单已下发，这些创作输入不能再改：{'、'.join(changed)}")
+        raise Conflict(f"需求单已下发，以下创作输入无法修改：{'、'.join(changed)}")
 
 
 def _says_what_to_make(inputs: TaskInputs) -> bool:

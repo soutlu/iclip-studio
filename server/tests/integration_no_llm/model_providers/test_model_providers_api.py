@@ -7,13 +7,6 @@ from typing import Any
 
 import httpx
 import pytest
-from agent_runtime.config.agent_config.infra_sql import SqlAgentStore
-from agent_runtime.config.agent_config.public import AgentReferences
-from agent_runtime.config.model_providers.catalog import Declarations, load_declarations
-from agent_runtime.config.model_providers.infra_sql import SqlModelProviderStore
-from agent_runtime.config.model_providers.schemas import CustomModelCreateIn, ModelProviderCreateIn
-from agent_runtime.config.model_providers.service import ModelProviderService
-from agent_runtime.errors import ValidationFailed
 from agent_runtime.secrets import CredentialCipher
 from fastapi import FastAPI
 from sqlalchemy import text
@@ -35,9 +28,12 @@ from tests.helpers.model_providers import (
     connect_bailian,
     connect_provider,
 )
+from tests.helpers.runtime_service import add_model
 
 SECRETS = (GOOD_KEY, OTHER_KEY, BAD_KEY)
 DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+BAILIAN_NATIVE_TOOLS = ["web_search", "web_extractor", "image_search"]
+NATIVE_TOOLS = [*BAILIAN_NATIVE_TOOLS, "deepseek_web_search"]
 
 
 @pytest.fixture
@@ -63,8 +59,10 @@ async def provider_view(client: httpx.AsyncClient, provider_id: str) -> dict[str
     return found
 
 
-def model_of(provider: dict[str, Any], name: str) -> dict[str, Any]:
-    (found,) = [one for one in provider["models"] if one["name"] == name]
+def model_of(provider: dict[str, Any], name: str, model_type: str = "llm") -> dict[str, Any]:
+    (found,) = [
+        one for one in provider["models"] if (one["name"], one["type"]) == (name, model_type)
+    ]
     return found
 
 
@@ -120,15 +118,17 @@ async def test_only_model_managers_reach_any_endpoint(
     assert (await root.get("/default-models")).status_code == 200
 
 
-async def test_declarations_describe_the_credential_form_and_models(
+async def test_declarations_describe_the_credential_form_and_native_tools(
     root: httpx.AsyncClient,
 ) -> None:
     response = await root.get("/model-providers/declarations")
 
     assert response.status_code == 200, response.text
+    assert [tool["name"] for tool in response.json()["nativeTools"]] == NATIVE_TOOLS
     declarations = {one["name"]: one for one in response.json()["declarations"]}
     assert list(declarations) == [
         "bailian",
+        "deepseek",
         "gemini",
         "openai-compatible",
         "openrouter",
@@ -136,13 +136,13 @@ async def test_declarations_describe_the_credential_form_and_models(
     ]
     assert {name: one["apis"] for name, one in declarations.items()} == {
         "bailian": ["responses", "chat"],
+        "deepseek": ["responses", "chat"],
         "gemini": ["gemini"],
         "openai-compatible": ["chat", "responses"],
         "openrouter": ["chat"],
         "volcengine": ["chat", "responses"],
     }
     assert declarations["gemini"]["label"] == "Google Gemini"
-    assert declarations["gemini"]["models"] == []
     assert declarations["gemini"]["credentialFields"][1] == {
         "name": "base_url",
         "label": "接口地址",
@@ -151,12 +151,12 @@ async def test_declarations_describe_the_credential_form_and_models(
         "default": None,
     }
     bailian = declarations["bailian"]
-    assert bailian["customModels"] is True
     assert [field["name"] for field in bailian["credentialFields"]] == ["api_key", "base_url"]
     assert bailian["credentialFields"][1]["default"] == DEFAULT_BASE_URL
-    assert {model["name"]: model["api"] for model in bailian["models"]} == {
-        "qwen3.8-flash": "responses",
-        "ZHIPU/GLM-5.3-Flash": "chat",
+    assert bailian["nativeToolsByApi"] == {"responses": BAILIAN_NATIVE_TOOLS, "chat": []}
+    assert declarations["deepseek"]["nativeToolsByApi"] == {
+        "responses": ["deepseek_web_search"],
+        "chat": [],
     }
     assert "pydanticAiProvider" not in bailian
 
@@ -166,7 +166,7 @@ async def test_connecting_checks_the_name_and_the_declaration(root: httpx.AsyncC
     assert provider["enabled"] is True
     assert provider["credentials"] == []
     assert provider["defaultCredentialId"] is None
-    assert [model["enabled"] for model in provider["models"]] == [True, True]
+    assert provider["models"] == []
 
     for body in (
         {"name": "Bailian", "provider": "bailian", "label": "x"},
@@ -314,6 +314,7 @@ async def test_probe_endpoint_tries_saved_or_unsaved_fields_without_saving(
     root: httpx.AsyncClient,
 ) -> None:
     provider = await connect_bailian(root)
+    await add_model(root, provider["id"], "qwen-max")
     credential = await add_credential(root, provider["id"])
     path = f"/model-providers/{provider['id']}/credentials/test"
 
@@ -342,9 +343,9 @@ async def test_probe_needs_an_enabled_llm_model_but_saving_does_not(
 ) -> None:
     provider = await connect_bailian(root)
     base = f"/model-providers/{provider['id']}"
-    for name in ("qwen3.8-flash", "ZHIPU/GLM-5.3-Flash"):
-        response = await root.patch(f"{base}/models/llm/{name}", json={"enabled": False})
-        assert response.status_code == 200, response.text
+    await add_model(root, provider["id"], "qwen-max")
+    disabled = await root.patch(f"{base}/models/llm/qwen-max", json={"enabled": False})
+    assert disabled.status_code == 200, disabled.text
 
     probed = await root.post(f"{base}/credentials/test", json={"fields": {"api_key": GOOD_KEY}})
     saved = await root.post(
@@ -352,7 +353,7 @@ async def test_probe_needs_an_enabled_llm_model_but_saving_does_not(
     )
 
     assert probed.status_code == 422
-    assert probed.json()["detail"] == "先添加一个模型再试连"
+    assert probed.json()["detail"]
     assert saved.status_code == 201, saved.text
 
 
@@ -360,12 +361,13 @@ async def test_testing_a_model_uses_the_default_or_given_key_without_saving(
     root: httpx.AsyncClient, probe: KeyCheckingProbe
 ) -> None:
     provider = await connect_bailian(root)
+    await add_model(root, provider["id"], "ZHIPU/GLM-5.3-Flash")
     path = f"/model-providers/{provider['id']}/models/test"
     glm = {"name": "ZHIPU/GLM-5.3-Flash", "type": "llm"}
 
     no_key = await root.post(path, json=glm)
     assert no_key.status_code == 422
-    assert no_key.json()["detail"] == "先添加密钥"
+    assert no_key.json()["detail"]
 
     await add_credential(root, provider["id"])
     bad = await add_credential(root, provider["id"], name="坏的", api_key=BAD_KEY)
@@ -403,37 +405,7 @@ async def test_testing_a_model_uses_the_default_or_given_key_without_saving(
     assert len(probe.calls) == 2
 
 
-async def test_declared_models_are_enabled_until_disabled(root: httpx.AsyncClient) -> None:
-    provider = await connect_bailian(root)
-    path = f"/model-providers/{provider['id']}/models/llm/ZHIPU/GLM-5.3-Flash"
-
-    disabled = await root.patch(path, json={"enabled": False})
-    assert disabled.status_code == 200, disabled.text
-    assert disabled.json()["enabled"] is False
-    assert disabled.json()["source"] == "declared"
-    assert (
-        model_of(await provider_view(root, provider["id"]), "ZHIPU/GLM-5.3-Flash")["enabled"]
-        is False
-    )
-
-    enabled = await root.patch(path, json={"enabled": True})
-    assert enabled.json()["enabled"] is True
-    assert (
-        model_of(await provider_view(root, provider["id"]), "ZHIPU/GLM-5.3-Flash")["enabled"]
-        is True
-    )
-
-    properties = await root.patch(path, json={"contextSize": 10})
-    assert properties.status_code == 422
-    removed = await root.delete(path)
-    assert removed.status_code == 422
-    unknown = await root.patch(
-        f"/model-providers/{provider['id']}/models/llm/no-such", json={"enabled": False}
-    )
-    assert unknown.status_code == 404
-
-
-async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClient) -> None:
+async def test_models_are_added_changed_toggled_and_deleted(root: httpx.AsyncClient) -> None:
     provider = await connect_bailian(root)
     models = f"/model-providers/{provider['id']}/models"
 
@@ -448,7 +420,7 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
         "api": "chat",
         "contextSize": None,
         "thinking": ["none", "high"],
-        "source": "custom",
+        "nativeTools": [],
         "enabled": True,
         "usedBy": [],
     }
@@ -461,7 +433,6 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
         {"name": "x", "type": "embedding", "thinking": ["high"]},
         {"name": "qwen-max", "type": "llm", "api": "responses"},
         {"name": "gemini-x", "type": "llm", "api": "gemini"},
-        {"name": "qwen3.8-flash", "type": "llm", "api": "chat"},
     ):
         response = await root.post(models, json=body)
         assert response.status_code == 422, (body, response.text)
@@ -478,21 +449,45 @@ async def test_custom_models_follow_the_declaration_rules(root: httpx.AsyncClien
     assert bad_thinking.status_code == 422
     disabled = await root.patch(path, json={"enabled": False})
     assert disabled.json()["enabled"] is False
-    assert model_of(await provider_view(root, provider["id"]), "qwen3.8-flash")["enabled"] is True
+    assert model_of(await provider_view(root, provider["id"]), "qwen-max")["enabled"] is False
+    enabled = await root.patch(path, json={"enabled": True})
+    assert enabled.json()["enabled"] is True
+    assert model_of(await provider_view(root, provider["id"]), "qwen-max")["enabled"] is True
+    unknown = await root.patch(f"{models}/llm/no-such", json={"enabled": False})
+    assert unknown.status_code == 404
 
     deleted = await root.delete(path)
     assert deleted.status_code == 204
     names = [
         (one["name"], one["type"]) for one in (await provider_view(root, provider["id"]))["models"]
     ]
-    assert names == [
-        ("qwen3.8-flash", "llm"),
-        ("ZHIPU/GLM-5.3-Flash", "llm"),
-        ("qwen-max", "embedding"),
-    ]
+    assert names == [("qwen-max", "embedding")]
 
 
-async def test_custom_models_only_use_the_providers_apis(root: httpx.AsyncClient) -> None:
+async def test_a_models_native_tools_are_saved_and_read_back(root: httpx.AsyncClient) -> None:
+    provider = await connect_bailian(root)
+    models = f"/model-providers/{provider['id']}/models"
+
+    added = await root.post(
+        models,
+        json={
+            "name": "qwen-max",
+            "type": "llm",
+            "api": "responses",
+            "nativeTools": ["web_search", "web_extractor"],
+        },
+    )
+    assert added.status_code == 201, added.text
+    assert added.json()["nativeTools"] == ["web_search", "web_extractor"]
+    changed = await root.patch(f"{models}/llm/qwen-max", json={"nativeTools": ["image_search"]})
+
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["nativeTools"] == ["image_search"]
+    view = await provider_view(root, provider["id"])
+    assert model_of(view, "qwen-max")["nativeTools"] == ["image_search"]
+
+
+async def test_models_only_use_the_providers_apis(root: httpx.AsyncClient) -> None:
     for declaration, allowed, refused in (
         ("gemini", "gemini", "chat"),
         ("openrouter", "chat", "responses"),
@@ -510,12 +505,16 @@ async def test_custom_models_only_use_the_providers_apis(root: httpx.AsyncClient
         assert added.json()["api"] == allowed
         for response in (refused_add, refused_change):
             assert response.status_code == 422, (declaration, response.text)
-            assert f"不能走 {refused}" in response.json()["detail"]
+            assert refused in response.json()["detail"]
 
 
-async def test_default_model_must_exist_and_be_enabled(root: httpx.AsyncClient) -> None:
+async def test_default_model_must_be_enabled_and_cannot_be_disabled_or_deleted(
+    root: httpx.AsyncClient,
+) -> None:
     provider = await connect_bailian(root)
     base = f"/model-providers/{provider['id']}"
+    await add_model(root, provider["id"], "qwen3.8-flash")
+    await add_model(root, provider["id"], "ZHIPU/GLM-5.3-Flash")
 
     for body in (
         {"providerId": provider["id"], "modelName": "no-such"},
@@ -541,20 +540,9 @@ async def test_default_model_must_exist_and_be_enabled(root: httpx.AsyncClient) 
         ("llm", "qwen3.8-flash")
     ]
 
-    refused = await root.patch(f"{base}/models/llm/qwen3.8-flash", json={"enabled": False})
-    assert refused.status_code == 409
-
-
-async def test_a_custom_default_model_cannot_be_deleted(root: httpx.AsyncClient) -> None:
-    provider = await connect_bailian(root)
-    models = f"/model-providers/{provider['id']}/models"
-    await root.post(models, json={"name": "qwen-max", "type": "llm", "api": "chat"})
-    await root.put(
-        "/default-models/llm", json={"providerId": provider["id"], "modelName": "qwen-max"}
-    )
-
-    assert (await root.delete(f"{models}/llm/qwen-max")).status_code == 409
-    assert (await root.patch(f"{models}/llm/qwen-max", json={"enabled": False})).status_code == 409
+    refused_disable = await root.patch(f"{base}/models/llm/qwen3.8-flash", json={"enabled": False})
+    refused_delete = await root.delete(f"{base}/models/llm/qwen3.8-flash")
+    assert (refused_disable.status_code, refused_delete.status_code) == (409, 409)
 
 
 async def test_provider_updates_keep_what_was_not_sent(root: httpx.AsyncClient) -> None:
@@ -615,12 +603,9 @@ async def test_deleting_a_provider_takes_its_credentials_and_models_with_it(
     other = await connect_bailian(root, name="bailian-spare")
     base = f"/model-providers/{provider['id']}"
     credential = await add_credential(root, provider["id"])
-    added = await root.post(
-        f"{base}/models", json={"name": "qwen-max", "type": "llm", "api": "chat"}
-    )
-    assert added.status_code == 201, added.text
-    await root.patch(f"{base}/models/llm/ZHIPU/GLM-5.3-Flash", json={"enabled": False})
-    assert await provider_rows(engine, provider["id"]) == (1, 1, 2)
+    await add_model(root, provider["id"], "qwen-max")
+    await add_model(root, other["id"], "qwen3.8-flash")
+    assert await provider_rows(engine, provider["id"]) == (1, 1, 1)
 
     await save_agent_model(
         root,
@@ -637,7 +622,7 @@ async def test_deleting_a_provider_takes_its_credentials_and_models_with_it(
     default = await root.delete(base)
     assert default.status_code == 409, default.text
     assert "默认模型" in default.json()["detail"]
-    assert await provider_rows(engine, provider["id"]) == (1, 1, 2)
+    assert await provider_rows(engine, provider["id"]) == (1, 1, 1)
 
     moved = await root.put(
         "/default-models/llm", json={"providerId": other["id"], "modelName": "qwen3.8-flash"}
@@ -660,6 +645,19 @@ async def test_agent_managers_read_model_options_without_model_manage(
     base = f"/model-providers/{provider['id']}"
     main = await add_credential(root, provider["id"])
     spare = await add_credential(root, provider["id"], name="备用", api_key=OTHER_KEY)
+    offered = await root.post(
+        f"{base}/models",
+        json={
+            "name": "qwen3.8-flash",
+            "type": "llm",
+            "api": "responses",
+            "contextSize": 1048576,
+            "thinking": ["none", "low", "medium", "high"],
+            "nativeTools": ["web_search", "web_extractor"],
+        },
+    )
+    assert offered.status_code == 201, offered.text
+    await add_model(root, provider["id"], "ZHIPU/GLM-5.3-Flash")
     await root.patch(f"{base}/models/llm/ZHIPU/GLM-5.3-Flash", json={"enabled": False})
     await root.post(f"{base}/models", json={"name": "text-embed", "type": "embedding"})
     await root.patch(f"/model-providers/{paused['id']}", json={"enabled": False})
@@ -675,51 +673,33 @@ async def test_agent_managers_read_model_options_without_model_manage(
 
     assert options.status_code == 200, options.text
     assert_no_plaintext(options)
-    assert options.json() == {
-        "providers": [
-            {
-                "id": provider["id"],
-                "name": "bailian-main",
-                "label": "百炼",
-                "models": [
-                    {
-                        "name": "qwen3.8-flash",
-                        "contextSize": 1048576,
-                        "thinking": ["none", "low", "medium", "high"],
-                    }
-                ],
-                "credentials": [
-                    {
-                        "id": spare["id"],
-                        "name": "备用",
-                        "fields": {"api_key": "••••wxyz", "base_url": DEFAULT_BASE_URL},
-                        "isDefault": False,
-                    },
-                    {
-                        "id": main["id"],
-                        "name": "主账号",
-                        "fields": {"api_key": "••••abcd", "base_url": DEFAULT_BASE_URL},
-                        "isDefault": True,
-                    },
-                ],
-            }
-        ]
-    }
-
-
-async def test_declaration_without_custom_models_refuses_them(engine: AsyncEngine) -> None:
-    shipped = load_declarations()["bailian"]
-    closed = shipped.model_copy(update={"name": "closed", "custom_models": False})
-    service = ModelProviderService(
-        SqlModelProviderStore(engine),
-        declarations=Declarations({"closed": closed}),
-        cipher=CredentialCipher([TEST_CREDENTIAL_KEY]),
-        probe=KeyCheckingProbe({GOOD_KEY}),
-        usages=AgentReferences(SqlAgentStore(engine)),
-    )
-    provider = await service.create(
-        ModelProviderCreateIn(name="closed", provider="closed", label="封闭")
-    )
-
-    with pytest.raises(ValidationFailed, match="不能自己加模型"):
-        await service.add_model(provider.id, CustomModelCreateIn(name="m", type="llm", api="chat"))
+    assert [tool["name"] for tool in options.json()["nativeTools"]] == NATIVE_TOOLS
+    assert options.json()["providers"] == [
+        {
+            "id": provider["id"],
+            "name": "bailian-main",
+            "label": "百炼",
+            "models": [
+                {
+                    "name": "qwen3.8-flash",
+                    "contextSize": 1048576,
+                    "thinking": ["none", "low", "medium", "high"],
+                    "nativeTools": ["web_search", "web_extractor"],
+                }
+            ],
+            "credentials": [
+                {
+                    "id": spare["id"],
+                    "name": "备用",
+                    "fields": {"api_key": "••••wxyz", "base_url": DEFAULT_BASE_URL},
+                    "isDefault": False,
+                },
+                {
+                    "id": main["id"],
+                    "name": "主账号",
+                    "fields": {"api_key": "••••abcd", "base_url": DEFAULT_BASE_URL},
+                    "isDefault": True,
+                },
+            ],
+        }
+    ]

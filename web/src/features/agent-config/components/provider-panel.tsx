@@ -26,6 +26,7 @@ import {
   type ProviderModel,
 } from '../model-providers.api'
 import { MODEL_KIND_LABEL } from '../model-kinds'
+import type { NativeTool } from '../native-tools'
 import { DefaultModels } from './default-models'
 import { PanelShell } from './panel-shell'
 import { CredentialForm, ModelForm, ProviderCreateForm } from './provider-forms'
@@ -36,7 +37,7 @@ import { UsageAvatars } from './usage-avatars'
 
 const IDLE: Test = { kind: 'idle' }
 
-function StateGlyph({ label, name }: { label: string; name: 'locked' | 'link' }) {
+function StateGlyph({ label, name }: { label: string; name: 'link' }) {
   return (
     <TooltipRoot>
       <TooltipTrigger asChild>
@@ -108,6 +109,7 @@ function ProviderDetail({
   addKey,
   declaration,
   defaults,
+  nativeTools,
   onDeleted,
   provider,
 }: {
@@ -115,6 +117,7 @@ function ProviderDetail({
   provider: ModelProvider
   declaration: Declaration | undefined
   defaults: readonly DefaultModel[]
+  nativeTools: readonly NativeTool[]
   onDeleted: () => void
 }) {
   const baseId = useId()
@@ -151,9 +154,9 @@ function ProviderDetail({
   const baseUrl = defaultCredential?.fields['base_url']
   const deleteBlocked =
     users.length > 0
-      ? `${usageNames(users)}正在使用，不能删除`
+      ? `${usageNames(users)}正在使用，无法删除`
       : holdsDefault
-        ? '默认模型在这个供应商里，请先在「默认模型」里换掉'
+        ? '该供应商包含默认模型，无法删除；请先在「默认模型」中更换'
         : undefined
 
   const runModelTest = async (key: string, model: ProviderModel) => {
@@ -163,9 +166,9 @@ function ProviderDetail({
       const outcome = await testModel(provider.id, { name: model.name, type: model.type })
       result = outcome.ok
         ? { elapsedMs: outcome.elapsedMs, kind: 'ok' }
-        : { kind: 'failed', reason: outcome.reason ?? '测试没通过' }
+        : { kind: 'failed', reason: outcome.reason ?? '测试未通过' }
     } catch (error) {
-      result = { kind: 'failed', reason: errorMessageOf(error, '没法测试，请重试') }
+      result = { kind: 'failed', reason: errorMessageOf(error, '无法测试，请重试') }
     }
     setTests((current) => ({ ...current, [key]: result }))
   }
@@ -226,7 +229,7 @@ function ProviderDetail({
           aria-label={`启用供应商 ${provider.label}`}
           blockedReason={
             provider.enabled && users.length > 0
-              ? `${usageNames(users)}正在使用，不能停用`
+              ? `${usageNames(users)}正在使用，无法停用`
               : undefined
           }
           checked={provider.enabled}
@@ -246,17 +249,17 @@ function ProviderDetail({
       <section aria-labelledby={`${baseId}-models`} className="mt-7">
         <SectionHeading
           action={
-            declaration?.customModels === true ? (
+            declaration === undefined ? undefined : (
               <IconButton
                 label="添加模型"
                 name="add"
                 onClick={() => setEditor({ kind: 'model', model: null })}
                 size="sm"
               />
-            ) : undefined
+            )
           }
           id={`${baseId}-models`}
-          note="这个供应商下可以选用的模型"
+          note="该供应商下可选用的模型"
           title="模型"
         />
         <ul className="flex flex-col">
@@ -267,7 +270,7 @@ function ProviderDetail({
               model.usedBy.length > 0
                 ? `${usageNames(model.usedBy)}正在使用`
                 : isDefault
-                  ? `它是默认的${MODEL_KIND_LABEL[model.type]}模型`
+                  ? `已设为默认${MODEL_KIND_LABEL[model.type]}模型`
                   : undefined
             const saving =
               updateModel.isPending &&
@@ -294,12 +297,11 @@ function ProviderDetail({
                 {model.type === 'llm' ? null : (
                   <CardBadge>{MODEL_KIND_LABEL[model.type]}</CardBadge>
                 )}
-                {model.source === 'declared' ? <StateGlyph label="内置模型" name="locked" /> : null}
                 <span className="flex-1" />
                 <UsageAvatars users={model.usedBy} />
-                {model.type === 'llm' || model.source === 'custom' ? (
-                  <RowActions>
-                    {model.type === 'llm' ? (
+                <RowActions>
+                  {model.type === 'llm' ? (
+                    <>
                       <Button
                         aria-label={`测试模型 ${model.name}`}
                         className="h-(--control-height-xs) px-2 text-label"
@@ -310,40 +312,36 @@ function ProviderDetail({
                       >
                         测试
                       </Button>
-                    ) : null}
-                    {model.source === 'custom' && model.type === 'llm' ? (
                       <IconButton
                         label={`编辑模型 ${model.name}`}
                         name="edit"
                         onClick={() => setEditor({ kind: 'model', model })}
                         size="xs"
                       />
-                    ) : null}
-                    {model.source === 'custom' ? (
-                      <IconButton
-                        disabled={blocked !== undefined}
-                        label={`删除模型 ${model.name}`}
-                        name="delete"
-                        onClick={() =>
-                          void run(key, '模型删除失败，请重试', () =>
-                            deleteModel.mutateAsync({ model, providerId: provider.id }),
-                          )
-                        }
-                        size="xs"
-                        tooltip={
-                          blocked === undefined
-                            ? undefined
-                            : `${blocked}，不能删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
-                        }
-                      />
-                    ) : null}
-                  </RowActions>
-                ) : null}
+                    </>
+                  ) : null}
+                  <IconButton
+                    disabled={blocked !== undefined}
+                    label={`删除模型 ${model.name}`}
+                    name="delete"
+                    onClick={() =>
+                      void run(key, '模型删除失败，请重试', () =>
+                        deleteModel.mutateAsync({ model, providerId: provider.id }),
+                      )
+                    }
+                    size="xs"
+                    tooltip={
+                      blocked === undefined
+                        ? undefined
+                        : `${blocked}，无法删除${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」中更换' : ''}`
+                    }
+                  />
+                </RowActions>
                 <Switch
                   aria-label={`启用模型 ${model.name}`}
                   blockedReason={
                     model.enabled && blocked !== undefined
-                      ? `${blocked}，不能停用${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」里换掉' : ''}`
+                      ? `${blocked}，无法停用${isDefault && model.usedBy.length === 0 ? '；请先在「默认模型」中更换' : ''}`
                       : undefined
                   }
                   checked={model.enabled}
@@ -367,6 +365,7 @@ function ProviderDetail({
             declaration={declaration}
             key={editor.model?.name ?? ''}
             model={editor.model}
+            nativeTools={nativeTools}
             onDone={() => setEditor(null)}
             provider={provider}
           />
@@ -384,7 +383,7 @@ function ProviderDetail({
             />
           }
           id={`${baseId}-credentials`}
-          note="调用这个供应商时使用的密钥"
+          note="调用该供应商时使用的密钥"
           title="密钥"
         />
         {provider.credentials.length === 0 ? (
@@ -398,9 +397,9 @@ function ProviderDetail({
             const isDefault = credential.id === provider.defaultCredentialId
             const masked = maskedCredential(credential.fields)
             const deleteReason = isDefault
-              ? '默认密钥不能删除，请先把另一把设为默认'
+              ? '默认密钥无法删除；请先将其他密钥设为默认'
               : credential.usedBy.length > 0
-                ? `${usageNames(credential.usedBy)}正在使用，不能删除`
+                ? `${usageNames(credential.usedBy)}正在使用，无法删除`
                 : undefined
             return (
               <Row error={errorFor(key)} key={credential.id}>
@@ -427,7 +426,7 @@ function ProviderDetail({
                 <RowActions>
                   {isDefault ? null : (
                     <IconButton
-                      label={`把 ${credential.name} 设为默认密钥`}
+                      label={`将 ${credential.name} 设为默认密钥`}
                       name="make-default"
                       onClick={() =>
                         void run(key, '默认密钥设置失败，请重试', () =>
@@ -541,7 +540,7 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
 
           {creating ? (
             <ProviderCreateForm
-              declarations={declarations.data ?? []}
+              declarations={declarations.data?.declarations ?? []}
               onCancel={() => setCreating(false)}
               onCreated={(providerId) => {
                 setCreating(false)
@@ -556,9 +555,12 @@ export function ProviderPanel({ onClose }: { onClose: () => void }) {
           ) : (
             <ProviderDetail
               addKey={addKeyFor === selected.id}
-              declaration={declarations.data?.find((item) => item.name === selected.provider)}
+              declaration={declarations.data?.declarations.find(
+                (item) => item.name === selected.provider,
+              )}
               defaults={defaults.data ?? []}
               key={selected.id}
+              nativeTools={declarations.data?.nativeTools ?? []}
               onDeleted={() => setSelectedId(null)}
               provider={selected}
             />
