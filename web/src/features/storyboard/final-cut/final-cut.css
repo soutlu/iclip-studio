@@ -1102,6 +1102,30 @@
   border-top: 1px dashed var(--color-panel-line-strong);
 }
 
+/* 原文下的台词对照：字幕有、台词没有的字划掉，台词有、字幕没有的字加下划线，行尾「采用」是文字按钮 */
+.wf-caption-script-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-caption-script-text ins {
+  color: var(--color-on-surface);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.wf-caption-script-text del {
+  text-decoration: line-through;
+}
+
+.wf-caption-script-use {
+  flex: none;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface);
+  font-weight: 500;
+}
+
 /* 其它语言下每句右上的配音小块：保留原声时是淡色「原声」标签；AI 配音时出声的句子用强调色浅底，自己选过音色的
    再加一圈描边，不配音的回到淡色。排在删除钮前面 */
 .wf-line-voice {

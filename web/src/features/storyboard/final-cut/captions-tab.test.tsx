@@ -5,11 +5,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { audio, caption, fixtureCatalog, host } from '@/testing/final-cut'
 import { renderWithProviders } from '@/testing/render'
 import { captionsFocus } from './caption-edit'
-import { CaptionsTab } from './captions-tab'
+import type { ScriptNote } from './caption-script'
+import { CaptionsTab, type CaptionTextChange } from './captions-tab'
 import type { FilmClip } from './composition/film'
 import { textHosts } from './composition/locale-text'
 import type { LocaleControls } from './editor-toolbar'
-import { SOURCE_SHOWN } from './locales'
+import { SOURCE_LOCALE, SOURCE_SHOWN } from './locales'
 
 const FIRST = caption({ id: 'cap-a1', text: '第一句', variable: 'cap_a1', start: 0 })
 const SECOND = caption({ id: 'cap-b2', text: '第二句', variable: 'cap_b2', start: 3000 })
@@ -21,8 +22,14 @@ const DUB = audio({
 })
 const CLIPS: readonly FilmClip[] = [FIRST, SECOND, TITLE, DUB]
 
+type HarnessProps = {
+  locales: LocaleControls
+  scripts: ReadonlyMap<string, ScriptNote>
+  onText: CaptionTextChange
+}
+
 /** 和编辑器一样：选中由外面记着，「字幕」按选中的片段算该标哪句、该切到哪一段。 */
-function Harness({ locales }: { locales: LocaleControls }) {
+function Harness({ locales, scripts, onText }: HarnessProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const hosts = textHosts(CLIPS, fixtureCatalog)
   const picked = CLIPS.filter((clip) => selected.has(clip.id))
@@ -47,10 +54,11 @@ function Harness({ locales }: { locales: LocaleControls }) {
         onPick={noop}
         onRecognize={noop}
         onRemove={noop}
-        onText={noop}
+        onText={onText}
         problem={undefined}
         recognizeBlocked={undefined}
         recognizing={0}
+        scripts={scripts}
         selected={selected}
         texts={{
           hosts,
@@ -68,15 +76,16 @@ function Harness({ locales }: { locales: LocaleControls }) {
   )
 }
 
-const renderTab = async () => {
+const renderTab = async (scripts: ReadonlyMap<string, ScriptNote> = new Map()) => {
   const locales = {
     current: null,
     present: ['en'],
     onSwitch: vi.fn<LocaleControls['onSwitch']>(),
     onAdd: vi.fn<LocaleControls['onAdd']>(),
   } satisfies LocaleControls
-  await renderWithProviders(<Harness locales={locales} />)
-  return { ...locales, user: userEvent.setup() }
+  const onText = vi.fn<CaptionTextChange>()
+  await renderWithProviders(<Harness locales={locales} onText={onText} scripts={scripts} />)
+  return { ...locales, onText, user: userEvent.setup() }
 }
 
 const languages = () => screen.getByRole('group', { name: '原文与译文' })
@@ -138,5 +147,44 @@ describe('「字幕」跟着选中走', () => {
     await pick(user, 'cap-a1')
     await pick(user, 'title-1')
     expect(view(/^组件文字/)).toHaveAttribute('aria-pressed', 'true')
+  })
+})
+
+describe('「字幕」对照台词', () => {
+  const scripts = new Map<string, ScriptNote>([
+    [
+      'cap-a1',
+      {
+        script: '第一行',
+        parts: [
+          { kind: 'same', text: '第一' },
+          { kind: 'captionOnly', text: '句' },
+          { kind: 'scriptOnly', text: '行' },
+        ],
+      },
+    ],
+  ])
+  const rows = () => within(screen.getByRole('list', { name: '字幕' })).getAllByRole('listitem')
+
+  it('和台词不一样的句子：文字框下多一行台词，字幕多出的字划掉、台词的字加下划线；一样的句子没有这一行', async () => {
+    await renderTab(scripts)
+    const [first, second] = rows()
+    if (first === undefined || second === undefined) throw new Error('应有两句字幕')
+    expect(within(first).getByText('台词')).toBeVisible()
+    expect(within(first).getByRole('deletion')).toHaveTextContent(/^句$/)
+    expect(within(first).getByRole('insertion')).toHaveTextContent(/^行$/)
+    expect(within(first).getByRole('button', { name: /^采用 .+ 的台词$/ })).toHaveTextContent(
+      '采用',
+    )
+    expect(within(second).queryByText('台词')).toBeNull()
+    expect(within(second).queryByRole('button', { name: /^采用 / })).toBeNull()
+  })
+
+  it('点「采用」：把这句的原文换成台词', async () => {
+    const { user, onText } = await renderTab(scripts)
+    const [first] = rows()
+    if (first === undefined) throw new Error('应有字幕')
+    await user.click(within(first).getByRole('button', { name: /^采用 .+ 的台词$/ }))
+    expect(onText).toHaveBeenCalledExactlyOnceWith('cap-a1', '第一行', SOURCE_LOCALE)
   })
 })

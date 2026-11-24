@@ -9,13 +9,18 @@ import { submitSubtitles, subtitleJobsQuery } from './final-cut.api'
 export type RecognitionOutcome =
   { kind: 'ready'; sentences: readonly Sentence[] } | { kind: 'failed' }
 
+/** 一条素材片的字幕识别记录（新的在前）里最新一条完成的识别出的句子；没有完成的时是 undefined。 */
+export const recognizedSentences = (
+  jobs: readonly GenerationJob[],
+): readonly Sentence[] | undefined =>
+  jobs.find((job) => job.status === 'completed' && job.sentences !== null)?.sentences ?? undefined
+
 /** 一条素材片的字幕识别记录（新的在前）现在能用到什么：有完成的就用它，没有时看有没有还在识别的。 */
 const subtitleStateOf = (
   jobs: readonly GenerationJob[],
 ): RecognitionOutcome | { kind: 'running' } | { kind: 'none' } => {
-  const done = jobs.find((job) => job.status === 'completed' && job.sentences !== null)
-  if (done?.sentences !== undefined && done.sentences !== null)
-    return { kind: 'ready', sentences: done.sentences }
+  const sentences = recognizedSentences(jobs)
+  if (sentences !== undefined) return { kind: 'ready', sentences }
   return jobs.some((job) => isRunningStatus(job.status)) ? { kind: 'running' } : { kind: 'none' }
 }
 
