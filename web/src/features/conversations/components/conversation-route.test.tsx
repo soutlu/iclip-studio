@@ -11,6 +11,7 @@ import { MOCK_STREAM_EPOCH, mockTranscriptPage } from '@/testing/mocks/transcrip
 import { pasteTextIntoComposer } from '@/testing/editor'
 import { stubIntersectionObserver } from '@/testing/intersection-observer'
 import { renderWithProviders } from '@/testing/render'
+import { UserFacingError } from '@/shared/api/client'
 import { Toaster } from '@/shared/ui/toast'
 import { conversationsQueryKeys, type SidebarTopology } from '../conversations.api'
 import { ConversationRoute } from './conversation-route'
@@ -382,6 +383,38 @@ describe('ConversationRoute', () => {
     await waitFor(() => {
       expect(regenerated).toBe('t2:regenerate')
     })
+  })
+
+  it('给了发送前要做的事：它拒绝时不提交重新生成，原因弹出来', async () => {
+    const user = userEvent.setup()
+    let regenerated = false
+    server.use(
+      http.post('*/api/conversations/c1/turns/*', () => {
+        regenerated = true
+        return HttpResponse.json({
+          createdAt: '2026-08-31T03:02:00Z',
+          promptId: 'prm_regen_1',
+          status: 'running',
+        })
+      }),
+    )
+    await renderWithProviders(
+      <>
+        <ConversationTimeline
+          beforeSend={() => Promise.reject(new UserFacingError('草稿保存失败，无法发送测试消息'))}
+          conversationId="c1"
+        />
+        <Toaster />
+      </>,
+    )
+    await screen.findByText(TAIL_TEXT)
+
+    await user.click(
+      within(screen.getByLabelText('第 2 轮')).getByRole('button', { name: '重新生成' }),
+    )
+
+    expect(await screen.findByText('草稿保存失败，无法发送测试消息')).toBeVisible()
+    expect(regenerated).toBe(false)
   })
 
   it('修改态点「取消」：提示条收起，输入框清空', async () => {

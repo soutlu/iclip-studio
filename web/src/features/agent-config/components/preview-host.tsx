@@ -12,6 +12,8 @@ export type PreviewConversationProps = {
   draft: boolean
   previewId: string | null
   openPreview: () => Promise<string>
+  /** 试草稿时，每条测试消息发出前先把页面上没保存的修改存进草稿；存不上就不发。 */
+  beforeSend: (() => Promise<void>) | undefined
   placeholder: string
   view: PreviewView
 }
@@ -28,6 +30,7 @@ type PreviewHostProps = {
   versionId: string | null
   versionNumber: number | undefined
   hidden: boolean
+  saveUnsavedDraft: () => Promise<void>
   Conversation: ComponentType<PreviewConversationProps>
 }
 
@@ -35,6 +38,7 @@ export function PreviewHost({
   agentId,
   hidden,
   Conversation,
+  saveUnsavedDraft,
   versionId,
   versionNumber,
 }: PreviewHostProps) {
@@ -125,6 +129,7 @@ export function PreviewHost({
             >
               <Conversation
                 agentId={slot.agentId}
+                beforeSend={shown && slot.versionId === null ? saveUnsavedDraft : undefined}
                 draft={slot.versionId === null}
                 openPreview={async () => {
                   const id = await openPreview(slot.agentId, slot.versionId)
