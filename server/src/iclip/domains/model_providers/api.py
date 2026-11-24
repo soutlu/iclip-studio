@@ -68,7 +68,7 @@ def create_model_providers_router(
     async def model_provider_declarations(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """可以接入的供应商声明：显示名、密钥表单字段、能不能自己加模型、内置的模型。"""
+        """可以接入的供应商声明：显示名、接口、密钥表单字段与各接口的模型能有的原生工具。"""
 
         return await relay(runtime, "GET", "model-providers/declarations", actor=principal.user_id)
 
@@ -76,7 +76,7 @@ def create_model_providers_router(
     async def model_providers(
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """接入的全部供应商，带打码的密钥、默认密钥与合并后的模型列表。"""
+        """接入的全部供应商，带打码的密钥、默认密钥与模型列表。"""
 
         return await relay(runtime, "GET", "model-providers", actor=principal.user_id)
 
@@ -85,7 +85,7 @@ def create_model_providers_router(
         body: ModelProviderCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """按一份声明接入一个供应商，启用、还没有密钥。"""
+        """按一份声明接入一个供应商，启用、还没有密钥和模型。"""
 
         return await relay(runtime, "POST", "model-providers", actor=principal.user_id, body=body)
 
@@ -193,7 +193,7 @@ def create_model_providers_router(
         body: CustomModelCreateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """自己加一个模型；声明允许自己加模型时才能加。"""
+        """给供应商加一个模型，加上即启用。"""
 
         return await relay(
             runtime,
@@ -229,7 +229,7 @@ def create_model_providers_router(
         body: ModelUpdateIn,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """启停一个模型，或改自己加的模型的属性。模型名放在路径最后，可以带斜杠。"""
+        """启停一个模型，或改它的属性。模型名放在路径最后，可以带斜杠。"""
 
         return await relay(
             runtime,
@@ -246,7 +246,7 @@ def create_model_providers_router(
         model_name: str,
         principal: Annotated[Principal, require_permission(_MANAGE)],
     ) -> Response:
-        """删一个自己加的模型；声明里的模型只能停用。"""
+        """删一个模型；有 agent 写着它、或它是默认模型是 409。"""
 
         return await relay(
             runtime,

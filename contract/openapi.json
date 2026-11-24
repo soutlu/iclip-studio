@@ -23147,7 +23147,7 @@
     },
     "/model-providers": {
       "get": {
-        "description": "接入的全部供应商，带打码的密钥、默认密钥与合并后的模型列表。",
+        "description": "接入的全部供应商，带打码的密钥、默认密钥与模型列表。",
         "operationId": "model_providers_model_providers_get",
         "responses": {
           "200": {
@@ -23179,7 +23179,7 @@
         ]
       },
       "post": {
-        "description": "按一份声明接入一个供应商，启用、还没有密钥。",
+        "description": "按一份声明接入一个供应商，启用、还没有密钥和模型。",
         "operationId": "create_model_provider_model_providers_post",
         "requestBody": {
           "content": {
@@ -23233,7 +23233,7 @@
     },
     "/model-providers/declarations": {
       "get": {
-        "description": "可以接入的供应商声明：显示名、密钥表单字段、能不能自己加模型、内置的模型。",
+        "description": "可以接入的供应商声明：显示名、接口、密钥表单字段与各接口的模型能有的原生工具。",
         "operationId": "model_provider_declarations_model_providers_declarations_get",
         "responses": {
           "200": {
@@ -23679,7 +23679,7 @@
     },
     "/model-providers/{provider_id}/models": {
       "post": {
-        "description": "自己加一个模型；声明允许自己加模型时才能加。",
+        "description": "给供应商加一个模型，加上即启用。",
         "operationId": "add_provider_model_model_providers__provider_id__models_post",
         "parameters": [
           {
@@ -23811,7 +23811,7 @@
     },
     "/model-providers/{provider_id}/models/{model_type}/{model_name}": {
       "delete": {
-        "description": "删一个自己加的模型；声明里的模型只能停用。",
+        "description": "删一个模型；有 agent 写着它、或它是默认模型是 409。",
         "operationId": "delete_provider_model_model_providers__provider_id__models__model_type___model_name__delete",
         "parameters": [
           {
@@ -23881,7 +23881,7 @@
         ]
       },
       "patch": {
-        "description": "启停一个模型，或改自己加的模型的属性。模型名放在路径最后，可以带斜杠。",
+        "description": "启停一个模型，或改它的属性。模型名放在路径最后，可以带斜杠。",
         "operationId": "update_provider_model_model_providers__provider_id__models__model_type___model_name__patch",
         "parameters": [
           {
