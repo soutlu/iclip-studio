@@ -173,18 +173,18 @@ describe('「字幕」对照台词', () => {
     expect(within(first).getByText('台词')).toBeVisible()
     expect(within(first).getByRole('deletion')).toHaveTextContent(/^句$/)
     expect(within(first).getByRole('insertion')).toHaveTextContent(/^行$/)
-    expect(within(first).getByRole('button', { name: /^用台词替换 .+ 的字幕$/ })).toHaveTextContent(
+    expect(within(first).getByRole('button', { name: /^采用 .+ 的台词$/ })).toHaveTextContent(
       '采用',
     )
     expect(within(second).queryByText('台词')).toBeNull()
-    expect(within(second).queryByRole('button', { name: /^用台词替换/ })).toBeNull()
+    expect(within(second).queryByRole('button', { name: /^采用 / })).toBeNull()
   })
 
   it('点「采用」：把这句的原文换成台词', async () => {
     const { user, onText } = await renderTab(scripts)
     const [first] = rows()
     if (first === undefined) throw new Error('应有字幕')
-    await user.click(within(first).getByRole('button', { name: /^用台词替换 .+ 的字幕$/ }))
+    await user.click(within(first).getByRole('button', { name: /^采用 .+ 的台词$/ }))
     expect(onText).toHaveBeenCalledExactlyOnceWith('cap-a1', '第一行', SOURCE_LOCALE)
   })
 })

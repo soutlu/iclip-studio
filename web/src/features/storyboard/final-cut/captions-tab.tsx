@@ -846,7 +846,7 @@ function ScriptLine({
       <TooltipRoot>
         <TooltipTrigger asChild>
           <button
-            aria-label={`用台词替换 ${range} 的字幕`}
+            aria-label={`采用 ${range} 的台词`}
             className="wf-caption-script-use ui-state ui-focus"
             onClick={onUse}
             type="button"

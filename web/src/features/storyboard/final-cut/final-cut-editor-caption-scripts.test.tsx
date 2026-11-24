@@ -72,8 +72,7 @@ const serveSubtitles = () => {
 describe('final-cut 编辑器 · 字幕对照台词', () => {
   const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const field = () => within(panel()).getByRole('textbox', { name: /^字幕文字 / })
-  const adoptButton = () =>
-    within(panel()).queryByRole('button', { name: /^用台词替换 .+ 的字幕$/ })
+  const adoptButton = () => within(panel()).queryByRole('button', { name: /^采用 .+ 的台词$/ })
 
   it('识别出的字幕和台词差一个词：原文下出现对照行，「采用」换成台词、对照行收起，撤销后回来；其它语言不显示；不发起识别', async () => {
     await putFilm(

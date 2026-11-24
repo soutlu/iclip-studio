@@ -113,7 +113,8 @@ function excerptOf(
 /**
  * 一条素材片识别出的每一句对应的台词（和 `sentences` 一一对应；空串是没有对应的台词）。各句的字按先后切成单位，
  * 和整组台词 `lines` 的单位对齐，每个台词单位挂到一句上：一样的挂配对单位所在的句；相邻的两段差异挂字幕那一段
- * 第一个单位所在的句；只在台词里有的挂前面最近的单位所在的句，前面没有就挂后面最近的。
+ * 第一个单位所在的句；只在台词里有的挂前面最近的单位所在的句，它和后面最近的单位在同一行台词、和前面的不在
+ * 同一行时（一句话开头的词没识别出来），或者前面没有时，挂后面最近的。
  */
 function sentenceScripts(lines: readonly string[], sentences: readonly Sentence[]): string[] {
   const units = lines.flatMap((line, index) =>
@@ -147,13 +148,19 @@ function sentenceScripts(lines: readonly string[], sentences: readonly Sentence[
     }
     const before = changes[index - 1]
     const after = changes[index + 1]
-    const target =
+    const replaced =
       before?.removed === true
         ? heardAt - before.value.length
         : after?.removed === true
           ? heardAt
-          : Math.max(heardAt - 1, 0)
-    for (let offset = 0; offset < count; offset += 1) attach(target, scriptAt + offset)
+          : undefined
+    const previousLine = units[scriptAt - 1]?.line
+    const nextLine = units[scriptAt + count]?.line
+    for (let offset = 0; offset < count; offset += 1) {
+      const line = units[scriptAt + offset]?.line
+      const toNext = heardAt === 0 || (line === nextLine && line !== previousLine)
+      attach(replaced ?? (toNext ? heardAt : heardAt - 1), scriptAt + offset)
+    }
     scriptAt += count
   }
   return attached.map((picked) => excerptOf(lines, units, picked))

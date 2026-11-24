@@ -160,18 +160,32 @@ describe('字幕对照台词', () => {
     expect(notes.get('cap-1')?.script).toBe('We open at nine. See you there.')
   })
 
-  it('句子交界处只在台词里有的词：挂到前一句', () => {
-    const notes = notesOf(
-      [
-        clip(),
-        line('cap-1', 0, 1_000, 'Hello there.', 'clip-1'),
-        line('cap-2', 1_000, 2_000, 'open at nine.', 'clip-1'),
-      ],
-      ['Hello there.', 'We open at nine.'],
-      [said(0, 1_000, 'Hello there.'), said(1_000, 3_000, 'open at nine.')],
+  it('句子交界处只在台词里有的词：跟它同一行台词的那句走，开头漏的归后一句，结尾漏的归前一句', () => {
+    const lines = ['Hello there friend.', 'We open at nine.']
+    const captions = (first: string, second: string) => [
+      clip(),
+      line('cap-1', 0, 1_000, first, 'clip-1'),
+      line('cap-2', 1_000, 2_000, second, 'clip-1'),
+    ]
+    const sentences = (first: string, second: string) => [
+      said(0, 1_000, first),
+      said(1_000, 3_000, second),
+    ]
+    const headLost = notesOf(
+      captions('Hello there friend.', 'open at nine.'),
+      lines,
+      sentences('Hello there friend.', 'open at nine.'),
     )
-    expect([...notes.keys()]).toEqual(['cap-1'])
-    expect(notes.get('cap-1')?.script).toBe('Hello there. We')
+    expect([...headLost.keys()]).toEqual(['cap-2'])
+    expect(headLost.get('cap-2')?.script).toBe('We open at nine.')
+
+    const tailLost = notesOf(
+      captions('Hello there.', 'We open at nine.'),
+      lines,
+      sentences('Hello there.', 'We open at nine.'),
+    )
+    expect([...tailLost.keys()]).toEqual(['cap-1'])
+    expect(tailLost.get('cap-1')?.script).toBe('Hello there friend.')
   })
 
   it('大小写、标点、弯撇号和直撇号、连字符不算差异；They’re 是一个词', () => {
