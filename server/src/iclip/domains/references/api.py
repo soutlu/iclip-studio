@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Final, Literal
 
 from fastapi import APIRouter, Query, Response, status
 
@@ -13,7 +13,18 @@ from iclip.domains.identity.public import (
     require_permission,
     resolve_user_name,
 )
-from iclip.domains.references.models import AudioKind
+from iclip.domains.references.models import (
+    FAST_ABOVE_BPM,
+    SLOW_BELOW_BPM,
+    AudioKind,
+    BgmGenre,
+    BgmMood,
+    SfxCategory,
+    Tempo,
+    VoiceAge,
+    VoiceGender,
+    VoiceScenario,
+)
 from iclip.domains.references.schemas import (
     ReferenceAudioCreateIn,
     ReferenceAudioFiltersOut,
@@ -30,6 +41,11 @@ from iclip.domains.references.schemas import (
 )
 from iclip.domains.references.service import ReferenceAudioService, ReferenceService
 from iclip.platform.paging import DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT
+
+LOCALE_UNSET: Final = "none"
+
+# 筛语种时多一个取值：没设语种的。
+LocaleFilter = Literal[TargetLocale, "none"]
 
 
 def create_reference_videos_router(
@@ -200,7 +216,24 @@ def create_reference_audios_router(
     async def list_reference_audios(
         principal: Annotated[Principal, require_permission("generation:read")],
         audio_kind: Annotated[AudioKind | None, Query(alias="audioKind")] = None,
-        locale: TargetLocale | None = None,
+        locale: Annotated[
+            list[LocaleFilter] | None,
+            Query(description=f"语种，可重复；``{LOCALE_UNSET}`` 是没设语种的"),
+        ] = None,
+        gender: Annotated[list[VoiceGender] | None, Query()] = None,
+        age: Annotated[list[VoiceAge] | None, Query()] = None,
+        scenario: Annotated[list[VoiceScenario] | None, Query()] = None,
+        mood: Annotated[list[BgmMood] | None, Query()] = None,
+        genre: Annotated[list[BgmGenre] | None, Query()] = None,
+        tempo: Annotated[
+            list[Tempo] | None,
+            Query(
+                description=f"按 bpm 分的速度档，可重复：``slow`` 低于 {SLOW_BELOW_BPM}，"
+                f"``medium`` {SLOW_BELOW_BPM}～{FAST_ABOVE_BPM}，``fast`` 高于 {FAST_ABOVE_BPM}；"
+                "没填 bpm 的不命中"
+            ),
+        ] = None,
+        sfx_category: Annotated[list[SfxCategory] | None, Query(alias="sfxCategory")] = None,
         user_name: Annotated[str | None, Query(alias="userName", max_length=150)] = None,
         q: Annotated[str | None, Query(max_length=100)] = None,
         since: datetime | None = None,
@@ -210,14 +243,23 @@ def create_reference_audios_router(
     ) -> ReferenceAudiosOut:
         """全站没移除的参考音频，建立晚的排前面。
 
-        ``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）；``locale`` 筛语种；
-        ``userName`` 筛属主；``q`` 按字面包含匹配标题、备注与台词；时间窗 ``[since, until)`` 作用在
-        建立时刻上。``total`` 只在第一页给。"""
+        ``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）。``locale``、``gender``、
+        ``age``、``scenario``、``mood``、``genre``、``tempo``、``sfxCategory`` 都可以重复给：同一个
+        参数里命中任一即算，不同参数都要命中；``locale=none`` 筛没设语种的，``scenario`` 命中使用场景
+        里的任一个，``tempo`` 按 ``bpm`` 分档。``userName`` 筛属主；``q`` 按字面包含匹配标题、备注
+        与台词；时间窗 ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。"""
 
         return await service.list(
             principal,
             audio_kind=audio_kind,
-            locale=locale,
+            locales=[None if one == LOCALE_UNSET else one for one in locale or ()],
+            genders=gender or (),
+            ages=age or (),
+            scenarios=scenario or (),
+            moods=mood or (),
+            genres=genre or (),
+            tempos=tempo or (),
+            sfx_categories=sfx_category or (),
             user_name=user_name,
             q=q,
             since=since,
@@ -249,8 +291,9 @@ def create_reference_audios_router(
         reference_id: uuid.UUID,
         body: ReferenceAudioUpdateIn,
     ) -> ReferenceAudioOut:
-        """属主或治理者改标题、备注、语种、台词；给了的才改，给 ``null`` 清空（标题不能清空）。
-        不是音色却要留着台词是 ``422``，别人的是 ``403``。"""
+        """属主或治理者改标题、备注、语种、台词与属性；给了的才改，给 ``null`` 清空（``scenarios``
+        也可给 ``[]``；标题不能清空）。不是音色却要留着台词、改完留着不属于本子类的属性是 ``422``，
+        别人的是 ``403``。"""
 
         return await service.update(principal, reference_id, body)
 
@@ -273,11 +316,13 @@ def create_reference_audios_router(
             """把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐
             （``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。
 
-            入库时按地址量时长：量不出来 ``422``；音色（``voice``）要在 3 到 30 秒之间，别的子类
-            大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色能填，``locale`` 只认 ``zh``、
-            ``en``、``de``、``es``、``fr``。别人的上传、不是音频的上传、看不到或不是背景音乐的生成
-            记录、不存在的 id 都是 ``404``。``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人
-            放进去。"""
+            入库时按地址解码一遍，量时长并算波形峰值 ``peaks``：量不出来 ``422``；音色（``voice``）
+            要在 3 到 30 秒之间，别的子类大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色
+            能填，``locale`` 只认 ``zh``、``en``、``de``、``es``、``fr``。属性都选填、各属其类：
+            ``gender``、``age``、``scenarios``（至多 2 个、不重复）只有音色能填，``mood``、``genre``、
+            ``bpm`` 只有配乐能填，``sfxCategory`` 只有音效能填，填了别的子类的是 ``422``。别人的
+            上传、不是音频的上传、看不到或不是背景音乐的生成记录、不存在的 id 都是 ``404``。
+            ``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人放进去。"""
 
             user_name = resolve_user_name(principal, body.user_name)
             principal = await act_as(principal, user_name)

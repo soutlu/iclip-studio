@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
-from tempfile import TemporaryDirectory
 
-import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from iclip.app.generation_references import GenerationReferenceAssets
-from iclip.app.reference_sources import ProbedDuration
 from iclip.domains.generation.ports import VoiceSample
 from iclip.domains.identity.models import Principal
 from iclip.domains.references.infra_sql import (
@@ -17,16 +13,12 @@ from iclip.domains.references.infra_sql import (
     SqlReferenceLookup,
     SqlReferenceStore,
 )
-from iclip.domains.references.models import AudioKind, NewReferenceAudio
+from iclip.domains.references.models import AudioKind, AudioTraits, NewReferenceAudio
 from iclip.domains.uploads.infra_sql import SqlUploadRepository
 from iclip.domains.uploads.models import MediaKind, MediaUpload
 from iclip.domains.uploads.service import UploadService
-from iclip.platform.media.process import ffmpeg_available
-from tests.helpers.fetch_url import as_is
 from tests.helpers.fork_lineage import make_user
 from tests.helpers.generation import FixedLineage
-from tests.helpers.media import synthesize_video
-from tests.helpers.media_server import serving
 from tests.helpers.uploads import FakeBucket
 
 
@@ -77,6 +69,8 @@ async def audio(
             audio_kind=kind,
             locale=None,
             transcript=transcript,
+            traits=AudioTraits(),
+            peaks=(1.0,),
         )
     )
     if removed:
@@ -160,16 +154,3 @@ async def test_only_ones_own_audio_upload_counts(engine: AsyncEngine) -> None:
     assert await lookup.own_audio_upload(principal(me), mine.id) == mine.url
     assert await lookup.own_audio_upload(principal(me), theirs.id) is None
     assert await lookup.own_audio_upload(principal(me), my_video.id) is None
-
-
-@pytest.mark.skipif(not ffmpeg_available(), reason="本机 PATH 上没有 ffmpeg/ffprobe")
-async def test_the_length_is_measured_at_the_address_or_reported_as_unreadable() -> None:
-    with TemporaryDirectory(prefix="reference-duration-") as tmp:
-        clip = synthesize_video(Path(tmp) / "clip.mp4", size="320x240", seconds=3, audio=True)
-    async with serving({"clip.mp4": clip, "broken.m4a": b"not audio at all"}) as server:
-        measure = ProbedDuration(as_is)
-        measured = await measure(server.url("clip.mp4"))
-        unreadable = await measure(server.url("broken.m4a"))
-
-    assert measured is not None and abs(measured - 3_000) <= 100
-    assert unreadable is None

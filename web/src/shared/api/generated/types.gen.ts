@@ -4939,21 +4939,58 @@ export type ProviderOptionOut = {
  * ReferenceAudioCreateIn
  *
  * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
- * 的背景音乐（``sourceJobId``）。台词只有音色能填。
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填，属性各属其类。
  */
 export type ReferenceAudioCreateIn = {
+  /**
+   * Age
+   */
+  age?: 'young' | 'middle' | 'senior' | null
   /**
    * Audiokind
    */
   audioKind: 'voice' | 'bgm' | 'sfx'
   /**
+   * Bpm
+   */
+  bpm?: number | null
+  /**
    * Description
    */
   description?: string | null
   /**
+   * Gender
+   */
+  gender?: 'male' | 'female' | 'neutral' | null
+  /**
+   * Genre
+   */
+  genre?: 'acoustic' | 'piano' | 'electronic' | 'orchestral' | null
+  /**
    * Locale
    */
   locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Mood
+   */
+  mood?: 'warm' | 'relaxed' | 'uplifting' | 'epic' | 'suspense' | null
+  /**
+   * Scenarios
+   */
+  scenarios?: Array<
+    | 'commercials'
+    | 'social'
+    | 'documentaries'
+    | 'explainers'
+    | 'tutorials'
+    | 'trailers'
+    | 'characters'
+    | 'wellness'
+  > | null
+  /**
+   * Sfxcategory
+   */
+  sfxCategory?: 'transition' | 'ui' | 'impact' | 'ambience' | 'foley' | null
   /**
    * Sourcejobid
    */
@@ -4997,9 +5034,17 @@ export type ReferenceAudioFiltersOut = {
  */
 export type ReferenceAudioOut = {
   /**
+   * Age
+   */
+  age: 'young' | 'middle' | 'senior' | null
+  /**
    * Audiokind
    */
   audioKind: 'voice' | 'bgm' | 'sfx'
+  /**
+   * Bpm
+   */
+  bpm: number | null
   /**
    * Canedit
    */
@@ -5017,6 +5062,14 @@ export type ReferenceAudioOut = {
    */
   durationMs: number
   /**
+   * Gender
+   */
+  gender: 'male' | 'female' | 'neutral' | null
+  /**
+   * Genre
+   */
+  genre: 'acoustic' | 'piano' | 'electronic' | 'orchestral' | null
+  /**
    * Id
    */
   id: string
@@ -5024,6 +5077,33 @@ export type ReferenceAudioOut = {
    * Locale
    */
   locale: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Mood
+   */
+  mood: 'warm' | 'relaxed' | 'uplifting' | 'epic' | 'suspense' | null
+  /**
+   * Peaks
+   *
+   * 波形峰值：120 个，归一到 0～1（全程静音时全是 0）；入库时没量过波形的旧条目为 null，重新上传才有
+   */
+  peaks: Array<number> | null
+  /**
+   * Scenarios
+   */
+  scenarios: Array<
+    | 'commercials'
+    | 'social'
+    | 'documentaries'
+    | 'explainers'
+    | 'tutorials'
+    | 'trailers'
+    | 'characters'
+    | 'wellness'
+  >
+  /**
+   * Sfxcategory
+   */
+  sfxCategory: 'transition' | 'ui' | 'impact' | 'ambience' | 'foley' | null
   /**
    * Sourcejobid
    */
@@ -5057,18 +5137,55 @@ export type ReferenceAudioOut = {
 /**
  * ReferenceAudioUpdateIn
  *
- * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
- * 清空；标题不能清空。台词只有音色能填。
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 与各项属性给
+ * ``null`` 是清空（``scenarios`` 也可给 ``[]``）；标题不能清空。台词只有音色能填，属性各属其类。
  */
 export type ReferenceAudioUpdateIn = {
+  /**
+   * Age
+   */
+  age?: 'young' | 'middle' | 'senior' | null
+  /**
+   * Bpm
+   */
+  bpm?: number | null
   /**
    * Description
    */
   description?: string | null
   /**
+   * Gender
+   */
+  gender?: 'male' | 'female' | 'neutral' | null
+  /**
+   * Genre
+   */
+  genre?: 'acoustic' | 'piano' | 'electronic' | 'orchestral' | null
+  /**
    * Locale
    */
   locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+  /**
+   * Mood
+   */
+  mood?: 'warm' | 'relaxed' | 'uplifting' | 'epic' | 'suspense' | null
+  /**
+   * Scenarios
+   */
+  scenarios?: Array<
+    | 'commercials'
+    | 'social'
+    | 'documentaries'
+    | 'explainers'
+    | 'tutorials'
+    | 'trailers'
+    | 'characters'
+    | 'wellness'
+  > | null
+  /**
+   * Sfxcategory
+   */
+  sfxCategory?: 'transition' | 'ui' | 'impact' | 'ambience' | 'foley' | null
   /**
    * Title
    */
@@ -12500,8 +12617,49 @@ export type ListReferenceAudiosReferencesAudiosGetData = {
     audioKind?: 'voice' | 'bgm' | 'sfx' | null
     /**
      * Locale
+     *
+     * 语种，可重复；``none`` 是没设语种的
      */
-    locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
+    locale?: Array<'zh' | 'en' | 'de' | 'es' | 'fr' | 'none'> | null
+    /**
+     * Gender
+     */
+    gender?: Array<'male' | 'female' | 'neutral'> | null
+    /**
+     * Age
+     */
+    age?: Array<'young' | 'middle' | 'senior'> | null
+    /**
+     * Scenario
+     */
+    scenario?: Array<
+      | 'commercials'
+      | 'social'
+      | 'documentaries'
+      | 'explainers'
+      | 'tutorials'
+      | 'trailers'
+      | 'characters'
+      | 'wellness'
+    > | null
+    /**
+     * Mood
+     */
+    mood?: Array<'warm' | 'relaxed' | 'uplifting' | 'epic' | 'suspense'> | null
+    /**
+     * Genre
+     */
+    genre?: Array<'acoustic' | 'piano' | 'electronic' | 'orchestral'> | null
+    /**
+     * Tempo
+     *
+     * 按 bpm 分的速度档，可重复：``slow`` 低于 90，``medium`` 90～120，``fast`` 高于 120；没填 bpm 的不命中
+     */
+    tempo?: Array<'slow' | 'medium' | 'fast'> | null
+    /**
+     * Sfxcategory
+     */
+    sfxCategory?: Array<'transition' | 'ui' | 'impact' | 'ambience' | 'foley'> | null
     /**
      * Username
      */

@@ -12,7 +12,7 @@ from iclip.domains.references.api import (
 )
 from iclip.domains.references.queue import ReferenceQueue, ReferenceQueueSettings
 from iclip.domains.references.repository import (
-    MediaDuration,
+    AudioMeasure,
     MediaSources,
     ReferenceAudioStore,
     ReferenceStore,
@@ -46,7 +46,7 @@ def build_references_module(
     *,
     act_as: ActAs,
     sources: MediaSources,
-    duration: MediaDuration,
+    measure: AudioMeasure,
     breakdown: BreakdownSetup | None,
     tagging: TaggingService,
     uploads_available: bool,
@@ -76,7 +76,7 @@ def build_references_module(
         test_videos=test_videos,
     )
     audios = ReferenceAudioService(
-        audio_store, sources=sources, duration=duration, uploads_available=uploads_available
+        audio_store, sources=sources, measure=measure, uploads_available=uploads_available
     )
     return ReferencesModule(
         routers=(

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import asdict
 from typing import Any, Final
 
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
     Column,
     DateTime,
@@ -23,15 +25,23 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from iclip.domains.references.models import (
     AUDIO_KINDS,
     AUDIO_VOICE,
+    FAST_ABOVE_BPM,
     KIND_AUDIO,
     KIND_VIDEO,
+    SLOW_BELOW_BPM,
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_PENDING,
     STATUS_RUNNING,
+    TEMPO_FAST,
+    TEMPO_MEDIUM,
+    TEMPO_SLOW,
     AudioKind,
     AudioScope,
     AudioText,
+    AudioTraits,
+    BgmGenre,
+    BgmMood,
     BreakdownErrorCode,
     Claim,
     NewReferenceAudio,
@@ -39,6 +49,10 @@ from iclip.domains.references.models import (
     ReferenceCursor,
     ReferenceVideo,
     Scope,
+    SfxCategory,
+    VoiceAge,
+    VoiceGender,
+    VoiceScenario,
 )
 from iclip.domains.tagging.public import (
     KIND_REFERENCE,
@@ -111,6 +125,23 @@ reference_audios_table = Table(
     Column("meta", JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     Index("ix_reference_audios_kind", "audio_kind", "reference_id"),
 )
+
+
+class _AudioMeta(BaseModel):
+    """音频子表 ``meta`` 的形状：``AudioTraits`` 的各项属性加波形峰值。没有的键即没填（早先入库的是
+    ``{}``）；多出的键、类型或取值不对直接报错。"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    gender: VoiceGender | None = None
+    age: VoiceAge | None = None
+    scenarios: tuple[VoiceScenario, ...] = ()
+    mood: BgmMood | None = None
+    genre: BgmGenre | None = None
+    bpm: int | None = None
+    sfx_category: SfxCategory | None = None
+    peaks: tuple[float, ...] | None = None
+
 
 # 同一个地址的参考视频按地址排队新建与恢复，代替唯一约束；两个键：命名空间与地址。
 _LOCK_VIDEO_URL: Final = text(
@@ -290,7 +321,7 @@ _REMOVE_AUDIO: Final = _remove_statement(KIND_AUDIO)
 _AUDIO_ROW: Final = """
 SELECT r.id, r.url, r.title, r.description, r.duration_ms, r.owner_user_id,
        u.username AS owner_user_name, r.upload_id, r.source_job_id, a.audio_kind, a.locale,
-       a.transcript, r.created_at, r.updated_at, r.deleted_at
+       a.transcript, CAST(a.meta AS text) AS meta, r.created_at, r.updated_at, r.deleted_at
 FROM iclip.references r
 JOIN iclip.reference_audios a ON a.reference_id = r.id
 JOIN iclip.users u ON u.id = r.owner_user_id"""
@@ -298,13 +329,32 @@ JOIN iclip.users u ON u.id = r.owner_user_id"""
 _AUDIO_BY_ID: Final = text(f"{_AUDIO_ROW}\nWHERE r.id = :id AND r.kind = '{KIND_AUDIO}'")
 
 _INSERT_AUDIO: Final = text("""
-INSERT INTO iclip.reference_audios (reference_id, audio_kind, locale, transcript)
-VALUES (:id, :audio_kind, :locale, :transcript)""")
+INSERT INTO iclip.reference_audios (reference_id, audio_kind, locale, transcript, meta)
+VALUES (:id, :audio_kind, :locale, :transcript, CAST(:meta AS jsonb))""")
 
+_BPM: Final = "CAST(a.meta->>'bpm' AS integer)"
+
+# 每组筛选：参数为 NULL 不筛，否则命中组里任一即算；没设语种另由 :no_locale 表达。没填 bpm 的不落
+# 在任何速度档里。
 _AUDIO_FILTER: Final = rf"""
 WHERE r.kind = '{KIND_AUDIO}' AND r.deleted_at IS NULL
   AND (CAST(:audio_kind AS text) IS NULL OR a.audio_kind = CAST(:audio_kind AS text))
-  AND (CAST(:locale AS text) IS NULL OR a.locale = CAST(:locale AS text))
+  AND ((CAST(:locales AS text[]) IS NULL AND NOT CAST(:no_locale AS boolean))
+       OR a.locale = ANY(CAST(:locales AS text[]))
+       OR (CAST(:no_locale AS boolean) AND a.locale IS NULL))
+  AND (CAST(:genders AS text[]) IS NULL OR a.meta->>'gender' = ANY(CAST(:genders AS text[])))
+  AND (CAST(:ages AS text[]) IS NULL OR a.meta->>'age' = ANY(CAST(:ages AS text[])))
+  AND (CAST(:scenarios AS text[]) IS NULL
+       OR jsonb_exists_any(a.meta->'scenarios', CAST(:scenarios AS text[])))
+  AND (CAST(:moods AS text[]) IS NULL OR a.meta->>'mood' = ANY(CAST(:moods AS text[])))
+  AND (CAST(:genres AS text[]) IS NULL OR a.meta->>'genre' = ANY(CAST(:genres AS text[])))
+  AND (CAST(:tempos AS text[]) IS NULL
+       OR ('{TEMPO_SLOW}' = ANY(CAST(:tempos AS text[])) AND {_BPM} < {SLOW_BELOW_BPM})
+       OR ('{TEMPO_MEDIUM}' = ANY(CAST(:tempos AS text[]))
+           AND {_BPM} BETWEEN {SLOW_BELOW_BPM} AND {FAST_ABOVE_BPM})
+       OR ('{TEMPO_FAST}' = ANY(CAST(:tempos AS text[])) AND {_BPM} > {FAST_ABOVE_BPM}))
+  AND (CAST(:sfx_categories AS text[]) IS NULL
+       OR a.meta->>'sfx_category' = ANY(CAST(:sfx_categories AS text[])))
   AND (CAST(:user_name AS text) IS NULL OR u.username = CAST(:user_name AS text))
   AND (CAST(:pattern AS text) IS NULL
        OR r.title ILIKE CAST(:pattern AS text) ESCAPE '\'
@@ -335,8 +385,10 @@ SET title = :title, description = :description, updated_at = now()
 WHERE id = :id AND kind = '{KIND_AUDIO}' AND deleted_at IS NULL
 RETURNING id""")
 
+# 属性整组写进 meta（没填的写 null），波形峰值留着不动。
 _UPDATE_AUDIO_CHILD: Final = text("""
-UPDATE iclip.reference_audios SET locale = :locale, transcript = :transcript
+UPDATE iclip.reference_audios
+SET locale = :locale, transcript = :transcript, meta = meta || CAST(:traits AS jsonb)
 WHERE reference_id = :id""")
 
 _LISTED_VIDEO_AT: Final = text(f"""
@@ -390,6 +442,7 @@ def _video_of(row: RowMapping) -> ReferenceVideo:
 
 
 def _audio_of(row: RowMapping) -> ReferenceAudio:
+    meta = _AudioMeta.model_validate_json(row["meta"])
     return ReferenceAudio(
         id=row["id"],
         url=row["url"],
@@ -403,10 +456,23 @@ def _audio_of(row: RowMapping) -> ReferenceAudio:
         audio_kind=row["audio_kind"],
         locale=row["locale"],
         transcript=row["transcript"],
+        traits=AudioTraits(**meta.model_dump(exclude={"peaks"})),
+        peaks=meta.peaks,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         deleted_at=row["deleted_at"],
     )
+
+
+def _meta_json(traits: AudioTraits, *, peaks: tuple[float, ...] | None = None) -> str:
+    """``traits`` 连同 ``peaks`` 写成 ``meta`` 的 JSON；不给 ``peaks`` 时不带这个键。"""
+
+    meta = _AudioMeta(**asdict(traits), peaks=peaks)
+    return meta.model_dump_json(exclude=None if peaks is not None else {"peaks"})
+
+
+def _text_array(values: Sequence[str]) -> list[str] | None:
+    return list(values) or None
 
 
 def _like_pattern(q: str | None) -> str | None:
@@ -436,7 +502,15 @@ def _video_scope_params(scope: Scope) -> dict[str, Any]:
 def _audio_scope_params(scope: AudioScope) -> dict[str, Any]:
     return {
         "audio_kind": scope.audio_kind,
-        "locale": scope.locale,
+        "locales": _text_array([locale for locale in scope.locales if locale is not None]),
+        "no_locale": None in scope.locales,
+        "genders": _text_array(scope.genders),
+        "ages": _text_array(scope.ages),
+        "scenarios": _text_array(scope.scenarios),
+        "moods": _text_array(scope.moods),
+        "genres": _text_array(scope.genres),
+        "tempos": _text_array(scope.tempos),
+        "sfx_categories": _text_array(scope.sfx_categories),
         "user_name": scope.user_name,
         "pattern": _like_pattern(scope.q),
         "since": scope.since,
@@ -690,6 +764,7 @@ class SqlReferenceAudioStore:
                     "audio_kind": audio.audio_kind,
                     "locale": audio.locale,
                     "transcript": audio.transcript,
+                    "meta": _meta_json(audio.traits, peaks=audio.peaks),
                 },
             )
             row = await _one(conn, _AUDIO_BY_ID, {"id": reference_id})
@@ -734,7 +809,12 @@ class SqlReferenceAudioStore:
                 return False
             await conn.execute(
                 _UPDATE_AUDIO_CHILD,
-                {"id": reference_id, "locale": text.locale, "transcript": text.transcript},
+                {
+                    "id": reference_id,
+                    "locale": text.locale,
+                    "transcript": text.transcript,
+                    "traits": _meta_json(text.traits),
+                },
             )
         return True
 
