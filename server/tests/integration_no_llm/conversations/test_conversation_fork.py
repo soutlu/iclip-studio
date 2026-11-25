@@ -13,7 +13,7 @@ from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from procrastinate.testing import InMemoryConnector
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
+from pydantic_ai_harness.step_persistence import RunRecord, StepEvent
 from sqlalchemy import text
 
 from iclip.app.conversation_same_style import SAME_STYLE
@@ -98,14 +98,7 @@ async def seed_turns(pg_url: str, conversation_id: str, prompts: list[str]) -> l
             messages.append(
                 ModelResponse(parts=[TextPart(f"收到：{prompt}")], timestamp=at, run_id=run_id)
             )
-            await store.save_snapshot(
-                ContinuableSnapshot(
-                    run_id=run_id,
-                    conversation_id=conversation_id,
-                    step_index=1,
-                    messages=list(messages),
-                )
-            )
+        assert await store.save_conversation_head(conversation_id, messages, revision=0)
     finally:
         await engine.dispose()
     return run_ids

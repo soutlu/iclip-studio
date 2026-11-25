@@ -601,11 +601,8 @@ async def test_regenerating_a_compacting_turn_keeps_the_skill_loaded(
     await runner.shutdown()
     live, _cold = await both_pages(store, step_store, queue, runner, conversation_id)
 
-    snapshot = await step_store.latest_conversation_snapshot(
-        conversation_id=conversation_id, include_interrupted=True
-    )
-    assert snapshot is not None
-    assert SKILL in parse_loaded_capabilities(snapshot.messages)
+    head = await step_store.conversation_head(conversation_id)
+    assert SKILL in parse_loaded_capabilities(head.messages)
     assert delivered[0] is False
     assert all(delivered[1:])
     cards = [
@@ -705,11 +702,9 @@ def waits_for_breakdown(
 
 
 async def _history(step_store: PgStepStore, conversation_id: str) -> list[ModelMessage]:
-    snapshot = await step_store.latest_conversation_snapshot(
-        conversation_id=conversation_id, include_interrupted=True
-    )
-    assert snapshot is not None
-    return list(snapshot.messages)
+    head = await step_store.conversation_head(conversation_id)
+    assert head.messages
+    return head.messages
 
 
 def _user_frames(page: TranscriptPage) -> list[TextFrame]:
@@ -1036,14 +1031,16 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
     )
     conversation_id = new_conversation_id()
     dead_run = f"{AGENT_ID}-dead"
+    receipt = await _receipt_without_outcome(dead_run)
     await plant_interrupted(
-        engine,
-        step_store,
-        queue,
-        conversation_id,
-        run_id=dead_run,
-        messages=await _receipt_without_outcome(dead_run),
+        engine, step_store, queue, conversation_id, run_id=dead_run, messages=receipt
     )
+    (planted,) = [
+        part
+        for message in receipt
+        for part in message.parts
+        if isinstance(part, ToolReturnPart) and part.tool_call_id == BREAKDOWN_CALL
+    ]
     before = await cold_page(
         step_store,
         conversation_id,
@@ -1054,7 +1051,11 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
         runtime_agent_id=AGENT_ID,
         delegate_tool=DELEGATE_TOOL,
     )
-    _assert_interrupted(_breakdown_card(before), _breakdown_task(before), "failed")
+    # 续跑写回对话行之前，被杀的那一轮只有预存的提问：仍在运行，没有步骤，也没有任务。
+    assert [(turn.turn_id, turn.state, len(turn.steps)) for turn in before.items] == [
+        ("t1", "running", 0)
+    ]
+    assert not before.tasks
 
     await runner.sweep_once()
     await drained(queue, conversation_id)
@@ -1073,7 +1074,7 @@ async def test_a_crash_during_a_background_breakdown_resumes_with_the_call_inter
     ]
     assert [step.state for step in live.items[0].steps] == ["interrupted", "completed"]
     _assert_interrupted(_breakdown_card(live), _breakdown_task(live), "failed")
-    assert _breakdown_task(cold).started_at == _breakdown_task(before).started_at, (
+    assert _breakdown_task(cold).started_at == planted.timestamp.isoformat(), (
         "换下的返回保留回执的时间戳"
     )
 

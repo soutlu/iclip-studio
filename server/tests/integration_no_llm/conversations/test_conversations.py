@@ -9,7 +9,7 @@ import pytest
 from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
+from pydantic_ai_harness.step_persistence import RunRecord, StepEvent
 from sqlalchemy import text
 
 from iclip.common.errors import NotFound
@@ -137,16 +137,13 @@ async def test_deleted_client_minted_id_cannot_reassign_retained_history(
         await store.append_event(
             StepEvent(run_id=run_id, conversation_id=minted, kind="run_completed", step_index=1)
         )
-        await store.save_snapshot(
-            ContinuableSnapshot(
-                run_id=run_id,
-                conversation_id=minted,
-                step_index=1,
-                messages=[
-                    ModelRequest(parts=[UserPromptPart(original_text)], run_id=run_id),
-                    ModelResponse(parts=[TextPart("已记录。")], run_id=run_id),
-                ],
-            )
+        assert await store.save_conversation_head(
+            minted,
+            [
+                ModelRequest(parts=[UserPromptPart(original_text)], run_id=run_id),
+                ModelResponse(parts=[TextPart("已记录。")], run_id=run_id),
+            ],
+            revision=0,
         )
         history = await client.get(f"{URL}/{minted}/transcript")
         assert history.status_code == 200, history.text
@@ -164,8 +161,7 @@ async def test_deleted_client_minted_id_cannot_reassign_retained_history(
                 assert hidden.status_code == 404, hidden.text
                 assert (await caller.get(SEARCH)).json()["items"] == []
 
-        retained = await store.latest_conversation_snapshot(conversation_id=minted)
-        assert retained is not None
+        retained = await store.conversation_head(minted)
         prompts = [
             part.content
             for message in retained.messages
