@@ -3,6 +3,7 @@ import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { TabsList, TabsRoot, TabsTrigger } from '@/shared/ui/tabs'
 import { openPreview } from '../agent-previews.api'
+import { CardBadge } from './resource-card'
 
 export type PreviewView = 'chat' | 'trace'
 
@@ -80,6 +81,10 @@ export function PreviewHost({
 
   const reset = () => update(current, { generation: current.generation + 1, previewId: null })
 
+  // 版本列表还没读到时不知道版本号，先不标。
+  const target =
+    versionId === null ? '草稿' : versionNumber === undefined ? null : `v${versionNumber}`
+
   const placeholderOf = (slot: Slot) =>
     slot.versionId === null
       ? '输入需求，或添加参考素材…'
@@ -108,6 +113,11 @@ export function PreviewHost({
             <TabsTrigger value="trace">运行过程</TabsTrigger>
           </TabsList>
         </TabsRoot>
+        {target === null ? null : (
+          <span aria-label={`测试对象：${target}`} className="flex self-center" role="img">
+            <CardBadge>{target}</CardBadge>
+          </span>
+        )}
         <IconButton
           className="self-center"
           disabled={current.previewId === null}

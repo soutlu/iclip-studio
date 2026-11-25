@@ -205,6 +205,78 @@ describe('AgentConfigPage 历史版本', () => {
   })
 })
 
+describe('AgentConfigPage 保存与发布状态', () => {
+  const status = () => within(editor()).getByRole('status')
+
+  it('底栏写出草稿状态：已保存未发布，改动后写有未保存的修改，保存、发布后随之更新', async () => {
+    const user = await renderPage()
+    expect(status()).toHaveTextContent('已保存，未发布')
+
+    const panel = await openPlugins(user)
+    await user.click(within(panel).getByRole('switch', { name: '镜头组表' }))
+    expect(status()).toHaveTextContent('有未保存的修改')
+
+    await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
+    await waitFor(() => expect(status()).toHaveTextContent('已保存，未发布'))
+
+    await user.click(within(editor()).getByRole('button', { name: '发布' }))
+    await waitFor(() => expect(status()).toHaveTextContent('已发布 v7'))
+  })
+
+  it.each([
+    ['cross-border-multilingual', '尚未发布'],
+    ['storyboard-helper', '已发布 v2'],
+  ])('%s 的底栏写「%s」', async (agentId, text) => {
+    await renderPage(agentId)
+    expect(status()).toHaveTextContent(text)
+  })
+
+  it('保存失败时底栏只写报错，不写状态；再改动后报错收起，状态回来', async () => {
+    const user = await renderPage()
+    server.use(
+      http.put('*/api/agents/director/draft', () =>
+        HttpResponse.json({ detail: '服务暂时不可用' }, { status: 500 }),
+      ),
+    )
+    const panel = await openPlugins(user)
+    await user.click(within(panel).getByRole('switch', { name: '镜头组表' }))
+    await user.click(within(editor()).getByRole('button', { name: '保存草稿' }))
+
+    expect(await within(editor()).findByRole('alert')).toBeVisible()
+    expect(within(editor()).queryByRole('status')).toBeNull()
+
+    await user.click(within(panel).getByRole('switch', { name: '镜头组表' }))
+    expect(within(editor()).queryByRole('alert')).toBeNull()
+    expect(status()).toHaveTextContent('已保存，未发布')
+  })
+
+  it('查看历史版本时底栏不写状态，返回草稿后再写出', async () => {
+    const user = await renderPage()
+    await user.click(within(editor()).getByRole('button', { name: '查看版本，当前：草稿' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: /^v5，/ }))
+    expect(await within(editor()).findByRole('button', { name: '返回草稿' })).toBeVisible()
+    await waitFor(() => expect(pluginCards()).toHaveLength(3))
+    expect(within(editor()).queryByRole('status')).toBeNull()
+
+    await user.click(within(editor()).getByRole('button', { name: '返回草稿' }))
+    expect(status()).toHaveTextContent('已保存，未发布')
+  })
+
+  it('测试预览顶部标出测的是草稿还是哪一版', async () => {
+    const user = await renderPage()
+    const preview = screen.getByRole('region', { name: 'Agent 预览' })
+    expect(within(preview).getByRole('img', { name: '测试对象：草稿' })).toHaveTextContent('草稿')
+
+    await user.click(within(editor()).getByRole('button', { name: '查看版本，当前：草稿' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: /^v5，/ }))
+
+    expect(await within(preview).findByRole('img', { name: '测试对象：v5' })).toHaveTextContent(
+      'v5',
+    )
+    expect(within(preview).queryByRole('img', { name: '测试对象：草稿' })).toBeNull()
+  })
+})
+
 describe('AgentConfigPage 新建 Agent', () => {
   it('从 Agent 切换菜单用键盘新建，取消后保留草稿并把焦点还给切换按钮', async () => {
     const user = await renderPage()

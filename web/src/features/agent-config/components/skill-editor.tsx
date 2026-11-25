@@ -35,6 +35,8 @@ import {
   type DraftFile,
   type SkillDetail,
 } from '../skills.api'
+import { publishStatusOf } from '../publish-status'
+import { FooterNote } from './footer-note'
 import { PanelShell } from './panel-shell'
 import { ADD_KEY, KEEP_KEY, NAME_KEY, SkillFileTabs, type FileTabsMode } from './skill-file-tabs'
 
@@ -156,9 +158,11 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
     title !== null && detail.data !== undefined && title.trim() !== detail.data.displayName
   const nameValue = name ?? detail.data?.name ?? ''
   const nameDirty = name !== null && detail.data !== undefined && name.trim() !== detail.data.name
-  const dirty = Object.keys(edits).length > 0 || titleDirty || nameDirty
+  const filesDirty = Object.keys(edits).length > 0
+  const dirty = filesDirty || titleDirty || nameDirty
   const busy = saving || publish.isPending || filePending
-  const unpublished = (detail.data?.hasUnpublishedChanges ?? false) || dirty
+  // 名称与标识保存即生效、不进版本，只改它们没有可发布的内容。
+  const publishable = filesDirty || (detail.data?.hasUnpublishedChanges ?? false)
 
   const select = (path: string) => {
     setActive(path)
@@ -428,15 +432,8 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       </div>
     )
 
-  const draftDot = skill.latestVersion !== null && unpublished
-  const pillLabel =
-    skill.latestVersion === null
-      ? '尚未发布'
-      : dirty
-        ? `已发布 v${skill.latestVersion}，有未保存的修改`
-        : unpublished
-          ? `已发布 v${skill.latestVersion}，草稿有未发布的修改`
-          : `已发布 v${skill.latestVersion}`
+  const status = publishStatusOf(dirty, skill.hasUnpublishedChanges, skill.latestVersion)
+  const draftDot = skill.latestVersion !== null && status.kind !== 'published'
 
   const inlineClass =
     'w-full rounded-sm bg-transparent px-2 py-0.5 ui-motion-s transition-colors placeholder:text-on-surface-faint hover:bg-state-hover focus:bg-state-hover focus-visible:outline-0 disabled:cursor-default aria-invalid:ring-1 aria-invalid:ring-error aria-invalid:ring-inset'
@@ -449,7 +446,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
           <TooltipRoot>
             <TooltipTrigger asChild>
               <span
-                aria-label={pillLabel}
+                aria-label={status.label}
                 className="inline-flex h-6.5 items-center gap-1.5 rounded-full px-2.5 text-label text-on-surface tabular-nums ring-1 ring-border ring-inset"
                 role="img"
               >
@@ -462,7 +459,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
                 ) : null}
               </span>
             </TooltipTrigger>
-            <TooltipContent>{pillLabel}</TooltipContent>
+            <TooltipContent>{status.label}</TooltipContent>
           </TooltipRoot>
           {onRemove === undefined ? null : (
             <IconButton
@@ -477,11 +474,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
       }
       footer={
         <>
-          {notice === null ? null : (
-            <p className="mr-auto min-w-0 text-body-sm text-error" role="alert">
-              {notice}
-            </p>
-          )}
+          <FooterNote notice={notice} status={status.label} />
           <Button
             disabled={!dirty || busy}
             loading={saving && !publish.isPending}
@@ -492,7 +485,7 @@ export function SkillEditor({ onBack, onRemove, skillId }: SkillEditorProps) {
             保存草稿
           </Button>
           <Button
-            disabled={!unpublished || busy}
+            disabled={!publishable || busy}
             loading={publish.isPending}
             onClick={() => void onPublish()}
             size="md"

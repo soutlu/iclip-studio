@@ -24,9 +24,11 @@ import {
   type AgentDetail,
   type AgentProblem,
 } from '../agents.api'
+import { publishStatusOf } from '../publish-status'
 import { AgentDefinitionPanel } from './agent-definition-form'
 import { AgentEditorPane, type SectionProblems } from './agent-editor-pane'
 import { AgentHeader } from './agent-header'
+import { FooterNote } from './footer-note'
 import { McpListPanel } from './mcp-list-panel'
 import { McpServerPanel } from './mcp-server-panel'
 import { ModelPanel } from './model-panel'
@@ -256,11 +258,18 @@ function LoadedWorkspace({
           />
         )}
         <footer className="flex h-16 shrink-0 items-center justify-end gap-2 border-t border-hairline px-6">
-          {notice === null ? null : (
-            <p className="mr-auto min-w-0 text-body-sm text-error" role="alert">
-              {notice}
-            </p>
-          )}
+          <FooterNote
+            notice={notice}
+            status={
+              viewingVersion
+                ? null
+                : publishStatusOf(
+                    dirty,
+                    agent.hasUnpublishedChanges,
+                    agent.activeVersion?.version ?? null,
+                  ).label
+            }
+          />
           {viewingVersion ? (
             <>
               <Button disabled={busy} onClick={() => onViewVersion(null)} size="md" variant="ghost">
