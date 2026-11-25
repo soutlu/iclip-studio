@@ -53,10 +53,12 @@ function Harness({ locales, scripts, onText }: HarnessProps) {
         onNotice={noop}
         onPick={noop}
         onRecognize={noop}
+        onRecognizeNoteClose={noop}
         onRemove={noop}
         onText={onText}
         problem={undefined}
         recognizeBlocked={undefined}
+        recognizeNote={undefined}
         recognizing={0}
         scripts={scripts}
         selected={selected}

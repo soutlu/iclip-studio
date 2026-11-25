@@ -206,6 +206,9 @@ const ADDING_PICKS_TEXT = '选中的镜头正在加入轨道，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
+const ELSEWHERE_TEXT = '字幕已在口播起始的片段中，无需新增'
+/** 「识别字幕」旁的识别结果提示停留多久；鼠标移开时提前收起。 */
+const RECOGNIZE_NOTE_MS = 4_000
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
 const NO_TAKES_DUBBING_TEXT = '未找到视频片段对应的素材片记录，无法生成配音'
 const ALL_UNVOICED_TEXT = '全部字幕均已设为「不配音」，无需重新生成'
@@ -1079,6 +1082,13 @@ function EditorBody({
     }
     return { failed, ...recognizedCaptions(current, sentences) }
   }
+  // 再点「识别字幕」多半立刻有结果、鼠标还在按钮上，所以这类结果提示挂在按钮旁，到时或鼠标移开就收起
+  const [recognizeNote, setRecognizeNote] = useState<string>()
+  useEffect(() => {
+    if (recognizeNote === undefined) return
+    const timer = setTimeout(() => setRecognizeNote(undefined), RECOGNIZE_NOTE_MS)
+    return () => clearTimeout(timer)
+  }, [recognizeNote])
   const writeRecognized = async (
     clipIds: readonly string[],
     outcomes: ReadonlyMap<string, RecognitionOutcome>,
@@ -1097,8 +1107,7 @@ function EditorBody({
     if (added > 0) notice(`已加入 ${added} 句字幕`)
     if (result.skipped > 0) notice(`${result.skipped} 句与已有字幕重叠，已跳过`)
     if (result.silent.length > 0) notice(`${labels(result.silent)} 未识别到口播内容，未新增字幕`)
-    if (added === 0 && result.elsewhere.length > 0)
-      notice(`${labels(result.elsewhere)} 的口播起始于其他片段，对应字幕已归属起始片段，未新增字幕`)
+    if (added === 0 && result.elsewhere.length > 0) setRecognizeNote(ELSEWHERE_TEXT)
     if (result.failed.length > 0)
       notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
   }
@@ -1817,6 +1826,8 @@ function EditorBody({
                 onText={setCaptionText}
                 problem={film.captionsProblem}
                 recognizeBlocked={recognizeBlocked}
+                recognizeNote={recognizeNote}
+                onRecognizeNoteClose={() => setRecognizeNote(undefined)}
                 recognizing={recognition.recognizing}
                 scripts={captionScripts}
                 selected={selected}
