@@ -10,7 +10,10 @@ import { escapeAttribute, seconds } from './html'
  * 两处有一处写了，主文件根上的变量就整个到不了场景，字幕显示成元素里写的字。主文件根、宿主、场景根都带
  * `data-no-timeline`。
  *
- * 样式：场景里一条统一的样式（见 `captionStyle`）；一句设了字体、字色、字号时写在它元素的行内样式上，所有语言共用。
+ * 样式分三层，后一层盖前一层，都是所有语言共用：
+ * 1. 默认规则（见 `captionStyle`）：编辑器维护，字号、描边、投影随画面宽度重算（见 `withCaptionDefaults`）；
+ * 2. 字幕样式规则（见 `CaptionStyle`、`withCaptionStyleRule`）：紧跟在默认规则后面，只写用户设过的字体、字色、字号；
+ * 3. 单独设置：一句自己的字体、字色、字号写在它元素的行内样式上（见 `captionStyles`、`ownsStyle`）。
  */
 
 /** 编辑器新建字幕场景文件时的路径（相对工程根）。 */
@@ -224,39 +227,176 @@ export function captionOf(
 const HEX_COLOR = /^#[0-9a-f]{6}$/i
 
 /**
- * 改一句字幕的样式时写到它元素上的行内样式（SDK 的属性名）：`changes` 里给了的那几样，null 是去掉、回到默认。
- * 字体只能是组件库 `fonts` 里的字体族，写成 `'<字体族>', '<中文字体族>', sans-serif`（这个字体族没有的中文字形
- * 退到组件库的中文字体）；字色只能是 `#rrggbb`；字号是 `canvas` 上 `captionFontSizeRange` 里的整数像素，
- * 描边和投影按它一起写、一起去掉。
- *
- * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，或字号不是范围里的整数
+ * 字幕的字体族、字色和字号（像素），没设的是 null。一句字幕自己的（行内）、字幕样式规则里的都用它表示。
  */
-export function captionStyles(
-  changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>,
+export type CaptionStyle = Pick<CaptionClip, 'font' | 'color' | 'fontSize'>
+
+/** 什么都没设：没有字幕样式规则，或者一句没有单独设置。 */
+export const NO_CAPTION_STYLE: CaptionStyle = { font: null, color: null, fontSize: null }
+
+/** 一句字幕开着「单独设置」：行内写了字体、字色、字号里任意一样（老工程里改过的句子也就这样算开着）。 */
+export const ownsStyle = (caption: CaptionStyle): boolean =>
+  caption.font !== null || caption.color !== null || caption.fontSize !== null
+
+/**
+ * `changes` 写成的样式（SDK 的属性名），不检查取值：null 是去掉。字体写成 `'<字体族>', '<中文字体族>', sans-serif`
+ * （这个字体族没有的中文字形退到组件库的中文字体），字体就是中文字体族时只写它；描边和投影跟着字号一起写、一起去掉。
+ */
+function styleDeclarations(
+  changes: Partial<CaptionStyle>,
   catalog: ComponentCatalog,
-  canvas: Canvas,
 ): Record<string, string | null> {
   const styles: Record<string, string | null> = {}
   const { font, color, fontSize } = changes
-  if (font !== undefined) {
-    if (font !== null && !Object.hasOwn(catalog.fonts, font))
-      throw new Error(`组件库中不存在字体「${font}」`)
-    styles['fontFamily'] = font === null ? null : `'${font}', '${catalog.cjk.family}', sans-serif`
-  }
-  if (color !== undefined) {
-    if (color !== null && !HEX_COLOR.test(color)) throw new Error(`字幕颜色格式无效：${color}`)
-    styles['color'] = color
-  }
+  if (font !== undefined)
+    styles['fontFamily'] =
+      font === null
+        ? null
+        : font === catalog.cjk.family
+          ? `'${font}', sans-serif`
+          : `'${font}', '${catalog.cjk.family}', sans-serif`
+  if (color !== undefined) styles['color'] = color
   if (fontSize !== undefined) {
-    const { min, max } = captionFontSizeRange(canvas)
-    if (fontSize !== null && !(Number.isInteger(fontSize) && fontSize >= min && fontSize <= max))
-      throw new Error(`字幕字号须为 ${min} 至 ${max} 之间的整数像素：${fontSize}`)
     styles['fontSize'] = fontSize === null ? null : `${fontSize}px`
     // 键名照 SDK 把属性名转成驼峰的写法，存出来才是 -webkit-text-stroke
     styles['WebkitTextStroke'] = fontSize === null ? null : strokeOf(fontSize)
     styles['textShadow'] = fontSize === null ? null : shadowOf(fontSize)
   }
   return styles
+}
+
+/**
+ * 改一句字幕的样式时写到它元素上的行内样式（SDK 的属性名）：`changes` 里给了的那几样，null 是去掉。
+ * 字体只能是组件库 `fonts` 里的字体族或组件库的中文字体族（写法见 `styleDeclarations`）；字色只能是 `#rrggbb`；
+ * 字号是 `canvas` 上 `captionFontSizeRange` 里的整数像素，描边和投影按它一起写、一起去掉。
+ *
+ * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，或字号不是范围里的整数
+ */
+export function captionStyles(
+  changes: Partial<CaptionStyle>,
+  catalog: ComponentCatalog,
+  canvas: Canvas,
+): Record<string, string | null> {
+  const { font, color, fontSize } = changes
+  if (
+    font !== undefined &&
+    font !== null &&
+    font !== catalog.cjk.family &&
+    !Object.hasOwn(catalog.fonts, font)
+  )
+    throw new Error(`组件库中不存在字体「${font}」`)
+  if (color !== undefined && color !== null && !HEX_COLOR.test(color))
+    throw new Error(`字幕颜色格式无效：${color}`)
+  if (fontSize !== undefined && fontSize !== null) {
+    const { min, max } = captionFontSizeRange(canvas)
+    if (!(Number.isInteger(fontSize) && fontSize >= min && fontSize <= max))
+      throw new Error(`字幕字号须为 ${min} 至 ${max} 之间的整数像素：${fontSize}`)
+  }
+  return styleDeclarations(changes, catalog)
+}
+
+/**
+ * 一句字幕显示出来的字体族、字色和字号：这一句自己设了的（`own`）用它的，没设的用字幕样式（`style`），
+ * 字幕样式也没设的用默认规则的（组件库的中文字体、白色、`captionFontSize`）。
+ */
+export function captionLook(
+  own: CaptionStyle,
+  style: CaptionStyle,
+  catalog: ComponentCatalog,
+  canvas: Canvas,
+): { font: string; color: string; fontSize: number } {
+  return {
+    font: own.font ?? style.font ?? catalog.cjk.family,
+    color: own.color ?? style.color ?? CAPTION_COLOR,
+    fontSize: own.fontSize ?? style.fontSize ?? captionFontSize(canvas),
+  }
+}
+
+/**
+ * 打开一句的「单独设置」时写到它元素上的行内样式：这一刻显示的三样（见 `captionLook`，这一句还没有自己的）都写上，
+ * 画面不变。字体是默认时也写明组件库的中文字体族，以后改字幕样式的字体时这一句才不跟着变。取值来自已经存着的
+ * 字幕样式和默认规则，不再按现在的画面检查字号范围（改过画面尺寸时字幕样式的字号不换算，可能已在范围外）。
+ */
+export const ownCaptionStyles = (
+  style: CaptionStyle,
+  catalog: ComponentCatalog,
+  canvas: Canvas,
+): Record<string, string | null> =>
+  styleDeclarations(captionLook(NO_CAPTION_STYLE, style, catalog, canvas), catalog)
+
+/** 关闭一句的「单独设置」时要去掉的行内样式：字体、字色、字号和跟着字号的描边、投影。 */
+export const clearedCaptionStyles = (catalog: ComponentCatalog): Record<string, null> =>
+  Object.fromEntries(
+    Object.keys(styleDeclarations(NO_CAPTION_STYLE, catalog)).map((name) => [name, null]),
+  )
+
+// 字幕样式规则：比默认规则多一个 .clip（每句都是带时间的元素，带着它），优先级更高、又写在默认规则后面，
+// 一定盖过默认规则；选择器和默认规则不同，`withCaptionDefaults` 认不到它
+const STYLE_RULE = `[data-composition-id="${CAPTIONS_ID}"] .clip.caption`
+const STYLE_RULE_TEXT = new RegExp(
+  `\\n?${STYLE_RULE.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`,
+)
+
+/** 规则正文里属性 `property` 的值；没写时是 undefined。 */
+const declared = (body: string, property: string): string | undefined =>
+  new RegExp(`(?:^|[\\s;{])${property}\\s*:\\s*([^;}]*)`).exec(body)?.[1]?.trim()
+
+/** 字幕场景文件 `scene` 里的字幕样式规则原文（不含前面的换行）；没有时是 null。 */
+export const captionStyleRuleIn = (scene: string): string | null =>
+  STYLE_RULE_TEXT.exec(scene)?.[0].replace(/^\n/, '') ?? null
+
+/**
+ * 字幕场景文件 `scene`（也可以只是一条字幕样式规则）里字幕样式规则设的字体族、字色、字号；没有这条规则、
+ * 规则里没写的是 null。读法同一句字幕的行内样式（见 `captionOf`）。
+ */
+export function captionStyleOf(scene: string): CaptionStyle {
+  const rule = captionStyleRuleIn(scene)
+  if (rule === null) return NO_CAPTION_STYLE
+  const body = rule.slice(rule.indexOf('{'))
+  return {
+    font: firstFamily(declared(body, 'font-family')),
+    color: declared(body, 'color') ?? null,
+    fontSize: pixelsOf(declared(body, 'font-size')),
+  }
+}
+
+/**
+ * 字幕样式 `style` 改了 `changes` 以后的字幕样式规则原文；改完一样都没设时是 null（不写这条规则）。只检查这次改的
+ * （检查同 `captionStyles`），没改的照原样写；写法同行内样式（见 `styleDeclarations`），属性名换成 CSS 的写法。
+ *
+ * @throws Error 改的字体不在组件库里，字色不是 `#rrggbb`，或字号不是范围里的整数
+ */
+export function captionStyleRule(
+  style: CaptionStyle,
+  changes: Partial<CaptionStyle>,
+  catalog: ComponentCatalog,
+  canvas: Canvas,
+): string | null {
+  captionStyles(changes, catalog, canvas)
+  const next = { ...style, ...changes }
+  const lines = Object.entries(styleDeclarations(next, catalog)).flatMap(([name, value]) =>
+    value === null
+      ? []
+      : [`  ${name.replace(/[A-Z]/g, (upper) => `-${upper.toLowerCase()}`)}: ${value};`],
+  )
+  return lines.length === 0 ? null : `${STYLE_RULE} {\n${lines.join('\n')}\n}`
+}
+
+/**
+ * 字幕场景文件 `scene` 换上字幕样式规则 `rule`（见 `captionStyleRule`；null 是去掉这条规则）：先去掉原来的，
+ * 再写在默认规则后面；没有默认规则时写在第一个 `<style>` 的末尾。场景里没有 `<style>` 时写不进去，原样返回
+ * （调用方用 `captionStyleRuleIn` 核对写没写进去）。
+ */
+export function withCaptionStyleRule(scene: string, rule: string | null): string {
+  const bare = scene.replace(STYLE_RULE_TEXT, '')
+  if (rule === null) return bare
+  const defaults = CAPTION_RULE_BODY.exec(bare)
+  if (defaults !== null) {
+    const end = defaults.index + defaults[0].length
+    return `${bare.slice(0, end)}\n${rule}${bare.slice(end)}`
+  }
+  const close = bare.search(/<\/style\s*>/i)
+  return close < 0 ? scene : `${bare.slice(0, close)}${rule}\n${bare.slice(close)}`
 }
 
 export const CAPTIONS_PROBLEM_TEXT =

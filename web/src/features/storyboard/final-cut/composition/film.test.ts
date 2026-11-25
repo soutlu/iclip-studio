@@ -408,6 +408,15 @@ describe('<head> 里的字体块', () => {
     expect(withFonts([video(), { ...caption, font: 'Comic Sans MS' }])).not.toContain('<link ')
   })
 
+  it('字幕样式设了组件库里的字体：链上它的字体，并按它给字幕的字出中文孪生规则；和单句设的同一个字体只链一次', () => {
+    const styled = (clips: FilmClip[]) =>
+      withFontBlock(emptyProject(CANVAS, catalog), clips, catalog, '', 'Playfair Display')
+    const html = styled([video(), caption])
+    expect(html.split(LINK)).toHaveLength(2)
+    expect(covers(html, 'Playfair Display', '字')).toBe(true)
+    expect(styled([video(), { ...caption, font: 'Playfair Display' }]).split(LINK)).toHaveLength(2)
+  })
+
   it('没有组件或块的片段时只声明西文基本字符', () => {
     const html = withFonts([video({ label: '新品' })])
     expect(covers(html, 'Noto Sans SC', 'A')).toBe(true)

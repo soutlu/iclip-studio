@@ -123,8 +123,8 @@ export interface OtherClip extends ClipBase {
 /**
  * 一句字幕：字幕场景文件里的一个带时间的元素（见 `captions.ts`），不在主文件里。`text` 是它的字，
  * 存在主文件根上的变量 `variable` 的默认值里。`owner` 是它属于的视频片段（识别出来的字幕跟着这个片段走），
- * 手动加的字幕是 null。`font`、`color`、`fontSize` 是这一句自己设的字体族、字色和字号（像素）（元素的行内样式，
- * 所有语言共用），没设时是 null，用字幕的默认样式。
+ * 手动加的字幕是 null。`font`、`color`、`fontSize` 是这一句单独设置的字体族、字色和字号（像素）（元素的行内样式，
+ * 所有语言共用），没设时是 null，用字幕样式（见 `captions.ts`）。
  */
 export interface CaptionClip extends ClipBase {
   kind: 'caption'
@@ -450,14 +450,16 @@ export function hostElement(
 }
 
 /**
- * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族和字幕设的字体族；中文字体按可填项里
- * 的文字、条目里出现的字和字幕的字声明（字幕默认用的就是中文字体）。组件库里没有的字体族不声明。
+ * 工程要声明的字体：用到的条目自带的字体族，加上字体类可填项取到的字体族、字幕样式的字体族（`captionFont`，
+ * 见 `captions.ts`）和各句字幕单独设的字体族；中文字体按可填项里的文字、条目里出现的字和字幕的字声明（字幕默认用的
+ * 就是中文字体）。组件库里没有的字体族不声明。
  */
 function fontsOf(
   clips: readonly FilmClip[],
   catalog: ComponentCatalog,
+  captionFont: string | null,
 ): { families: string[]; text: string } {
-  const families = new Set<string>()
+  const families = new Set<string>(captionFont === null ? [] : [captionFont])
   let text = ''
   const used = new Set<string>()
   for (const clip of clips) {
@@ -490,14 +492,15 @@ function fontsOf(
 
 /**
  * 字体块：两行标记之间是字体族的样式表链接和中文字体的 `@font-face`。`localeText` 是各语言值表里的字，
- * 和片段里的字一起声明，哪种语言预览、导出都有字形。
+ * 和片段里的字一起声明，哪种语言预览、导出都有字形；`captionFont` 是字幕样式的字体族（没设时是 null，见 `fontsOf`）。
  */
 export function fontBlock(
   clips: readonly FilmClip[],
   catalog: ComponentCatalog,
   localeText = '',
+  captionFont: string | null = null,
 ): string {
-  const { families, text } = fontsOf(clips, catalog)
+  const { families, text } = fontsOf(clips, catalog, captionFont)
   // 渲染服务按这种写法的链接找到字体文件
   const links = families
     .map(
@@ -509,18 +512,20 @@ export function fontBlock(
 }
 
 /**
- * 主文件按 `clips` 和各语言值表里的字（`localeText`，见 `fontBlock`）换上新的字体块：只换 `<head>` 里两行标记
- * 之间（含标记）的内容，别的一个字不动。`<head>` 里还没有字体块时加在 `</head>` 前面；没有 `</head>` 时原样返回。
+ * 主文件按 `clips`、各语言值表里的字（`localeText`）和字幕样式的字体族（`captionFont`，见 `fontBlock`）换上新的
+ * 字体块：只换 `<head>` 里两行标记之间（含标记）的内容，别的一个字不动。`<head>` 里还没有字体块时加在 `</head>`
+ * 前面；没有 `</head>` 时原样返回。
  */
 export function withFontBlock(
   html: string,
   clips: readonly FilmClip[],
   catalog: ComponentCatalog,
   localeText = '',
+  captionFont: string | null = null,
 ): string {
   const headEnd = html.search(/<\/head\s*>/i)
   if (headEnd < 0) return html
-  const block = fontBlock(clips, catalog, localeText)
+  const block = fontBlock(clips, catalog, localeText, captionFont)
   const from = html.indexOf(FONT_BLOCK_START)
   const to = from < 0 ? -1 : html.indexOf(FONT_BLOCK_END, from)
   if (from < 0 || to < 0 || to > headEnd)
