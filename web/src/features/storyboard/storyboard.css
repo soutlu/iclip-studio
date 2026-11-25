@@ -729,24 +729,31 @@
 }
 
 /* ===== 出片栏 =====
-   参数区始终保持单行：空间不足时先截断模型 ID（至少保留 96px），仍不足时启用横向滚动与两端渐隐。
-   宽屏下参数居左、主按钮居右；工作台窄于 480px（移动视口）时分为两行，主按钮占满次行。
-   参数控件统一通过 --storyboard-control-* 变量控制尺寸与材质：出片栏作为浮起面板，采用 32px 高度、工作台控件圆角、
-   面板细线描边、卡片白底与紧凑字号；弹窗中复用的模型与分辨率控件不在出片栏内，沿用默认的 34px 高度、sm 圆角、
-   发丝线描边、白底与正文字号。文字与图标取中性色；画幅位于最左，以竖线分隔其余生成设置。
-   选中与展开态使用中性灰，品牌主色仅用于出片按钮；模型不支持当前画幅时画幅按钮切换为错误态。模型与画幅菜单通过 Portal 向上展开。
+   一行 32px 高的控件：画幅键在最左，以竖线隔开视频模型、分辨率两个分段槽和音频键，「生成第 N 组」在最右。
+   参数区始终单行，放不下时横向滚动并在两端渐隐；工作台窄于 480px（移动视口）时分为两行，主按钮占满次行。
+   单点键（画幅、音频）是卡片白底的浮起键：外环与轻投影代替描边，顶部 1px 高光，菜单展开时凹下去。
+   单点键与弹窗里复用的同一组控件共用规则，尺寸与材质由出片栏设 --storyboard-control-* 变量给出；
+   弹窗里不在出片栏内，沿用默认的 34px 高度、sm 圆角、发丝线描边、白底与正文字号。
+   分段槽只在出片栏里用：凹槽底承托浮起的选中格（与 final-cut 的分段同一种材质），不可用的格置灰、悬停说明原因；
+   模型读取中或读取失败时，模型槽的位置换成同高的凹槽占位。
+   品牌主色只用于出片按钮；画幅菜单只列当前模型支持的画幅，通过 Portal 向上展开。
    控件上方的状态行仅在存在提示内容时渲染：禁用说明使用次级文字色，错误提示使用错误色。 */
 .storyboard-bar {
   --storyboard-control-height: 32px;
   --storyboard-control-radius: var(--radius-control);
-  --storyboard-control-line: var(--color-panel-line);
+  --storyboard-control-line: transparent;
   --storyboard-control-fill: var(--color-card);
+  --storyboard-control-shadow: var(--shadow-panel-card), var(--shadow-specular);
+  --storyboard-control-open-fill: var(--color-control-well);
+  --storyboard-control-open-shadow: var(--shadow-control-well);
   --storyboard-control-text: var(--text-ui);
+  /* 分段格圆角：槽圆角减去 3px 槽内边距，保持四角同心 */
+  --storyboard-segment-radius: calc(var(--radius-control) - 3px);
   display: flex;
   flex: none;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 10px 8px 12px;
+  padding: 8px 8px 8px 9px;
   /* 左右并排时禁止文本折行，溢出部分由出片栏裁切；上下堆叠时恢复状态行正常折行（见下方容器查询）。 */
   overflow: clip;
   white-space: nowrap;
@@ -755,7 +762,7 @@
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 .storyboard-bar-status {
   display: flex;
@@ -789,11 +796,11 @@
 /* 画幅与生成设置之间的竖线。 */
 .storyboard-bar-divider {
   width: 1px;
-  height: 20px;
+  height: 14px;
   flex: none;
   background: var(--color-hairline);
 }
-/* 模型、画幅与音频按钮；悬停、按下与禁用由 ui-state 给。 */
+/* 单点键：画幅、音频与弹窗里的模型、分辨率选择；悬停、按下与禁用由 ui-state 给。 */
 .storyboard-bar-control {
   display: inline-flex;
   flex: none;
@@ -803,6 +810,7 @@
   border: 1px solid var(--storyboard-control-line, var(--color-hairline));
   border-radius: var(--storyboard-control-radius, var(--radius-sm));
   background-color: var(--storyboard-control-fill, var(--color-surface-container-lowest));
+  box-shadow: var(--storyboard-control-shadow, none);
   font-size: var(--storyboard-control-text, var(--text-body));
 }
 /* 颜色与指针只管可用态，禁用态的淡色与指针交给 ui-state。 */
@@ -820,9 +828,11 @@
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
-.storyboard-bar-picker[data-state='open'] {
+/* 展开态按 aria-expanded 写：画幅键外面包着 Tooltip，它的触发器会改写菜单触发器的 data-state。 */
+.storyboard-bar-picker[aria-expanded='true'] {
   border-color: transparent;
-  background-color: var(--color-surface-container-high);
+  background-color: var(--storyboard-control-open-fill, var(--color-surface-container-high));
+  box-shadow: var(--storyboard-control-open-shadow, none);
 }
 .storyboard-bar-picker > svg,
 .storyboard-bar-picker > .storyboard-bar-glyph {
@@ -846,17 +856,6 @@
 .storyboard-bar-picker:enabled > .storyboard-bar-picker-chevron {
   color: var(--color-on-surface-muted);
 }
-/* 当前值有问题（画幅不被模型支持）：错误容器底、错误色描边，字与图标一起换色。 */
-.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed]) {
-  border-color: color-mix(in srgb, var(--color-error) 40%, transparent);
-  background-color: var(--color-error-container);
-  color: var(--color-on-error-container);
-}
-.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed]) > svg,
-.storyboard-bar-picker[data-invalid='true']:is(:enabled, [data-fixed])
-  > .storyboard-bar-picker-chevron {
-  color: inherit;
-}
 .storyboard-bar-audio {
   width: var(--storyboard-control-height, var(--control-height-sm));
 }
@@ -864,21 +863,76 @@
 .storyboard-bar-audio[aria-pressed='false']:enabled {
   color: var(--color-on-surface-muted);
 }
-/* 分辨率分段：外框与其余控件同高、同描边、同底，选中项是一块中性灰底，不浮起。 */
+/* 出片栏的分段槽（视频模型、分辨率）与模型读取中的占位：凹槽底，与单点键同高同圆角。 */
+.storyboard-bar-well {
+  flex: none;
+  height: var(--storyboard-control-height);
+  border-radius: var(--radius-control);
+  background-color: var(--color-control-well);
+  box-shadow: var(--shadow-control-well);
+}
+/* 槽内边距 3px，格高 26px。 */
+.storyboard-bar-segments {
+  gap: 2px;
+  padding: 3px;
+}
+/* 共享分段默认等宽（分辨率照此）；模型短名长短不一，按各自宽度排。 */
+.storyboard-bar-models {
+  grid-auto-columns: auto;
+}
+/* 分段格：悬停只加深文字、不垫底色（撤掉 ui-state 的叠层色）；选中格浮起。 */
+.storyboard-bar-well-item {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+  padding: 0 10px;
+  border-radius: var(--storyboard-segment-radius);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.storyboard-bar-well-item:hover {
+  color: var(--color-on-surface);
+}
+/* 选中态按 aria-checked 写：不可用的格外面包着 Tooltip，它的触发器会改写 data-state。 */
+.storyboard-bar-well-item[aria-checked='true'] {
+  background-color: var(--color-card);
+  box-shadow: var(--shadow-pill), var(--shadow-specular);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+.dark .storyboard-bar-well-item[aria-checked='true'] {
+  background-color: var(--color-surface-container-high);
+}
+/* 不可用的格：禁用文字色，悬停也不加深（与悬停规则同优先级，放在其后）。 */
+.storyboard-bar-well-item[aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+.storyboard-bar-models-pending {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 11px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+/* 弹窗里的分段（视频编辑卡的「图生 / 编辑」）：外框与单点键同高、同描边、同底，选中项是一块中性灰底，不浮起。 */
 .storyboard-bar-segmented {
-  height: var(--storyboard-control-height, var(--control-height-sm));
+  height: var(--control-height-sm);
   padding: 2px;
-  border: 1px solid var(--storyboard-control-line, var(--color-hairline));
-  border-radius: var(--storyboard-control-radius, var(--radius-sm));
-  background-color: var(--storyboard-control-fill, var(--color-surface-container-lowest));
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-container-lowest);
 }
 .storyboard-bar-segment {
   padding: 0 8px;
   border-radius: var(--radius-xs);
-  font-size: var(--storyboard-control-text, var(--text-body));
+  font-size: var(--text-body);
   font-variant-numeric: tabular-nums;
 }
-/* 共享分段的选中项是浮起的白块，出片栏控件本身就是白底，这里换成灰底、去掉投影。 */
+/* 共享分段的选中项是浮起的白块，这里外框已是白底，换成灰底、去掉投影。 */
 .storyboard-bar-segment[data-state='on'] {
   background-color: var(--color-surface-container-high);
   box-shadow: none;
@@ -922,17 +976,17 @@
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
 }
-/* 唯一可收缩的参数控件：空间不够时先截断模型 id，再轮到整行横向滚。 */
-.storyboard-bar-model {
-  min-width: 96px;
-  flex: 0 1 auto;
+/* 出片按钮与控件同高：主色底配一层轻的主色调投影，悬停、按下沿用按钮本身。 */
+.storyboard-bar-generate {
+  height: var(--storyboard-control-height);
+  padding: 0 14px;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--color-primary) 18%, transparent);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
 }
 @container storyboard-workbench (width < 640px) {
   .storyboard-bar {
     white-space: normal;
-  }
-  .storyboard-bar-model {
-    max-width: 120px;
   }
 }
 @container storyboard-workbench (width < 480px) {
@@ -940,10 +994,6 @@
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
-  }
-  /* 手机上模型按钮不跟着挤：放不下就让这一行横向滚。 */
-  .storyboard-bar-model {
-    flex: none;
   }
   .storyboard-bar-row > .storyboard-bar-generate {
     width: 100%;

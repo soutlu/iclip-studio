@@ -1,6 +1,7 @@
 import { useId, useRef } from 'react'
 import { Icon } from '@/shared/icons'
 import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
+import { cn } from '@/shared/lib/utils'
 import { SubmitButton, type SubmitPhase } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -19,7 +20,7 @@ import {
   type GenerationBlocker,
   type GenerationStatusLine,
 } from '../generation-blocker'
-import { supportsAspectRatio } from '../video-model-support'
+import { orderVideoModels, supportsAspectRatio, videoModelShortName } from '../video-model-support'
 import { AspectGlyph } from './aspect-glyph'
 import { BlockedReason } from './blocked-reason'
 import { GenerationPicker, type GenerationPickerOption } from './generation-picker'
@@ -33,9 +34,11 @@ type AspectControl = {
   description: string
 }
 
+type VideoModels = { items: readonly string[]; status: VideoModelsStatus; draft: DraftSupport }
+
 type VideoGenerationBarProps = {
   shotIndex: number
-  models: { items: readonly string[]; status: VideoModelsStatus; draft: DraftSupport }
+  models: VideoModels
   value: VideoGenerationOptions
   onChange: (value: VideoGenerationOptions) => void
   aspect: AspectControl
@@ -56,8 +59,6 @@ export function VideoGenerationBar({
   shotIndex,
   value,
 }: VideoGenerationBarProps) {
-  const modelLabel =
-    value.model ?? (models.status === 'ready' ? '' : MODELS_PENDING_TEXT[models.status])
   const paramsRef = useRef<HTMLDivElement | null>(null)
   const { fade } = useScrollFade(paramsRef)
   useHorizontalWheel(paramsRef)
@@ -79,21 +80,13 @@ export function VideoGenerationBar({
           data-fade={fade}
           ref={paramsRef}
         >
-          <AspectPicker
-            aspect={aspect}
-            errorId={status?.tone === 'error' ? statusId : undefined}
-            model={value.model}
-          />
+          <AspectPicker aspect={aspect} model={value.model} />
           <span aria-hidden className="storyboard-bar-divider" />
-          <GenerationPicker
-            className="storyboard-bar-model"
-            disabled={models.items.length === 0}
-            label="视频模型"
-            leading={<Icon decorative name="video" size="sm" />}
+          <ModelPicker
+            aspectRatio={aspect.value}
+            models={models}
             onChange={(model) => onChange({ ...value, model })}
-            options={models.items.map((model) => ({ value: model }))}
-            text={modelLabel}
-            value={value.model ?? ''}
+            value={value.model}
           />
           <QualityPicker
             draft={models.draft}
@@ -151,6 +144,106 @@ function BarStatusLine({ id, status }: { id: string; status: GenerationStatusLin
   )
 }
 
+/** 出片栏里的分段槽：一组单选格，不可用的格置灰、点不中，悬停或点击时说明原因。 */
+function SegmentedPicker({
+  className,
+  label,
+  onChange,
+  options,
+  value,
+}: {
+  className?: string
+  label: string
+  onChange: (value: string) => void
+  options: readonly {
+    value: string
+    text: string
+    title?: string
+    blockedReason?: string | undefined
+  }[]
+  value: string
+}) {
+  return (
+    <ChipGroup
+      aria-label={label}
+      className={cn('storyboard-bar-well storyboard-bar-segments', className)}
+      onValueChange={(next) => {
+        const option = options.find((item) => item.value === next)
+        if (option !== undefined && option.blockedReason === undefined) onChange(option.value)
+      }}
+      type="single"
+      value={value}
+      variant="segmented"
+    >
+      {options.map((option) => {
+        const blocked = option.blockedReason !== undefined
+        const segment = (
+          <FilterChip
+            aria-disabled={blocked ? true : undefined}
+            className="storyboard-bar-well-item"
+            key={option.value}
+            title={blocked ? undefined : option.title}
+            value={option.value}
+            variant="segmented"
+          >
+            {option.text}
+          </FilterChip>
+        )
+        // Tooltip 触发器会覆盖分段项的 data-state 属性，因此只包裹不可用的格；选中样式按 aria-checked 写。
+        return blocked ? (
+          <BlockedReason key={option.value} reason={option.blockedReason}>
+            {segment}
+          </BlockedReason>
+        ) : (
+          segment
+        )
+      })}
+    </ChipGroup>
+  )
+}
+
+function ModelPicker({
+  aspectRatio,
+  models,
+  onChange,
+  value,
+}: {
+  aspectRatio: string
+  models: VideoModels
+  onChange: (model: string) => void
+  value: string | undefined
+}) {
+  if (models.status !== 'ready')
+    return (
+      <span
+        aria-label="视频模型"
+        className="storyboard-bar-well storyboard-bar-models-pending"
+        role="group"
+      >
+        <Icon decorative name="video" size="sm" />
+        {MODELS_PENDING_TEXT[models.status]}
+      </span>
+    )
+  return (
+    <SegmentedPicker
+      className="storyboard-bar-models"
+      label="视频模型"
+      onChange={onChange}
+      options={orderVideoModels(models.items).map((model) => ({
+        // 已选中的格不置灰：外部带进来的冲突由状态行提示，不替用户改。
+        blockedReason:
+          model === value || supportsAspectRatio(model, aspectRatio)
+            ? undefined
+            : `该模型不支持 ${aspectRatio} 画幅`,
+        text: videoModelShortName(model),
+        title: model,
+        value: model,
+      }))}
+      value={value ?? ''}
+    />
+  )
+}
+
 function QualityPicker({
   draft,
   onChange,
@@ -162,80 +255,40 @@ function QualityPicker({
 }) {
   const qualities: readonly VideoQuality[] =
     draft === 'off' ? VIDEO_RESOLUTIONS : [...VIDEO_RESOLUTIONS, DRAFT_QUALITY]
-  const blocked = (quality: VideoQuality) => quality === DRAFT_QUALITY && draft === 'unsupported'
   return (
-    <ChipGroup
-      aria-label="分辨率"
-      className="storyboard-bar-segmented"
-      onValueChange={(next) => {
+    <SegmentedPicker
+      label="分辨率"
+      onChange={(next) => {
         const quality = qualities.find((item) => item === next)
-        if (quality !== undefined && !blocked(quality)) onChange(quality)
+        if (quality !== undefined) onChange(quality)
       }}
-      type="single"
+      options={qualities.map((quality) =>
+        quality === DRAFT_QUALITY
+          ? {
+              blockedReason: draft === 'unsupported' ? '该模型不支持样片' : undefined,
+              text: DRAFT_LABEL,
+              value: quality,
+            }
+          : { text: quality, value: quality },
+      )}
       value={value}
-      variant="segmented"
-    >
-      {qualities.map((quality) => {
-        const segment = (
-          <FilterChip
-            aria-disabled={blocked(quality) ? true : undefined}
-            className="storyboard-bar-segment"
-            key={quality}
-            value={quality}
-            variant="segmented"
-          >
-            {quality === DRAFT_QUALITY ? DRAFT_LABEL : quality}
-          </FilterChip>
-        )
-        // Tooltip 触发器会覆盖分段项的 data-state 属性从而干扰选中态样式，因此仅包裹禁用项。
-        return blocked(quality) ? (
-          <BlockedReason key={quality} reason="该模型不支持样片">
-            {segment}
-          </BlockedReason>
-        ) : (
-          segment
-        )
-      })}
-    </ChipGroup>
+    />
   )
 }
 
-function AspectPicker({
-  aspect,
-  errorId,
-  model,
-}: {
-  aspect: AspectControl
-  errorId: string | undefined
-  model: string | undefined
-}) {
-  const unsupported = !supportsAspectRatio(model, aspect.value)
-  const leading = unsupported ? (
-    <Icon decorative name="alert" size="sm" />
-  ) : (
-    <AspectGlyph longSide={13} ratio={aspect.value} />
-  )
-  const options: GenerationPickerOption[] = ASPECT_RATIOS.map((ratio) => {
-    const usable = supportsAspectRatio(model, ratio)
-    return {
-      disabled: !usable,
-      hint: usable ? undefined : '不支持',
-      leading: <AspectGlyph longSide={14} ratio={ratio} />,
-      value: ratio,
-    }
-  })
-  if (!ASPECT_RATIOS.some((ratio) => ratio === aspect.value))
-    options.unshift({
-      leading: <AspectGlyph longSide={14} ratio={aspect.value} />,
-      value: aspect.value,
-    })
+function AspectPicker({ aspect, model }: { aspect: AspectControl; model: string | undefined }) {
+  const ratios: string[] = ASPECT_RATIOS.filter((ratio) => supportsAspectRatio(model, ratio))
+  if (!ratios.includes(aspect.value)) ratios.unshift(aspect.value)
+  const options: GenerationPickerOption[] = ratios.map((ratio) => ({
+    leading: <AspectGlyph longSide={14} ratio={ratio} />,
+    value: ratio,
+  }))
   return (
     <GenerationPicker
       description={aspect.description}
       disabled={aspect.disabled}
-      invalid={unsupported ? { describedBy: errorId } : undefined}
       label="画幅"
-      leading={leading}
+      leading={<AspectGlyph longSide={13} ratio={aspect.value} />}
       onChange={aspect.onChange}
       options={options}
       text={aspect.value}
@@ -262,7 +315,7 @@ function GenerateButton({
     <SubmitButton
       aria-describedby={describedBy}
       aria-disabled={unavailable ? true : undefined}
-      className="storyboard-bar-generate shrink-0 rounded-full text-body aria-disabled:active:scale-100"
+      className="storyboard-bar-generate shrink-0 rounded-full aria-disabled:active:scale-100"
       label={`生成第 ${shotIndex} 组`}
       leadingIcon="video"
       onClick={() => {

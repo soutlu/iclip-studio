@@ -101,10 +101,8 @@ const cardOf = async (job: GenerationJob) => {
   if (item === undefined) throw new Error('素材片区缺这条记录')
   return within(item).getByRole('button')
 }
-const pickModel = async (name: string) => {
-  await userEvent.click(within(bar()).getByRole('button', { name: '视频模型' }))
-  await userEvent.click(await screen.findByRole('menuitemradio', { name }))
-}
+const model = (name: string) =>
+  within(within(bar()).getByRole('radiogroup', { name: '视频模型' })).getByRole('radio', { name })
 
 describe('StoryboardReader 样片与转 1080p', () => {
   beforeEach(() => {
@@ -135,22 +133,18 @@ describe('StoryboardReader 样片与转 1080p', () => {
     it('模型不支持样片：样片置灰、悬停说明原因、点不中；选着样片时换成这种模型回到 720p', async () => {
       serve([])
       await renderReader()
-      await waitFor(() =>
-        expect(within(bar()).getByRole('button', { name: '视频模型' })).toHaveTextContent(
-          DRAFT_MODEL,
-        ),
-      )
+      await waitFor(() => expect(model('sd2.5')).toBeChecked())
       await userEvent.click(quality('样片'))
       expect(quality('样片')).toBeChecked()
 
-      await pickModel('vendor-a-seedance-2-5-flash')
+      await userEvent.click(model('sd2.5flash'))
       expect(quality('720p')).toBeChecked()
       expect(quality('样片')).toHaveAttribute('aria-disabled', 'true')
       await userEvent.click(quality('样片'))
       expect(quality('720p')).toBeChecked()
       expect(await screen.findByRole('tooltip')).toHaveTextContent('该模型不支持样片')
 
-      await pickModel(DRAFT_MODEL)
+      await userEvent.click(model('sd2.5'))
       expect(quality('720p')).toBeChecked()
       expect(quality('样片')).not.toHaveAttribute('aria-disabled')
     })

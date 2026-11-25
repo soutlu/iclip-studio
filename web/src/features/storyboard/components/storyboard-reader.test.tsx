@@ -11,6 +11,7 @@ import { loginAs, mockAuthUser } from '@/testing/mocks/handlers'
 import { server } from '@/testing/mocks/server'
 import { renderWithProviders } from '@/testing/render'
 import { openAddImage } from '@/testing/storyboard'
+import { VIDEO_MODELS } from '@/testing/video-models'
 import type { ShotsDocument } from '../shot-document'
 import { makeGenerationJob } from '@/testing/generation-job'
 import type { GenerationJob } from '../storyboard.api'
@@ -522,11 +523,7 @@ describe('StoryboardReader', () => {
 
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: '视频模型' })).toHaveTextContent(
-        'vendor-a-seedance-2-5',
-      ),
-    )
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'sd2.5' })).toBeChecked())
     await userEvent.click(generate)
     expect(posts).toBe(0)
     for (const name of ['全局设定', '镜头 1 的描述', '镜头 2 的描述', '镜头 3 的描述'])
@@ -695,56 +692,104 @@ describe('StoryboardReader', () => {
     )
   })
 
-  it('改画幅写回分镜、出片带上新画幅；画幅按选中的模型标不支持，但不替用户改也不拦', async () => {
-    const files = provide()
-    const user = userEvent.setup()
-    const posted: { aspect_ratio?: string; model?: string }[] = []
-    server.use(
-      http.post('*/api/generations/video', async ({ request }) => {
-        posted.push((await request.json()) as { aspect_ratio?: string; model?: string })
-        return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
-      }),
-    )
-    await renderReader()
-    await screen.findByRole('region', { name: '镜头组 1' })
-
-    const aspect = await screen.findByRole('button', { name: '画幅' })
-    const aspectMenu = async () => {
-      await user.click(aspect)
-      return screen.findByRole('menu', { name: '画幅' })
+  describe('画幅与视频模型互相过滤', () => {
+    const recordPosts = () => {
+      const posted: { aspect_ratio?: string; model?: string }[] = []
+      server.use(
+        http.post('*/api/generations/video', async ({ request }) => {
+          posted.push((await request.json()) as { aspect_ratio?: string; model?: string })
+          return HttpResponse.json({ task_id: runningJob.id }, { status: 202 })
+        }),
+      )
+      return posted
     }
-    const option = (menu: HTMLElement, value: string) =>
-      within(menu).getByRole('menuitemradio', { name: new RegExp(`^${value}`) })
-    let menu = await aspectMenu()
-    expect(option(menu, '21:9')).not.toHaveAttribute('aria-disabled')
-    await user.click(option(menu, '21:9'))
-    await waitFor(() => expect(files.writes).toHaveLength(1))
-    expect(files.snapshot().aspect_ratio).toBe('21:9')
-    expect(aspect).toHaveTextContent('21:9')
+    const bar = () => screen.getByRole('group', { name: '出片工具栏' })
+    const model = (name: string) =>
+      within(within(bar()).getByRole('radiogroup', { name: '视频模型' })).getByRole('radio', {
+        name,
+      })
+    const generateOnce = async (posted: unknown[]) => {
+      const generate = within(bar()).getByRole('button', { name: '生成第 1 组' })
+      await waitFor(() => expect(generate).not.toHaveAttribute('aria-disabled'))
+      await userEvent.click(generate)
+      await waitFor(() => expect(posted).toHaveLength(1))
+    }
 
-    const model = screen.getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
-    await user.click(model)
-    const wan = await screen.findByRole('menuitemradio', { name: 'wan3.0-video' })
-    expect(wan).not.toHaveAttribute('aria-disabled')
-    await user.click(wan)
-    menu = await aspectMenu()
-    expect(option(menu, '21:9')).toHaveAttribute('aria-disabled', 'true')
-    expect(option(menu, '21:9')).toHaveAccessibleName(/不支持/)
-    expect(option(menu, '21:9')).toBeChecked()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    const bar = screen.getByRole('group', { name: '出片工具栏' })
-    expect(
-      await within(bar).findByRole('alert', { name: 'wan3.0-video 不支持 21:9 画幅' }),
-    ).toBeVisible()
-    expect(aspect).toHaveAccessibleDescription('wan3.0-video 不支持 21:9 画幅')
+    it('模型分段按 wan3 · sd2.5flash · sd2.5 排列，悬停显示完整 id', async () => {
+      provide()
+      await renderReader()
+      const models = await within(bar()).findByRole('radiogroup', { name: '视频模型' })
+      expect(
+        within(models)
+          .getAllByRole('radio')
+          .map((item) => item.textContent),
+      ).toEqual(['wan3', 'sd2.5flash', 'sd2.5'])
+      expect(model('sd2.5')).toBeChecked()
+      expect(model('sd2.5')).toHaveAttribute('title', 'vendor-a-seedance-2-5')
+    })
 
-    const generate = within(bar).getByRole('button', { name: '生成第 1 组' })
-    expect(generate).not.toHaveAttribute('aria-disabled')
-    await user.click(generate)
-    await waitFor(() => expect(posted).toHaveLength(1))
-    expect(posted[0]).toMatchObject({ aspect_ratio: '21:9', model: 'wan3.0-video' })
+    it('选 wan3 时画幅菜单不列 21:9；画幅是 21:9 时 wan3 置灰、点不中并说明原因，出片发可用模型与 21:9', async () => {
+      const files = provide()
+      const posted = recordPosts()
+      const user = userEvent.setup()
+      await renderReader()
+      await screen.findByRole('region', { name: '镜头组 1' })
+      const aspect = within(bar()).getByRole('button', { name: '画幅' })
+      const aspectMenu = async () => {
+        await user.click(aspect)
+        return screen.findByRole('menu', { name: '画幅' })
+      }
+
+      await user.click(await within(bar()).findByRole('radio', { name: 'wan3' }))
+      expect(model('wan3')).toBeChecked()
+      let menu = await aspectMenu()
+      expect(
+        within(menu)
+          .getAllByRole('menuitemradio')
+          .map((item) => item.textContent),
+      ).toEqual(['1:1', '3:4', '4:3', '9:16', '16:9'])
+      await user.keyboard('{Escape}')
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+
+      await user.click(model('sd2.5flash'))
+      menu = await aspectMenu()
+      await user.click(within(menu).getByRole('menuitemradio', { name: '21:9' }))
+      await waitFor(() => expect(files.writes).toHaveLength(1))
+      expect(files.snapshot().aspect_ratio).toBe('21:9')
+      expect(aspect).toHaveTextContent('21:9')
+
+      expect(model('wan3')).toHaveAttribute('aria-disabled', 'true')
+      await user.click(model('wan3'))
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('该模型不支持 21:9 画幅')
+      expect(model('wan3')).not.toBeChecked()
+      expect(model('sd2.5flash')).toBeChecked()
+      expect(within(bar()).queryByRole('alert')).toBeNull()
+
+      await generateOnce(posted)
+      expect(posted[0]).toMatchObject({
+        aspect_ratio: '21:9',
+        model: 'vendor-a-seedance-2-5-flash',
+      })
+    })
+
+    it('分镜已是 21:9、默认模型是 wan3 时照旧选着 wan3、不置灰，状态行说明不支持，但不替用户改也不拦', async () => {
+      provide({ ...document, aspect_ratio: '21:9' })
+      server.use(
+        http.get('*/api/generations/video-models', () =>
+          HttpResponse.json({ ...VIDEO_MODELS, default: 'wan3.0-video' }),
+        ),
+      )
+      const posted = recordPosts()
+      await renderReader()
+      await waitFor(() => expect(model('wan3')).toBeChecked())
+      expect(model('wan3')).not.toHaveAttribute('aria-disabled')
+      expect(
+        await within(bar()).findByRole('alert', { name: 'wan3.0-video 不支持 21:9 画幅' }),
+      ).toBeVisible()
+
+      await generateOnce(posted)
+      expect(posted[0]).toMatchObject({ aspect_ratio: '21:9', model: 'wan3.0-video' })
+    })
   })
 
   it('画幅不在档位里时照原样显示并勾着它；选择器能只用键盘操作', async () => {
@@ -768,15 +813,16 @@ describe('StoryboardReader', () => {
     expect(aspect).toHaveTextContent('1:1')
     await waitFor(() => expect(aspect).toHaveFocus())
 
-    const model = within(bar).getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveTextContent('vendor-a-seedance-2-5'))
-    act(() => model.focus())
-    await user.keyboard('{ArrowDown}')
-    expect(await screen.findByRole('menu', { name: '视频模型' })).toBeVisible()
-    await user.keyboard('{Escape}')
-    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
-    expect(model).toHaveTextContent('vendor-a-seedance-2-5')
-    expect(model).toHaveFocus()
+    const models = await within(bar).findByRole('radiogroup', { name: '视频模型' })
+    const current = within(models).getByRole('radio', { name: 'sd2.5' })
+    expect(current).toBeChecked()
+    act(() => current.focus())
+    await user.keyboard('{ArrowLeft}')
+    const flash = within(models).getByRole('radio', { name: 'sd2.5flash' })
+    expect(flash).toHaveFocus()
+    await user.keyboard(' ')
+    expect(flash).toBeChecked()
+    expect(current).not.toBeChecked()
   })
 
   it('提交出片全程只有主按钮变化，工具条其他控件都不禁用', async () => {
@@ -794,10 +840,8 @@ describe('StoryboardReader', () => {
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
     const bar = screen.getByRole('group', { name: '出片工具栏' })
-    const model = within(bar).getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toBeEnabled())
+    await within(bar).findByRole('radiogroup', { name: '视频模型' })
     const controls = [
-      model,
       within(bar).getByRole('button', { name: '画幅' }),
       within(bar).getByRole('button', { name: '生成音频' }),
       ...within(bar).getAllByRole('radio'),
@@ -914,9 +958,13 @@ describe('StoryboardReader', () => {
     )
     await renderReader()
     await screen.findByRole('region', { name: '镜头组 1' })
-    const model = screen.getByRole('button', { name: '视频模型' })
-    await waitFor(() => expect(model).toHaveTextContent('视频模型读取失败'))
-    expect(model).toBeDisabled()
+    const bar = screen.getByRole('group', { name: '出片工具栏' })
+    await waitFor(() =>
+      expect(within(bar).getByRole('group', { name: '视频模型' })).toHaveTextContent(
+        '视频模型读取失败',
+      ),
+    )
+    expect(within(bar).queryByRole('radiogroup', { name: '视频模型' })).toBeNull()
     const generate = screen.getByRole('button', { name: '生成第 1 组' })
     expect(generate).toHaveAttribute('aria-disabled', 'true')
 
