@@ -289,6 +289,8 @@ type PlayerSettings = HTMLElement & {
   loop: boolean
   currentTime: number
   iframeElement: HTMLIFrameElement
+  /** 用例在页面里记下的、播放器报过的最小时刻 */
+  lowestTime?: number
 }
 
 test('播放条：倍速和静音对素材、final-cut 都生效且换播放器后还在，循环播放、快捷键面板、全屏', async ({
@@ -367,9 +369,18 @@ test('播放条：倍速和静音对素材、final-cut 都生效且换播放器�
   await page.keyboard.press('End')
   await page.keyboard.press('ArrowLeft')
   await page.keyboard.press('ArrowLeft')
+  // 2× 下一圈只要 1 秒，开头 0.5 秒只占四分之一；轮询间隔退到 1 秒后每次都落在一圈里差不多同一处，
+  // 可能一直错过。所以在页面里记下播放器报过的最小时刻，轮询它
+  await player.evaluate((element: PlayerSettings) => {
+    element.lowestTime = Number.POSITIVE_INFINITY
+    element.addEventListener('timeupdate', (event) => {
+      const { currentTime } = (event as CustomEvent<{ currentTime: number }>).detail
+      element.lowestTime = Math.min(element.lowestTime ?? currentTime, currentTime)
+    })
+  })
   await transport.getByRole('button', { name: '播放', exact: true }).click()
   await expect
-    .poll(() => player.evaluate((element: PlayerSettings) => element.currentTime))
+    .poll(() => player.evaluate((element: PlayerSettings) => element.lowestTime))
     .toBeLessThan(0.5)
   await expect(transport.getByRole('button', { name: '暂停', exact: true })).toBeVisible()
   await transport.getByRole('button', { name: '暂停', exact: true }).click()

@@ -440,6 +440,8 @@ export const createPreviewPage = (
     let buffering = false
     let settled = false
     let reported: readonly TimeSpan[] | undefined
+    // 播放器是这里为等数据停住的（想放、还没恢复）
+    let heldForData = false
     const syncMedia = () => {
       const running = wantsPlay && !swapping
       const videos = [...page.querySelectorAll<HTMLVideoElement>('video[data-start]')]
@@ -454,9 +456,27 @@ export const createPreviewPage = (
         send({ type: 'buffering', buffering })
       }
       const plays = running && !buffering
-      // 放到结尾时播放器已停、ended 还没来；这时 play() 会跳回开头重放
-      if (plays && player.paused && player.currentTime < player.duration) player.play()
-      if (!plays && !player.paused) player.pause()
+      if (!running) heldForData = false
+      if (plays && player.paused) {
+        if (player.currentTime < player.duration) {
+          heldForData = false
+          player.play()
+        } else if (heldForData) {
+          // 这里为等数据停住时运行库放到了结尾：播放器只在自己没停时处理结尾，不会循环、也不发 ended，由这里收尾。
+          // play() 在结尾会跳回开头重放
+          heldForData = false
+          if (player.loop) player.play()
+          else {
+            setWantsPlay(false)
+            return
+          }
+        }
+        // 其余停在结尾的是播放器自己放到结尾停下、ended 还没来，不能 play()，否则会跳回开头重放
+      }
+      if (!plays && !player.paused) {
+        heldForData = buffering
+        player.pause()
+      }
       const nowSettled =
         videos.length > 0 &&
         videos.every((video) => video.networkState !== HTMLMediaElement.NETWORK_LOADING)
