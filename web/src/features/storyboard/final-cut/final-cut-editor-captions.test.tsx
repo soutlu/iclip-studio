@@ -46,7 +46,13 @@ import {
   captionFontSize,
   captionsHostElement,
   captionsScene,
+  captionStyleOf,
+  captionStyleRule,
+  captionStyles,
   captionVariable,
+  NO_CAPTION_STYLE,
+  withCaptionStyleRule,
+  type CaptionStyle,
 } from './composition/captions'
 
 vi.mock('mediabunny', async () => (await import('@/testing/final-cut-media')).mediabunnyMock())
@@ -149,12 +155,17 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
   ]
   const others = [video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })]
 
-  /** 工作区里放一份带字幕的工程（照编辑器用 SDK 写的样子），打开编辑器。 */
-  const open = async (captions = lines) => {
+  /**
+   * 工作区里放一份带字幕的工程（照编辑器用 SDK 写的样子），打开编辑器；`scene` 是字幕场景，不给时按 `captions` 写。
+   */
+  const open = async (
+    captions = lines,
+    scene = captionsScene(CANVAS, fixtureCatalog, captions),
+  ) => {
     const main = await openComposition(mainFile(others, CANVAS))
     main.addElement('film', 99, captionsHostElement(CANVAS, 4_000))
     for (const each of captions) main.declareVariable(captionVariable(each))
-    putMockWorkspaceFile(CONVERSATION, SCENE, captionsScene(CANVAS, fixtureCatalog, captions))
+    putMockWorkspaceFile(CONVERSATION, SCENE, scene)
     putMockProjectMain(CONVERSATION, main.serialize())
     const user = userEvent.setup()
     await openEditor()
@@ -354,23 +365,39 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('选中一句改字体、改颜色：写在这句元素的行内样式上，别的句不动，主文件链上字体；各一步撤销', async () => {
-    const user = await open()
+  /** 存下来的字幕场景。 */
+  const savedScene = () => mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? ''
+  /** 存下来的字幕场景里各句元素的行内样式（编号 → 样式，没有时是 null）。 */
+  const savedStyles = () =>
+    Object.fromEntries(
+      [
+        ...new DOMParser()
+          .parseFromString(savedScene().replace(/<\/?template>/g, ''), 'text/html')
+          .querySelectorAll('.caption'),
+      ].map((element) => [element.id, element.getAttribute('style')]),
+    )
+  /** 一份字幕场景：`lines` 三句，`own` 里的句子写上单独设置的样式，`track` 是字幕样式。 */
+  const styledScene = async (
+    own: Readonly<Record<string, Partial<CaptionStyle>>> = {},
+    track: Partial<CaptionStyle> = {},
+  ) => {
+    const scene = await openComposition(captionsScene(CANVAS, fixtureCatalog, lines))
+    for (const [id, style] of Object.entries(own))
+      scene.setStyle(id, captionStyles(style, fixtureCatalog, CANVAS))
+    return withCaptionStyleRule(
+      scene.serialize(),
+      captionStyleRule(NO_CAPTION_STYLE, track, fixtureCatalog, CANVAS),
+    )
+  }
+  const OWN_GREEN = `color: #00ff00`
+  const PLAYFAIR_LINK = '<link rel="stylesheet" href="vendor/fonts/families/playfair-display.css">'
+
+  it('「单独设置」关着改字体、改颜色：写进字幕场景的字幕样式规则，各句不写行内样式，单独设置过的那句不变，主文件链上字体；各一步撤销', async () => {
+    const user = await open(lines, await styledScene({ 'cap-c3': { color: '#00ff00' } }))
     await user.click(bodyOf('第二句'))
     const inspector = within(screen.getByRole('tabpanel', { name: '属性' }))
-    /** 存下来的字幕场景里各句元素的行内样式。 */
-    const savedStyles = () =>
-      Object.fromEntries(
-        [
-          ...new DOMParser()
-            .parseFromString(
-              (mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? '').replace(/<\/?template>/g, ''),
-              'text/html',
-            )
-            .querySelectorAll('.caption'),
-        ].map((element) => [element.id, element.getAttribute('style')]),
-      )
-    const link = '<link rel="stylesheet" href="vendor/fonts/families/playfair-display.css">'
+    expect(inspector.getByRole('heading', { level: 4, name: '字幕样式' })).toBeVisible()
+    expect(inspector.getByRole('switch', { name: '单独设置' })).not.toBeChecked()
 
     // 没设过：字体「默认」、颜色是默认的白色
     await user.click(inspector.getByRole('button', { name: '字体：默认' }))
@@ -380,41 +407,94 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     ])
     await user.click(screen.getByRole('menuitemradio', { name: 'Playfair Display' }))
     await waitSaved(() =>
-      expect(savedStyles()).toEqual({
-        'cap-a1': null,
-        'cap-b2': `font-family: 'Playfair Display', '${fixtureCatalog.cjk.family}', sans-serif`,
-        'cap-c3': null,
+      expect(captionStyleOf(savedScene())).toEqual({
+        ...NO_CAPTION_STYLE,
+        font: 'Playfair Display',
       }),
     )
-    expect(savedFilm()).toContain(link)
+    expect(savedStyles()).toEqual({ 'cap-a1': null, 'cap-b2': null, 'cap-c3': OWN_GREEN })
+    expect(savedFilm()).toContain(PLAYFAIR_LINK)
     expect(inspector.getByRole('button', { name: '字体：Playfair Display' })).toBeVisible()
 
     const hex = inspector.getByRole('textbox', { name: '颜色' })
     expect(hex).toHaveValue('#ffffff')
     await user.clear(hex)
     await user.type(hex, '#ff3366')
-    await waitSaved(() => expect(savedStyles()['cap-b2']).toMatch(/; color: #ff3366$/))
-    expect(savedStyles()['cap-b2']).toMatch(/^font-family: 'Playfair Display'/)
-    expect(savedStyles()['cap-a1']).toBeNull()
+    await waitSaved(() =>
+      expect(captionStyleOf(savedScene())).toEqual({
+        ...NO_CAPTION_STYLE,
+        font: 'Playfair Display',
+        color: '#ff3366',
+      }),
+    )
+    expect(savedStyles()).toEqual({ 'cap-a1': null, 'cap-b2': null, 'cap-c3': OWN_GREEN })
+
+    // 选中单独设置过的那句：开关开着，三行是它自己的值
+    await user.click(bodyOf('第三句'))
+    expect(inspector.getByRole('switch', { name: '单独设置' })).toBeChecked()
+    expect(inspector.getByRole('textbox', { name: '颜色' })).toHaveValue('#00ff00')
 
     await user.click(undoButton())
-    await waitSaved(() => expect(savedStyles()['cap-b2']).toMatch(/^font-family:/))
-    expect(hex).toHaveValue('#ffffff')
+    await waitSaved(() => expect(captionStyleOf(savedScene()).color).toBeNull())
     await user.click(undoButton())
-    await waitSaved(() => expect(savedStyles()['cap-b2'] ?? '').toBe(''))
-    expect(savedFilm()).not.toContain(link)
+    await waitSaved(() => expect(captionStyleOf(savedScene())).toEqual(NO_CAPTION_STYLE))
+    expect(savedFilm()).not.toContain(PLAYFAIR_LINK)
+    expect(savedStyles()['cap-c3']).toBe(OWN_GREEN)
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
-  /** 存下来的字幕场景里一句元素的行内样式；没有时是空的。 */
-  const sceneStyleOf = (id: string) =>
-    new DOMParser()
-      .parseFromString(
-        (mockWorkspaceFile(CONVERSATION, SCENE)?.content ?? '').replace(/<\/?template>/g, ''),
-        'text/html',
-      )
-      .getElementById(id)
-      ?.getAttribute('style') ?? ''
+  it('打开「单独设置」：这句行内写上这一刻显示的字体、颜色、字号（字幕样式的、默认的），之后改颜色只改这句；关掉去掉这几样；各一步撤销', async () => {
+    const user = await open(lines, await styledScene({}, { font: 'Playfair Display' }))
+    await user.click(bodyOf('第二句'))
+    const inspector = within(screen.getByRole('tabpanel', { name: '属性' }))
+    const size = captionFontSize(CANVAS)
+    const own = inspector.getByRole('switch', { name: '单独设置' })
+    await user.click(own)
+    await waitSaved(() =>
+      expect(savedStyles()['cap-b2']).toMatch(
+        new RegExp(
+          `^font-family: 'Playfair Display', '${fixtureCatalog.cjk.family}', sans-serif; color: #ffffff; ` +
+            `font-size: ${size}px; -webkit-text-stroke: \\d+px #000000; text-shadow: .+$`,
+        ),
+      ),
+    )
+    expect(own).toBeChecked()
+    expect(savedStyles()['cap-a1']).toBeNull()
+
+    const hex = inspector.getByRole('textbox', { name: '颜色' })
+    await user.clear(hex)
+    await user.type(hex, '#ff3366')
+    await waitSaved(() => expect(savedStyles()['cap-b2']).toContain('color: #ff3366;'))
+    expect(captionStyleOf(savedScene())).toEqual({ ...NO_CAPTION_STYLE, font: 'Playfair Display' })
+    expect(savedStyles()['cap-a1']).toBeNull()
+
+    await user.click(own)
+    await waitSaved(() => expect(savedStyles()['cap-b2'] ?? '').toBe(''))
+    expect(own).not.toBeChecked()
+    expect(hex).toHaveValue('#ffffff')
+
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedStyles()['cap-b2']).toContain('color: #ff3366;'))
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedStyles()['cap-b2']).toContain('color: #ffffff;'))
+    await user.click(undoButton())
+    await waitSaved(() => expect(savedStyles()['cap-b2'] ?? '').toBe(''))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('字幕页签：开着「单独设置」的句子时间旁边有个小圆点，别的句没有', async () => {
+    const user = await open(lines, await styledScene({ 'cap-c3': { fontSize: 50 } }))
+    await user.click(
+      within(
+        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: '字幕' }),
+    )
+    const items = within(screen.getByRole('tabpanel', { name: '字幕' })).getAllByRole('listitem')
+    expect(
+      items.map((item) => within(item).queryByRole('img', { name: '已单独设置样式' }) !== null),
+    ).toEqual([false, false, true])
+  })
+
   /** 选中第二句，在「属性」的「字号」里输入 `typed` 回车。 */
   const typeFontSize = async (user: ReturnType<typeof userEvent.setup>, typed: string) => {
     await user.click(bodyOf('第二句'))
@@ -428,32 +508,33 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     await user.keyboard(`${typed}{Enter}`)
     return inspector
   }
-  const SIZED_60 =
-    'font-size: 60px; -webkit-text-stroke: 12px #000000; text-shadow: 0 2px 5px rgba(0, 0, 0, 0.45)'
 
-  it('选中一句改字号：这句的行内写上字号和跟着它的描边、投影，别的句不动；一步撤销', async () => {
+  it('「单独设置」关着改字号：字幕样式规则写上字号和跟着它的描边、投影，各句不写行内样式；一步撤销', async () => {
     const user = await open()
     const inspector = await typeFontSize(user, '60')
-    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(SIZED_60))
-    expect(sceneStyleOf('cap-a1')).toBe('')
+    await waitSaved(() => expect(captionStyleOf(savedScene()).fontSize).toBe(60))
+    expect(savedScene()).toContain(
+      '  font-size: 60px;\n  -webkit-text-stroke: 12px #000000;\n  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);',
+    )
+    expect(savedStyles()).toEqual({ 'cap-a1': null, 'cap-b2': null, 'cap-c3': null })
     expect(inspector.getByRole('button', { name: '字号 60 px，点击可直接输入' })).toBeVisible()
 
     await user.click(undoButton())
-    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(''))
+    await waitSaved(() => expect(captionStyleOf(savedScene())).toEqual(NO_CAPTION_STYLE))
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('双击字号的滑杆回到默认：字号、描边、投影一起去掉；输入超出范围时收进范围', async () => {
+  it('双击字号的滑杆回到默认规则的字号：字幕样式规则去掉字号；输入超出范围时收进范围', async () => {
     const user = await open()
     const inspector = await typeFontSize(user, '500')
     const size = captionFontSize(CANVAS)
-    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toContain(`font-size: ${size * 2}px;`))
+    await waitSaved(() => expect(captionStyleOf(savedScene()).fontSize).toBe(size * 2))
 
     const slider = inspector.getByRole('slider', { name: '字号' })
     fireEvent.doubleClick(
       slider.parentElement?.closest<HTMLElement>('[data-orientation]') ?? slider,
     )
-    await waitSaved(() => expect(sceneStyleOf('cap-b2')).toBe(''))
+    await waitSaved(() => expect(captionStyleOf(savedScene())).toEqual(NO_CAPTION_STYLE))
     expect(slider).toHaveAttribute('aria-valuetext', `${size} px`)
   })
 
@@ -610,6 +691,8 @@ describe('final-cut 编辑器 · 识别字幕', () => {
       ]),
     )
     expect(savedVariableTexts()).toEqual(['第一句话', '第二段', '说到片段外'])
+    // 新加的句子不带行内样式，跟着字幕样式
+    expect(mockWorkspaceFile(CONVERSATION, SCENE_FILE)?.content).not.toMatch(/<div [^>]*style=/)
     expect(submitted).toEqual([])
     expect(await screen.findByText('已加入 3 句字幕')).toBeVisible()
     // 都有字幕了：不再识别

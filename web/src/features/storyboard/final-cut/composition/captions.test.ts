@@ -2,16 +2,28 @@ import { openComposition, type Composition } from '@hyperframes/sdk'
 import { describe, expect, it } from 'vitest'
 import { fixtureCatalog } from '@/testing/final-cut'
 import {
+  CAPTION_COLOR,
   CAPTIONS_PATH,
   CAPTIONS_PROBLEM_TEXT,
   captionElement,
+  captionFontSize,
+  captionLook,
   captionOf,
   captionsHostElement,
   captionsProblem,
   captionsScene,
+  captionStyleOf,
+  captionStyleRule,
+  captionStyleRuleIn,
   captionStyles,
   captionVariable,
+  clearedCaptionStyles,
   isCaptionsHost,
+  NO_CAPTION_STYLE,
+  ownCaptionStyles,
+  ownsStyle,
+  withCaptionDefaults,
+  withCaptionStyleRule,
 } from './captions'
 
 const CANVAS = { width: 1080, height: 1920 }
@@ -115,7 +127,7 @@ describe('字幕场景文件', () => {
     expect(readCaptions(reread)[0]).toMatchObject({ font: null, color: '#ff3366' })
   })
 
-  it('字体只能是组件库里的字体族，字色只能是 #rrggbb', () => {
+  it('字体只能是组件库里的字体族或中文字体族，字色只能是 #rrggbb', () => {
     expect(() => captionStyles({ font: 'Comic Sans MS' }, fixtureCatalog, CANVAS)).toThrow(
       'Comic Sans MS',
     )
@@ -165,6 +177,67 @@ describe('字幕场景文件', () => {
     expect(readCaptions(scene).map((caption) => caption.fontSize)).toEqual([null, null])
   })
 
+  it('一句的字体可以是组件库的中文字体族：只写它和通用字体', () => {
+    expect(captionStyles({ font: fixtureCatalog.cjk.family }, fixtureCatalog, CANVAS)).toEqual({
+      fontFamily: `'${fixtureCatalog.cjk.family}', sans-serif`,
+    })
+  })
+
+  it('打开单独设置：三样都写上，没有字幕样式时是默认的（字体写明中文字体族）；有时用字幕样式的；关闭时五样一起去掉', () => {
+    expect(ownCaptionStyles(NO_CAPTION_STYLE, fixtureCatalog, CANVAS)).toEqual({
+      ...captionStyles(
+        {
+          font: fixtureCatalog.cjk.family,
+          color: CAPTION_COLOR,
+          fontSize: captionFontSize(CANVAS),
+        },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    })
+    expect(
+      ownCaptionStyles(
+        { font: 'Playfair Display', color: '#ff3366', fontSize: 40 },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    ).toEqual(
+      captionStyles(
+        { font: 'Playfair Display', color: '#ff3366', fontSize: 40 },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    )
+    // 改过画面尺寸以后字幕样式的字号不换算，可能已在范围外：照写，画面不变
+    expect(
+      ownCaptionStyles({ ...NO_CAPTION_STYLE, fontSize: 200 }, fixtureCatalog, CANVAS),
+    ).toMatchObject({ fontSize: '200px' })
+    expect(clearedCaptionStyles(fixtureCatalog)).toEqual({
+      fontFamily: null,
+      color: null,
+      fontSize: null,
+      WebkitTextStroke: null,
+      textShadow: null,
+    })
+  })
+
+  it('一句开着单独设置：行内写了字体、字色、字号任意一样', () => {
+    expect(ownsStyle(NO_CAPTION_STYLE)).toBe(false)
+    expect(ownsStyle({ ...NO_CAPTION_STYLE, color: '#ff3366' })).toBe(true)
+    expect(ownsStyle({ ...NO_CAPTION_STYLE, fontSize: 40 })).toBe(true)
+  })
+
+  it('显示的样式：这句自己的、字幕样式的、默认的，逐项往后找', () => {
+    expect(
+      captionLook(
+        { ...NO_CAPTION_STYLE, color: '#00ff00' },
+        { ...NO_CAPTION_STYLE, color: '#ff3366', font: 'Playfair Display' },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    ).toEqual({ font: 'Playfair Display', color: '#00ff00', fontSize: captionFontSize(CANVAS) })
+  })
+
   it('字幕的样子写在场景里：字体是组件库的中文字体，后面只跟通用字体', () => {
     const scene = captionsScene(CANVAS, fixtureCatalog)
     expect(scene).toContain(`font-family: '${fixtureCatalog.cjk.family}', sans-serif;`)
@@ -175,6 +248,95 @@ describe('字幕场景文件', () => {
     expect(captionsScene({ width: 1920, height: 1080 }, fixtureCatalog)).toContain(
       'font-size: 100px;',
     )
+  })
+})
+
+describe('字幕样式规则', () => {
+  const scene = captionsScene(CANVAS, fixtureCatalog, [first, second])
+  const DEFAULT_RULE_END = 'text-shadow: 0 2px 4px rgba(0, 0, 0, 0.45);\n}'
+
+  it('写进去：一条单独的规则紧跟在默认规则后面，比默认规则多一个 .clip，只写设过的，字号带上描边和投影；读回来是设的那几样', () => {
+    const rule = captionStyleRule(
+      NO_CAPTION_STYLE,
+      { font: 'Playfair Display', fontSize: 40 },
+      fixtureCatalog,
+      CANVAS,
+    )
+    expect(rule).toBe(
+      `[data-composition-id="captions"] .clip.caption {\n` +
+        `  font-family: 'Playfair Display', '${fixtureCatalog.cjk.family}', sans-serif;\n` +
+        `  font-size: 40px;\n` +
+        `  -webkit-text-stroke: 8px #000000;\n` +
+        `  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);\n}`,
+    )
+    const written = withCaptionStyleRule(scene, rule)
+    expect(written).toContain(`${DEFAULT_RULE_END}\n${rule}\n</style>`)
+    expect(captionStyleRuleIn(written)).toBe(rule)
+    expect(captionStyleOf(written)).toEqual({
+      font: 'Playfair Display',
+      color: null,
+      fontSize: 40,
+    })
+    expect(captionStyleOf(scene)).toEqual(NO_CAPTION_STYLE)
+  })
+
+  it('改一样只换这一样，别的照留；都去掉时没有这条规则，场景回到原样', () => {
+    const font = captionStyleRule(
+      NO_CAPTION_STYLE,
+      { font: 'Playfair Display' },
+      fixtureCatalog,
+      CANVAS,
+    )
+    const colored = withCaptionStyleRule(
+      withCaptionStyleRule(scene, font),
+      captionStyleRule(
+        captionStyleOf(withCaptionStyleRule(scene, font)),
+        { color: '#ff3366' },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    )
+    expect(captionStyleOf(colored)).toEqual({
+      font: 'Playfair Display',
+      color: '#ff3366',
+      fontSize: null,
+    })
+    expect(colored.match(/\.clip\.caption/g)).toHaveLength(1)
+    expect(
+      captionStyleRule(
+        captionStyleOf(colored),
+        { font: null, color: null },
+        fixtureCatalog,
+        CANVAS,
+      ),
+    ).toBeNull()
+    expect(withCaptionStyleRule(colored, null)).toBe(scene)
+    expect(withCaptionStyleRule(scene, null)).toBe(scene)
+  })
+
+  it('只检查这次改的：字体不在组件库里、字色不是 #rrggbb、字号超出范围时报错', () => {
+    for (const changes of [{ font: 'Comic Sans MS' }, { color: 'red' }, { fontSize: 500 }])
+      expect(() => captionStyleRule(NO_CAPTION_STYLE, changes, fixtureCatalog, CANVAS)).toThrow()
+    // 改过画面尺寸以后存着的字号已在范围外：改别的照样写
+    expect(
+      captionStyleOf(
+        captionStyleRule(
+          { ...NO_CAPTION_STYLE, fontSize: 500 },
+          { color: '#ff3366' },
+          fixtureCatalog,
+          CANVAS,
+        ) ?? '',
+      ),
+    ).toEqual({ font: null, color: '#ff3366', fontSize: 500 })
+  })
+
+  it('默认规则按画面重算（withCaptionDefaults）不碰字幕样式规则；SDK 打开再存出也原样留着', async () => {
+    const rule = captionStyleRule(NO_CAPTION_STYLE, { fontSize: 40 }, fixtureCatalog, CANVAS)
+    const written = withCaptionStyleRule(scene, rule)
+    const resized = withCaptionDefaults(written, { width: 1920, height: 1080 })
+    expect(resized).toContain('font-size: 100px;')
+    expect(captionStyleRuleIn(resized)).toBe(rule)
+    expect(captionStyleRuleIn((await openComposition(written)).serialize())).toBe(rule)
   })
 })
 

@@ -38,10 +38,18 @@ import {
   captionsHostElement,
   captionsProblem,
   captionsScene,
+  captionStyleOf,
+  captionStyleRule,
+  captionStyleRuleIn,
   captionStyles,
   captionVariable,
+  clearedCaptionStyles,
   isCaptionsHost,
+  ownCaptionStyles,
+  ownsStyle,
   withCaptionDefaults,
+  withCaptionStyleRule,
+  type CaptionStyle,
 } from './composition/captions'
 import type {
   CatalogItem,
@@ -172,6 +180,8 @@ export type FilmView = {
   captionsProblem: string | undefined
   /** 字幕场景文件的路径（相对工程根）和现在的内容（没存的改动也在里面）；工程里还没有时是 null。 */
   captionsScene: { path: string; content: string } | null
+  /** 字幕样式（字幕场景里字幕样式规则设的，见 `captions.ts`）：没设的项、还没有字幕场景时都是 null。 */
+  captionStyle: CaptionStyle
   /**
    * 当前显示的语言和它的值表（原文时是 null）。`clips` 里字幕的 `text` 总是原文，名字取这种语言的字
    * （还没翻的取原文）；预览按值表套上这种语言。
@@ -254,11 +264,58 @@ const withProlog = (prolog: string, serialized: string): string => {
 }
 
 /**
- * 打开着的一个工程文件的内容。几种文件的区别都收在这里：主文件、字幕场景用 SDK 打开（`composition`，见
- * `OpenedEngine`），语言值表是 JSON（`values`，见 `openValueTable`）。保存、冲突、撤销重做都只经 `docOps` 用它们
- * 共有的那几样。
+ * 字幕场景里的字幕样式规则（见 `captions.ts` 的 `withCaptionStyleRule`），由会话自己记着：场景的 `<style>` 在
+ * `<template>` 里，SDK 改不到它（`setClassStyle` 找不到这个 `<style>`）。`rule` 是规则原文，没有时是 null；
+ * `set` 改它并照值表的样子报一条补丁（路径 `CAPTION_STYLE_PATCH`），撤销重做经 `docOps` 打回来。
  */
-type FileDoc = ({ kind: 'composition' } & OpenedEngine) | { kind: 'values'; table: ValueTable }
+type CaptionSheet = {
+  rule: () => string | null
+  set: (rule: string | null) => void
+  apply: (patch: JsonPatchOp) => void
+  batch: (change: () => void) => void
+}
+
+const CAPTION_STYLE_PATCH = '/caption-style'
+
+const openCaptionSheet = (
+  rule: string | null,
+  onChange: (patches: readonly JsonPatchOp[], inversePatches: readonly JsonPatchOp[]) => void,
+): CaptionSheet => {
+  let current = rule
+  return {
+    rule: () => current,
+    set: (next) => {
+      if (next === current) return
+      const before = current
+      current = next
+      onChange(
+        [{ op: 'replace', path: CAPTION_STYLE_PATCH, value: next }],
+        [{ op: 'replace', path: CAPTION_STYLE_PATCH, value: before }],
+      )
+    },
+    apply: (patch) => {
+      current = typeof patch.value === 'string' ? patch.value : null
+    },
+    batch: (change) => {
+      const before = current
+      try {
+        change()
+      } catch (error) {
+        current = before
+        throw error
+      }
+    },
+  }
+}
+
+/**
+ * 打开着的一个工程文件的内容。几种文件的区别都收在这里：主文件、字幕场景用 SDK 打开（`composition`，见
+ * `OpenedEngine`；字幕场景另带字幕样式规则 `sheet`，见 `CaptionSheet`，别的是 null），语言值表是 JSON（`values`，
+ * 见 `openValueTable`）。保存、冲突、撤销重做都只经 `docOps` 用它们共有的那几样。
+ */
+type FileDoc =
+  | ({ kind: 'composition'; sheet: CaptionSheet | null } & OpenedEngine)
+  | { kind: 'values'; table: ValueTable }
 
 /** 每种文件都有的：存出内容、应用撤销重做的补丁、一批操作（里面抛出时整批退回）、关掉。 */
 type DocOps = {
@@ -270,24 +327,49 @@ type DocOps = {
 
 const docOps = (doc: FileDoc): DocOps => {
   if (doc.kind === 'values') return doc.table
-  const { engine, content } = doc
+  const { engine, content, sheet } = doc
+  if (sheet === null)
+    return {
+      serialize: content,
+      applyPatches: (patches) => engine.applyPatches(patches),
+      batch: (change) => engine.batch(change),
+      dispose: () => engine.dispose(),
+    }
   return {
-    serialize: content,
-    applyPatches: (patches) => engine.applyPatches(patches),
-    batch: (change) => engine.batch(change),
+    serialize: () => withCaptionStyleRule(content(), sheet.rule()),
+    // 一步里可能既有引擎的补丁又有字幕样式规则的，各打各的
+    applyPatches: (patches) => {
+      const own = patches.filter((patch) => patch.path === CAPTION_STYLE_PATCH)
+      const rest = patches.filter((patch) => patch.path !== CAPTION_STYLE_PATCH)
+      if (rest.length > 0) engine.applyPatches(rest)
+      for (const patch of own) sheet.apply(patch)
+    },
+    batch: (change) => engine.batch(() => sheet.batch(change)),
     dispose: () => engine.dispose(),
   }
 }
 
-/** 按路径打开工程文件 `path`（相对工程根）：语言值表读成值表，别的用 SDK 打开；改动带上文件报给 `onChange`。 */
+/**
+ * 按路径打开工程文件 `path`（相对工程根）：语言值表读成值表，别的用 SDK 打开，字幕场景（`scene`）另记下它的
+ * 字幕样式规则（见 `CaptionSheet`）；改动带上文件报给 `onChange`。
+ */
 const openDoc = async (
   path: string,
   content: string,
   onChange: (change: PatchChange) => void,
+  scene: boolean,
 ): Promise<FileDoc> => {
   const locale = localeOfPath(path)
   if (locale === undefined)
-    return { kind: 'composition', ...(await openEngine(content, path, onChange)) }
+    return {
+      kind: 'composition',
+      sheet: scene
+        ? openCaptionSheet(captionStyleRuleIn(content), (patches, inversePatches) =>
+            onChange({ file: path, patches, inversePatches }),
+          )
+        : null,
+      ...(await openEngine(content, path, onChange)),
+    }
   const table = openValueTable(parseLocaleValues(content, locale), (patches, inversePatches) =>
     onChange({ file: path, patches, inversePatches }),
   )
@@ -320,6 +402,12 @@ const mainOf = (project: Project): Composition => {
 
 const sceneOf = (project: Project): Composition | undefined =>
   engineAt(project, project.captionsPath)
+
+/** 字幕场景的字幕样式规则（见 `CaptionSheet`）；还没有字幕场景时是 undefined。 */
+const sheetOf = (project: Project): CaptionSheet | undefined => {
+  const doc = project.files.get(project.captionsPath)?.doc
+  return doc?.kind === 'composition' ? (doc.sheet ?? undefined) : undefined
+}
 
 /** 打开着的文件 `path`（相对工程根）现在的内容（见 `OpenedEngine`）。 */
 const contentOf = (project: Project, path: string): string => {
@@ -578,8 +666,9 @@ const viewOf = (
     .filter((value) => typeof value === 'string')
     .join('')
   const canvas = canvasOf(main)
+  const captionStyle = captionStyleOf(sheetOf(project)?.rule() ?? '')
   const html = withCanvasSize(
-    withFontBlock(contentOf(project, PROJECT_MAIN), clips, catalog, localeText),
+    withFontBlock(contentOf(project, PROJECT_MAIN), clips, catalog, localeText, captionStyle.font),
     canvas,
   )
   const present = new Map(
@@ -624,6 +713,7 @@ const viewOf = (
     ),
     captionsScene:
       sceneContent === undefined ? null : { path: project.captionsPath, content: sceneContent },
+    captionStyle,
     locale: shown,
     locales: [...tables.keys()],
     bindings: hostBindingsOf(main, clips),
@@ -1030,7 +1120,7 @@ export function useFilmSession(
       for (const [path, file] of storedFilesOf(stored))
         if (file !== null)
           files.set(path, {
-            doc: await openDoc(path, file.content, collect),
+            doc: await openDoc(path, file.content, collect, path === stored.captionsPath),
             version: file.version,
             saved: null,
           })
@@ -1959,15 +2049,15 @@ export function useFilmSession(
           stored = await readProjectFile(conversationId, path)
           if (stored === null) throw error
         }
-        const scene = await openEngine(stored.content, path, collect)
-        if (projectRef.current !== project) {
-          scene.engine.dispose()
+        const doc = await openDoc(path, stored.content, collect, true)
+        const ops = docOps(doc)
+        if (projectRef.current !== project || doc.kind !== 'composition') {
+          ops.dispose()
           return undefined
         }
         // 打开后 SDK 存出的样子当作已存的那一份，不然一打开就算有改动
-        const doc: FileDoc = { kind: 'composition', ...scene }
-        project.files.set(path, { doc, version: stored.version, saved: scene.content() })
-        return scene.engine
+        project.files.set(path, { doc, version: stored.version, saved: ops.serialize() })
+        return doc.engine
       })().finally(() => {
         creatingCaptionsRef.current = null
       })
@@ -2077,13 +2167,13 @@ export function useFilmSession(
   )
 
   /**
-   * 改字幕 `id` 的字体、字色、字号（`changes` 里给了的那几样，null 是回到默认，写法见 `captionStyles`），所有语言
-   * 共用，算一步撤销。和现在一样、字幕已经不在了时不动工程。
+   * 改字幕 `id` 单独设置的字体、字色、字号（`changes` 里给了的那几样，null 是去掉这一样，写法见 `captionStyles`），
+   * 所有语言共用，算一步撤销。和现在一样、字幕已经不在了时不动工程。
    *
    * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，或字号不在范围里
    */
   const setCaptionStyle = useCallback(
-    (id: string, changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>) => {
+    (id: string, changes: Partial<CaptionStyle>) => {
       const project = projectRef.current
       const scene = project === null ? undefined : sceneOf(project)
       const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
@@ -2094,6 +2184,60 @@ export function useFilmSession(
         (changes.color !== undefined && changes.color !== caption.color) ||
         (changes.fontSize !== undefined && changes.fontSize !== caption.fontSize)
       if (changed) edit(() => scene.setStyle(id, styles))
+    },
+    [catalog, edit],
+  )
+
+  /**
+   * 改字幕样式（`changes` 里给了的那几样，null 是去掉这一样、回到默认规则，写法见 `captionStyleRule`），没开单独
+   * 设置的句子一起变，所有语言共用，算一步撤销。和现在一样、还没有字幕场景时不动工程。
+   *
+   * @throws Error 字体不在组件库里，字色不是 `#rrggbb`，字号不在范围里，或字幕场景里没有能写规则的 `<style>`
+   */
+  const setCaptionTrackStyle = useCallback(
+    (changes: Partial<CaptionStyle>) => {
+      const project = projectRef.current
+      const sheet = project === null ? undefined : sheetOf(project)
+      const file = project?.files.get(project.captionsPath)
+      if (project === null || sheet === undefined || file === undefined) return
+      const before = sheet.rule()
+      const rule = captionStyleRule(
+        captionStyleOf(before ?? ''),
+        changes,
+        catalog,
+        canvasOf(mainOf(project)),
+      )
+      if (rule === before) return
+      edit(() => {
+        sheet.set(rule)
+        // 手写的场景可能没有 <style>：写不进去时整步退回，不当成改好了
+        if (captionStyleRuleIn(docOps(file.doc).serialize()) !== rule)
+          throw new Error('字幕文件里没有样式表，无法设置字幕样式')
+      })
+    },
+    [catalog, edit],
+  )
+
+  /**
+   * 打开或关闭字幕 `id` 的「单独设置」，算一步撤销。打开时把这一刻显示的字体、字色、字号都写到这一句上（见
+   * `ownCaptionStyles`），画面不变，之后改字幕样式它不跟着变；关闭时去掉这一句自己的这几样（见
+   * `clearedCaptionStyles`），回到跟着字幕样式。已经是这样、字幕已经不在了时不动工程。
+   */
+  const setCaptionOwnStyle = useCallback(
+    (id: string, own: boolean) => {
+      const project = projectRef.current
+      const scene = project === null ? undefined : sceneOf(project)
+      const caption = project === null ? undefined : captionsById(mainOf(project), scene).get(id)
+      if (project === null || scene === undefined || caption === undefined) return
+      if (ownsStyle(caption) === own) return
+      const styles = own
+        ? ownCaptionStyles(
+            captionStyleOf(sheetOf(project)?.rule() ?? ''),
+            catalog,
+            canvasOf(mainOf(project)),
+          )
+        : clearedCaptionStyles(catalog)
+      edit(() => scene.setStyle(id, styles))
     },
     [catalog, edit],
   )
@@ -2223,7 +2367,7 @@ export function useFilmSession(
             stored = await readLocaleFile(conversationId, locale)
             if (stored === null) throw error
           }
-          const doc = await openDoc(path, stored.content, collect)
+          const doc = await openDoc(path, stored.content, collect, false)
           // 工程在这期间换过了（比如别处改了）：换上来的那一份里有没有这种语言由它自己说了算
           if (projectRef.current !== project) return
           project.files.set(path, { doc, version: stored.version, saved: docOps(doc).serialize() })
@@ -2287,7 +2431,12 @@ export function useFilmSession(
             path,
             {
               ...file,
-              doc: await openDoc(path, contents.get(path) ?? docOps(file.doc).serialize(), collect),
+              doc: await openDoc(
+                path,
+                contents.get(path) ?? docOps(file.doc).serialize(),
+                collect,
+                path === project.captionsPath,
+              ),
             },
           ] as const,
       ),
@@ -2324,6 +2473,8 @@ export function useFilmSession(
     addCaptions,
     setCaptionText,
     setCaptionStyle,
+    setCaptionTrackStyle,
+    setCaptionOwnStyle,
     setItemText,
     setFollowsLocale,
     fillLocale,

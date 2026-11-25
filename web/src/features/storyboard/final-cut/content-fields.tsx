@@ -35,14 +35,22 @@ export type TextLocale = {
 }
 
 /**
- * 「内容与样式」的标题行：标题右边一个小块写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。
- * 贴片、场景和字幕的「内容与样式」共用。
+ * 文字卡片的标题行：标题 `title` 右边一个小块写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。
+ * 贴片、场景的「内容与样式」和字幕的「内容」共用。
  */
-export function ContentTitle({ locale, onLocale }: { locale: Language; onLocale: () => void }) {
+export function ContentTitle({
+  title,
+  locale,
+  onLocale,
+}: {
+  title: string
+  locale: Language
+  onLocale: () => void
+}) {
   const name = languageName(locale)
   return (
     <div className="wf-prop-title-row">
-      <h4 className="wf-prop-title">内容与样式</h4>
+      <h4 className="wf-prop-title">{title}</h4>
       <TooltipRoot>
         <TooltipTrigger asChild>
           <button
@@ -123,7 +131,7 @@ export function ContentFields({
 
   return (
     <section className="wf-card wf-prop-card">
-      <ContentTitle locale={texts.locale.code} onLocale={onLocale} />
+      <ContentTitle locale={texts.locale.code} onLocale={onLocale} title="内容与样式" />
       {variables.length === 0 ? (
         <p className="wf-inspector-note">暂无可填项</p>
       ) : (

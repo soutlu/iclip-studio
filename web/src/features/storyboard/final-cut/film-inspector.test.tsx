@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { audio, caption, fixtureCatalog, host, video } from '@/testing/final-cut'
 import { renderWithProviders } from '@/testing/render'
+import { NO_CAPTION_STYLE } from './composition/captions'
 import type { FilmClip } from './composition/film'
 import { FilmInspector } from './film-inspector'
 import { SOURCE_SHOWN, type ShownLocale } from './locales'
@@ -45,7 +46,10 @@ function Harness({
       keyframes={new Map()}
       locale={locale}
       onAttributes={noop}
+      captionStyle={NO_CAPTION_STYLE}
       onCaptionStyle={noop}
+      onCaptionTrackStyle={noop}
+      onCaptionOwnStyle={noop}
       onCaptionText={noop}
       onGesture={noop}
       onHide={(id, hidden) =>
@@ -108,7 +112,7 @@ describe('属性 · 片段种类', () => {
   })
 })
 
-describe('属性 · 「内容与样式」的语言小块', () => {
+describe('属性 · 文字卡片的语言小块', () => {
   it('贴片：标题右边写着显示着的语言，点它打开「字幕」', async () => {
     const user = userEvent.setup()
     const onOpenCaptions = vi.fn()
@@ -127,12 +131,13 @@ describe('属性 · 「内容与样式」的语言小块', () => {
     expect(onOpenCaptions).toHaveBeenCalledOnce()
   })
 
-  it('字幕：原文下写「原文」，点它打开「字幕」', async () => {
+  it('字幕：「内容」卡片标题右边原文下写「原文」，点它打开「字幕」', async () => {
     const user = userEvent.setup()
     const onOpenCaptions = vi.fn()
     await renderWithProviders(
       <Harness initial={[caption()]} onOpenCaptions={onOpenCaptions} selectedId="cap-a1" />,
     )
+    expect(screen.getByRole('heading', { level: 4, name: '内容' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: '显示的语言：原文' }))
     expect(onOpenCaptions).toHaveBeenCalledOnce()
   })

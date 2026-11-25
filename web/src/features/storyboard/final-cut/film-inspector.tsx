@@ -8,7 +8,14 @@ import type { PeaksState } from '../editing/media-analysis'
 import { sourceTrimmed, trimBounds, trimmed, type SourceLength, type Timing } from './clip-edit'
 import type { ComponentCatalog, VariableValue } from './composition/catalog'
 import { CaptionTextField, type CaptionTextChange } from './captions-tab'
-import { CAPTION_COLOR, captionFontSize, captionFontSizeRange } from './composition/captions'
+import {
+  captionFontSize,
+  captionFontSizeRange,
+  captionLook,
+  NO_CAPTION_STYLE,
+  ownsStyle,
+  type CaptionStyle,
+} from './composition/captions'
 import {
   isDetachedAudio,
   isDubClip,
@@ -49,10 +56,7 @@ import type { SmartMix } from './use-smart-mix'
 
 type Values = Readonly<Record<string, VariableValue>>
 
-type CaptionStyleChange = (
-  id: string,
-  changes: Partial<Pick<CaptionClip, 'font' | 'color' | 'fontSize'>>,
-) => void
+type CaptionStyleChange = (id: string, changes: Partial<CaptionStyle>) => void
 
 type Props = {
   /** 时间线上当前选中的片段列表。 */
@@ -87,8 +91,14 @@ type Props = {
   locale: ShownLocale
   /** 修改字幕 `id` 在指定语言下的文本，记为一步撤销。 */
   onCaptionText: CaptionTextChange
-  /** 修改字幕 `id` 的字体、字色或字号（`null` 表示恢复默认），所有语言共用并记为一步撤销。 */
+  /** 字幕样式：没开「单独设置」的句子用它（没设的项是 `null`，用默认规则）。 */
+  captionStyle: CaptionStyle
+  /** 修改字幕 `id` 单独设置的字体、字色或字号，所有语言共用并记为一步撤销。 */
   onCaptionStyle: CaptionStyleChange
+  /** 修改字幕样式（`null` 表示去掉这一项、回到默认规则），所有语言共用并记为一步撤销。 */
+  onCaptionTrackStyle: (changes: Partial<CaptionStyle>) => void
+  /** 打开或关闭字幕 `id` 的「单独设置」，记为一步撤销。 */
+  onCaptionOwnStyle: (id: string, own: boolean) => void
   /** 组件或场景片段的多语言文字配置（供「内容与样式」使用），`bindings` 记录各片段跟随语言的字段映射。 */
   texts: Omit<TextLocale, 'locale' | 'bindings'> & {
     bindings: ReadonlyMap<string, LocaleBindings>
@@ -99,7 +109,7 @@ type Props = {
   onTextEditing: (editing: boolean) => void
   /** 选中单个有声片段时的「智能调音」状态与操作；其余情况为 `undefined`。 */
   smartMix: SmartMix | undefined
-  /** 点击「内容与样式」标题右侧语言标签时切换至「字幕」页签。 */
+  /** 点击「内容与样式」（字幕是「内容」）标题右侧语言标签时切换至「字幕」页签。 */
   onOpenCaptions: () => void
 }
 
@@ -208,7 +218,8 @@ export function FilmInspector({ selected, ...rest }: Props) {
  * 单片段属性面板：顶栏包含类型徽标、名称、类型、时长（字幕显示起止时刻）及隐藏/静音、删除、取消选中与音画分离/合并操作
  * （字幕无单句隐藏，需通过轨道行头整行隐藏）。主体按片段类型组合卡片：
  * 音视频展示「原片截取」「声音与节奏」（已分离原声的视频改为「画面变速」与原声去向卡，分离原声顶部额外展示同步卡），
- * 有声片段底部附「智能调音」；贴片、场景与字幕展示「显示时长」与「内容与样式」；「其他」类型仅展示「显示时长」。
+ * 有声片段底部附「智能调音」；贴片、场景展示「显示时长」与「内容与样式」，字幕展示「显示时长」「内容」与「字幕样式」；
+ * 「其他」类型仅展示「显示时长」。
  */
 function ClipInspector({
   clip,
@@ -229,7 +240,10 @@ function ClipInspector({
   onAttributes,
   locale,
   onCaptionText,
+  captionStyle,
   onCaptionStyle,
+  onCaptionTrackStyle,
+  onCaptionOwnStyle,
   texts,
   soundControls,
   onTextEditing,
@@ -375,16 +389,25 @@ function ClipInspector({
                 variables={catalog.items.find((item) => item.name === clip.item)?.variables ?? []}
               />
             ) : clip.kind === 'caption' ? (
-              <CaptionContent
-                canvas={canvas}
-                clip={clip}
-                fonts={fonts}
-                locale={locale}
-                onEditing={onTextEditing}
-                onLocale={onOpenCaptions}
-                onStyle={onCaptionStyle}
-                onText={onCaptionText}
-              />
+              <>
+                <CaptionContent
+                  clip={clip}
+                  locale={locale}
+                  onLocale={onOpenCaptions}
+                  onText={onCaptionText}
+                />
+                <CaptionStyleCard
+                  canvas={canvas}
+                  catalog={catalog}
+                  clip={clip}
+                  fonts={fonts}
+                  onEditing={onTextEditing}
+                  onOwn={onCaptionOwnStyle}
+                  onStyle={onCaptionStyle}
+                  onTrackStyle={onCaptionTrackStyle}
+                  style={captionStyle}
+                />
+              </>
             ) : null}
           </>
         )}
@@ -393,46 +416,69 @@ function ClipInspector({
   )
 }
 
-/**
- * 字幕「内容与样式」卡片：编辑当前展示语言下的字幕文本（与「字幕」页签共用输入框）以及跨语言共享的字体、字号与字色（各项修改各记一步撤销）。
- */
+/** 字幕「内容」卡片：编辑当前展示语言下的字幕文本（与「字幕」页签共用输入框）。 */
 function CaptionContent({
   clip,
-  canvas,
-  fonts,
   locale,
   onLocale,
   onText,
-  onStyle,
-  onEditing,
 }: {
   clip: CaptionClip
-  canvas: Canvas
-  fonts: readonly string[]
   locale: ShownLocale
   onLocale: () => void
   onText: CaptionTextChange
-  onStyle: CaptionStyleChange
-  onEditing: (editing: boolean) => void
 }) {
-  const textId = useId()
-  const fontId = useId()
-  const colorId = useId()
   return (
     <section className="wf-card wf-prop-card">
-      <ContentTitle locale={locale.code} onLocale={onLocale} />
-      <div className="wf-prop-field is-stacked">
-        <label className="wf-prop-label" htmlFor={textId}>
-          内容
-        </label>
-        <CaptionTextField
-          caption={clip}
-          className="wf-field wf-prop-textarea"
-          id={textId}
-          key={locale.code}
-          locale={locale}
-          onText={onText}
-        />
+      <ContentTitle locale={locale.code} onLocale={onLocale} title="内容" />
+      <CaptionTextField
+        aria-label="内容"
+        caption={clip}
+        className="wf-field wf-prop-textarea"
+        key={locale.code}
+        locale={locale}
+        onText={onText}
+      />
+    </section>
+  )
+}
+
+/**
+ * 字幕「字幕样式」卡片：字体、字号、颜色三行，底部「单独设置」开关（各项修改各记一步撤销）。开关关着时三行是字幕样式的
+ * 生效值，改的是字幕样式，没单独设置的句子一起变；开着时三行是这一句自己的值，只改这一句。两种状态卡片一样，
+ * 只是改的对象不同。字号的默认刻度和双击恢复都指默认规则的字号。
+ */
+function CaptionStyleCard({
+  clip,
+  style,
+  catalog,
+  canvas,
+  fonts,
+  onStyle,
+  onTrackStyle,
+  onOwn,
+  onEditing,
+}: {
+  clip: CaptionClip
+  style: CaptionStyle
+  catalog: ComponentCatalog
+  canvas: Canvas
+  fonts: readonly string[]
+  onStyle: CaptionStyleChange
+  onTrackStyle: (changes: Partial<CaptionStyle>) => void
+  onOwn: (id: string, own: boolean) => void
+  onEditing: (editing: boolean) => void
+}) {
+  const fontId = useId()
+  const colorId = useId()
+  const ownId = useId()
+  const own = ownsStyle(clip)
+  const look = captionLook(own ? clip : NO_CAPTION_STYLE, style, catalog, canvas)
+  const fallback = captionFontSize(canvas)
+  return (
+    <section className="wf-card wf-prop-card">
+      <div className="wf-prop-title-row">
+        <h4 className="wf-prop-title">字幕样式</h4>
       </div>
       <div className="wf-prop-field">
         <label className="wf-prop-label" htmlFor={fontId}>
@@ -441,20 +487,27 @@ function CaptionContent({
         <Dropdown
           id={fontId}
           label="字体"
-          onChange={(font) => onStyle(clip.id, { font: font === '' ? null : font })}
+          onChange={(font) => {
+            // 单独设置时「默认」也写明中文字体族，这一句才不跟着字幕样式的字体变
+            if (own) onStyle(clip.id, { font: font === '' ? catalog.cjk.family : font })
+            else onTrackStyle({ font: font === '' ? null : font })
+          }}
           options={[
             { value: '', label: '默认' },
             ...fonts.map((font) => ({ value: font, label: font })),
           ]}
-          // 不在组件库可选列表中的字体名按未设置处理，回退展示「默认」
-          value={clip.font !== null && fonts.includes(clip.font) ? clip.font : ''}
+          // 中文字体族和不在组件库可选列表中的字体名都展示为「默认」
+          value={fonts.includes(look.font) ? look.font : ''}
         />
       </div>
       <CaptionFontSize
         canvas={canvas}
-        onChange={(fontSize) => onStyle(clip.id, { fontSize })}
+        onChange={(fontSize) => {
+          if (own) onStyle(clip.id, { fontSize })
+          else onTrackStyle({ fontSize: fontSize === fallback ? null : fontSize })
+        }}
         onEditing={onEditing}
-        size={clip.fontSize}
+        size={look.fontSize}
       />
       <div className="wf-prop-field">
         <label className="wf-prop-label" htmlFor={colorId}>
@@ -462,12 +515,19 @@ function CaptionContent({
         </label>
         <ColorField
           complete={(value) => HEX_COLOR.test(value)}
-          current={clip.color ?? CAPTION_COLOR}
+          current={look.color}
           id={colorId}
           label="颜色"
-          onChange={(color) => onStyle(clip.id, { color })}
+          onChange={(color) => {
+            if (own) onStyle(clip.id, { color })
+            else onTrackStyle({ color })
+          }}
         />
       </div>
+      <span className="wf-prop-switch is-row">
+        <label htmlFor={ownId}>单独设置</label>
+        <Switch checked={own} id={ownId} onCheckedChange={(next) => onOwn(clip.id, next)} />
+      </span>
     </section>
   )
 }
@@ -475,8 +535,7 @@ function CaptionContent({
 const pixelsText = (size: number) => `${size} px`
 
 /**
- * 「字号」滑杆：范围为默认字号的 0.5–2 倍，默认处标注刻度并支持双击恢复默认；未单独设置时显示默认字号。
- * 超出范围的输入自动钳制；输入值等于默认字号时归置为 `null`（恢复默认）。
+ * 「字号」滑杆：范围为默认字号的 0.5–2 倍，默认规则的字号处标注刻度，双击回到它。超出范围的输入自动钳制。
  */
 function CaptionFontSize({
   canvas,
@@ -485,18 +544,14 @@ function CaptionFontSize({
   onEditing,
 }: {
   canvas: Canvas
-  /** 当前句独立设置的字号；未设置时为 `null`。 */
-  size: number | null
-  onChange: (size: number | null) => void
+  /** 现在显示的字号。 */
+  size: number
+  onChange: (size: number) => void
   onEditing: (editing: boolean) => void
 }) {
   const fallback = captionFontSize(canvas)
   const { min, max } = captionFontSizeRange(canvas)
-  const current = size ?? fallback
-  const write = (next: number) => {
-    const clamped = Math.min(max, Math.max(min, Math.round(next)))
-    onChange(clamped === fallback ? null : clamped)
-  }
+  const write = (next: number) => onChange(Math.min(max, Math.max(min, Math.round(next))))
   return (
     <SliderControl
       format={pixelsText}
@@ -505,7 +560,7 @@ function CaptionFontSize({
       max={max}
       min={min}
       onCommit={write}
-      onDoubleClick={() => onChange(null)}
+      onDoubleClick={() => onChange(fallback)}
       onEditing={onEditing}
       onText={(text) => {
         const typed = Number(text.replace(/px$/i, '').trim())
@@ -513,8 +568,8 @@ function CaptionFontSize({
         write(typed)
         return true
       }}
-      position={current}
-      text={pixelsText(current)}
+      position={size}
+      text={pixelsText(size)}
     />
   )
 }

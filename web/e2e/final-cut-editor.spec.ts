@@ -2958,13 +2958,16 @@ test('其它语言下挪一句、裁一句、改一句的字色直接打进预�
 
   await clip.getByRole('button', { name: /^选中：/ }).click()
   await side.getByRole('tab', { name: '属性' }).click()
-  const colored = sceneSavedWith((scene) =>
-    new RegExp(`<div style="color: #ff3366" id="${second}"`).test(scene),
+  const inspector = side.getByRole('tabpanel', { name: '属性' })
+  const owned = sceneSavedWith((scene) =>
+    new RegExp(`<div style="[^"]*color: #ffffff;[^"]*" id="${second}"`).test(scene),
   )
-  await side
-    .getByRole('tabpanel', { name: '属性' })
-    .getByRole('textbox', { name: '颜色' })
-    .fill('#ff3366')
+  await inspector.getByRole('switch', { name: '单独设置' }).click()
+  await owned
+  const colored = sceneSavedWith((scene) =>
+    new RegExp(`<div style="[^"]*color: #ff3366;[^"]*" id="${second}"`).test(scene),
+  )
+  await inspector.getByRole('textbox', { name: '颜色' }).fill('#ff3366')
   await colored
   const live = {
     text: '[EN] 第二句',
@@ -4603,14 +4606,13 @@ const previewCaptions = (editor: Locator) =>
     )
   })
 
-test('字幕的字体和颜色：选中一句在「属性」里改颜色，预览里只有这一句变色、不换播放器；改字体后预览里换成这个字体，存下的场景里写在这一句上', async ({
+test('字幕的字体和颜色：默认改的是字幕样式，预览里所有句子一起变色、换上字体，主文件链上字体；打开一句的「单独设置」后再改颜色，只有这一句变、不换播放器', async ({
   page,
 }) => {
   const { editor, side, row, first, second } = await openWithCaptions(page)
   await expect
     .poll(async () => (await previewCaptions(editor))?.[second])
     .toMatchObject({ text: '第二句', color: 'rgb(255, 255, 255)', shown: true })
-  await markFinalCutPreviewPlayer(editor)
 
   await row
     .getByRole('group', { name: /^第二句，/ })
@@ -4618,11 +4620,14 @@ test('字幕的字体和颜色：选中一句在「属性」里改颜色，预�
     .click()
   await side.getByRole('tab', { name: '属性' }).click()
   const inspector = side.getByRole('tabpanel', { name: '属性' })
-  const colored = page.waitForRequest((request) =>
-    new RegExp(`<div style="color: #ff3366" id="${second}"`).test(
-      savedFileOf(request, CAPTIONS_FILE) ?? '',
-    ),
-  )
+  const own = inspector.getByRole('switch', { name: '单独设置' })
+  await expect(own).not.toBeChecked()
+
+  // 字幕样式写在场景的一条规则里，各句不写行内样式；这一步预览可以整份重新加载
+  const colored = page.waitForRequest((request) => {
+    const scene = savedFileOf(request, CAPTIONS_FILE) ?? ''
+    return /\.clip\.caption \{\n {2}color: #ff3366;\n\}/.test(scene) && !/<div style=/.test(scene)
+  })
   const hex = inspector.getByRole('textbox', { name: '颜色' })
   await hex.fill('#ff3366')
   await colored
@@ -4631,31 +4636,56 @@ test('字幕的字体和颜色：选中一句在「属性」里改颜色，预�
       const captions = await previewCaptions(editor)
       return [captions?.[second]?.color, captions?.[first]?.color]
     })
-    .toEqual(['rgb(255, 51, 102)', 'rgb(255, 255, 255)'])
-  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
+    .toEqual(['rgb(255, 51, 102)', 'rgb(255, 51, 102)'])
 
-  // 字体：要链上新的字体样式表，预览可以整份重新加载；换上来以后这一句是这个字体、颜色还在
+  // 字体：要链上新的字体样式表，预览可以整份重新加载；换上来以后两句都是这个字体、颜色还在
   const fonted = page.waitForRequest((request) =>
-    new RegExp(
-      `<div style="color: #ff3366; font-family: 'Playfair Display', '[^']+', sans-serif" id="${second}"`,
-    ).test(savedFileOf(request, CAPTIONS_FILE) ?? ''),
+    /\.clip\.caption \{\n {2}font-family: 'Playfair Display', '[^']+', sans-serif;\n {2}color: #ff3366;\n\}/.test(
+      savedFileOf(request, CAPTIONS_FILE) ?? '',
+    ),
+  )
+  const linked = page.waitForRequest((request) =>
+    /<link rel="stylesheet" href="[^"]*playfair-display[^"]*\.css">/.test(
+      savedHtmlOf(request) ?? '',
+    ),
   )
   await inspector.getByRole('button', { name: '字体：默认' }).click()
   await page.getByRole('menuitemradio', { name: 'Playfair Display' }).click()
-  await fonted
+  await Promise.all([fonted, linked])
   await expect
     .poll(async () => {
       const captions = await previewCaptions(editor)
-      return [
-        captions?.[second]?.font,
-        captions?.[second]?.color,
-        captions?.[first]?.font === 'Playfair Display',
-      ]
+      return [captions?.[second]?.font, captions?.[first]?.font, captions?.[second]?.color]
     })
-    .toEqual(['Playfair Display', 'rgb(255, 51, 102)', false])
+    .toEqual(['Playfair Display', 'Playfair Display', 'rgb(255, 51, 102)'])
+
+  // 打开单独设置：这一句行内写上这一刻显示的样子，画面不变；再改颜色只有这一句变，预览直接改、不换播放器
+  await markFinalCutPreviewPlayer(editor)
+  const owned = page.waitForRequest((request) =>
+    new RegExp(
+      `<div style="font-family: 'Playfair Display', '[^']+', sans-serif; color: #ff3366; font-size: \\d+px;[^"]*" id="${second}"`,
+    ).test(savedFileOf(request, CAPTIONS_FILE) ?? ''),
+  )
+  await own.click()
+  await owned
+  await expect(own).toBeChecked()
+  const recolored = page.waitForRequest((request) =>
+    new RegExp(`<div style="[^"]*color: #33cc99;[^"]*" id="${second}"`).test(
+      savedFileOf(request, CAPTIONS_FILE) ?? '',
+    ),
+  )
+  await hex.fill('#33cc99')
+  await recolored
+  await expect
+    .poll(async () => {
+      const captions = await previewCaptions(editor)
+      return [captions?.[second]?.color, captions?.[first]?.color]
+    })
+    .toEqual(['rgb(51, 204, 153)', 'rgb(255, 51, 102)'])
+  expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 })
 
-test('字幕的字号：选中一句在「属性」里改字号，预览里只有这一句换成新字号、描边跟着变粗，不换播放器；存下的场景里这一句写着字号、描边和投影', async ({
+test('字幕的字号：选中一句打开「单独设置」再改字号，预览里只有这一句换成新字号、描边跟着变粗，不换播放器；存下的场景里这一句写着字号、描边和投影', async ({
   page,
 }) => {
   const { editor, side, row, first, second } = await openWithCaptions(page)
@@ -4693,10 +4723,17 @@ test('字幕的字号：选中一句在「属性」里改字号，预览里只�
   )
   const before = (await previewSizes())?.[second]
   expect(before?.size).toBe(fallback)
+  const owned = page.waitForRequest((request) =>
+    new RegExp(`<div style="[^"]*font-size: ${fallback}px;[^"]*" id="${second}"`).test(
+      savedFileOf(request, CAPTIONS_FILE) ?? '',
+    ),
+  )
+  await inspector.getByRole('switch', { name: '单独设置' }).click()
+  await owned
   const size = Math.round(fallback * 1.5)
   const saved = page.waitForRequest((request) =>
     new RegExp(
-      `<div style="font-size: ${size}px; -webkit-text-stroke: \\d+px #000000; text-shadow: 0 \\d+px \\d+px rgba\\(0, 0, 0, 0\\.45\\)" id="${second}"`,
+      `<div style="[^"]*font-size: ${size}px; -webkit-text-stroke: \\d+px #000000; text-shadow: 0 \\d+px \\d+px rgba\\(0, 0, 0, 0\\.45\\)" id="${second}"`,
     ).test(savedFileOf(request, CAPTIONS_FILE) ?? ''),
   )
   await readout.click()

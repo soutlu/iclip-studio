@@ -11,6 +11,7 @@ import { BlockedReason } from '../components/blocked-reason'
 import { captionClock, captionsInOrder, type CaptionsView } from './caption-edit'
 import type { ScriptNote } from './caption-script'
 import { ComponentTexts } from './component-texts'
+import { ownsStyle } from './composition/captions'
 import type { CaptionClip } from './composition/film'
 import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 import { NARRATION_TEXT_LIMIT } from './dubbing'
@@ -32,6 +33,7 @@ const TRANSLATE_LABEL = '翻译'
 const NARRATION_LABEL = '旁白配音'
 const INSERT_NARRATION_LABEL = '插入配音与字幕'
 const AUDITION_FAILED_TEXT = '音色试听失败，请重试'
+const OWN_STYLE_LABEL = '已单独设置样式'
 
 /** 修改指定字幕在目标语言 `locale` 下的文本（见 `useFilmSession` 的 `setCaptionText`）。 */
 export type CaptionTextChange = (id: string, text: string, locale: Language) => void
@@ -794,7 +796,10 @@ type CaptionRowProps = {
   script: ScriptNote | undefined
 }
 
-/** 单条字幕卡片：展示起止时间、单句配音控件（译文语言）、删除按钮、字幕文本框与台词对照行。 */
+/**
+ * 单条字幕卡片：展示起止时间（开着「单独设置」的句子旁边一个小圆点）、单句配音控件（译文语言）、删除按钮、
+ * 字幕文本框与台词对照行。
+ */
 function CaptionRow({
   caption,
   locale,
@@ -822,10 +827,20 @@ function CaptionRow({
       className={cn('wf-caption wf-card', current && 'is-current')}
     >
       <div className="wf-caption-head">
-        <button className="wf-caption-time ui-focus" onClick={onSeek} type="button">
-          <Icon decorative name="final-cut-play" size="xs" />
-          {range}
-        </button>
+        <span className="wf-caption-when">
+          <button className="wf-caption-time ui-focus" onClick={onSeek} type="button">
+            <Icon decorative name="final-cut-play" size="xs" />
+            {range}
+          </button>
+          {ownsStyle(caption) ? (
+            <span
+              aria-label={OWN_STYLE_LABEL}
+              className="wf-caption-own"
+              role="img"
+              title={OWN_STYLE_LABEL}
+            />
+          ) : null}
+        </span>
         {voice === undefined ? null : <LineVoiceChip caption={caption.id} voice={voice} />}
         <IconButton
           className="wf-caption-remove"

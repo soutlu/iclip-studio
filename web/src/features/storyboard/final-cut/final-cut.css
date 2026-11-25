@@ -1043,6 +1043,23 @@
   font-weight: 600;
 }
 
+/* 时间和它后面的小圆点排在一起，卡片头里还是左边一组、右边一组 */
+.wf-caption-when {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 开着「单独设置」的句子：时间后面一个墨色小圆点，同单句配音自己选过音色的那圈细框一样只做区分、不另加颜色 */
+.wf-caption-own {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-on-surface-variant);
+}
+
 /* 删除钮平时藏着，悬停、当前这一句、焦点在卡片里时出来 */
 .wf-caption-remove {
   opacity: 0;
@@ -1914,7 +1931,7 @@
   margin-left: auto;
 }
 
-/* 「内容与样式」标题右边：显示着的语言，主色浅底，点它打开「字幕」 */
+/* 「内容与样式」、字幕「内容」标题右边：显示着的语言，主色浅底，点它打开「字幕」 */
 .wf-prop-locale {
   display: inline-flex;
   height: 20px;
@@ -1998,6 +2015,14 @@
   color: var(--color-on-surface-variant);
   font-size: var(--text-caption);
   white-space: nowrap;
+}
+
+/* 卡片底部单独一行的开关：名字在左、开关在右，名字的字和上面各行的名字（wf-prop-label）一样 */
+.wf-prop-switch.is-row {
+  min-height: 28px;
+  justify-content: space-between;
+  font-size: var(--text-label);
+  font-weight: 500;
 }
 
 /* 「声音与节奏」标题行里的图标开关（样子见 wf-tool）：开着时浅底细框，循环用配乐色，静音、关闭原声用警示色 */

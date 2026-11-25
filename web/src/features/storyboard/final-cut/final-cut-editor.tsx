@@ -1870,9 +1870,18 @@ function EditorBody({
                 onAttributes={setClipAttributes}
                 locale={locale}
                 onCaptionText={setCaptionText}
+                captionStyle={film.captionStyle}
                 onCaptionStyle={(id, changes) => {
                   leaveMaterial()
                   session.setCaptionStyle(id, changes)
+                }}
+                onCaptionTrackStyle={(changes) => {
+                  leaveMaterial()
+                  session.setCaptionTrackStyle(changes)
+                }}
+                onCaptionOwnStyle={(id, own) => {
+                  leaveMaterial()
+                  session.setCaptionOwnStyle(id, own)
                 }}
                 texts={itemTexts}
                 selected={selectedClips}
