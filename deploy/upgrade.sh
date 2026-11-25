@@ -4,6 +4,9 @@
 # 与 compose.yaml 放在同一部署目录，在该目录执行。步骤说明见仓库 docs/deploy.md「升级」。
 
 set -euo pipefail
+# 被中断（Ctrl-C）或 kill 时按退出处理：后面登记的退出处理（重启原版运行时、打印回滚步骤）才会执行。
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 HEALTH_TIMEOUT=180
 
@@ -146,6 +149,13 @@ async def check_migration_status():
 
 asyncio.run(check_migration_status())
 PY
+}
+
+restart_old_runtime() {
+  echo >&2
+  echo "运行时迁移没有完成，按原版本重新启动运行时（.env 未改动；迁移在一个事务里，没完成的不会留下）" >&2
+  docker compose up -d --no-deps runtime >&2 ||
+    echo "运行时没能重新启动，请手动执行：docker compose up -d --no-deps runtime" >&2
 }
 
 rollback_hint() {
@@ -319,8 +329,14 @@ else
     echo "打运行时迁移基线标记"
     run_migration_container python -m agent_runtime.admin stamp-baseline
   fi
+  # 运行时的迁移会按库里已有的数据生成新结构（如对话行）；旧运行时在迁移期间还在跑，这段时间写下的
+  # 内容就进不了新结构，所以先停运行时。迁移没完成就退出（失败或被中断）时按原版本重新启动它。
+  echo "停止运行时，再执行运行时迁移（迁移期间对话不可用）"
+  docker compose stop runtime
+  trap restart_old_runtime EXIT
   echo "执行运行时迁移"
   run_migration_container python -m agent_runtime.admin migrate
+  trap - EXIT
 fi
 
 trap rollback_hint EXIT
