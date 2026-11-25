@@ -22,14 +22,12 @@ type GenerationPickerProps = {
   onChange: (value: string) => void
   className?: string
   description?: string
-  invalid?: { describedBy: string | undefined } | undefined
 }
 
 export function GenerationPicker({
   className,
   description,
   disabled,
-  invalid,
   label,
   leading,
   onChange,
@@ -41,9 +39,7 @@ export function GenerationPicker({
     <MenuTrigger asChild disabled={disabled}>
       <button
         aria-label={label}
-        {...(invalid?.describedBy === undefined ? {} : { 'aria-describedby': invalid.describedBy })}
         className={cn('storyboard-bar-control storyboard-bar-picker ui-state ui-focus', className)}
-        data-invalid={invalid === undefined ? undefined : true}
         title={description === undefined ? text : undefined}
         type="button"
       >
