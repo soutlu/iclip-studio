@@ -339,6 +339,38 @@ describe('时钟跟着画面走', () => {
     expect(player.currentTime).toBe(4)
   })
 
+  // 真播放器只在自己没停时处理结尾：等数据停住时运行库报到结尾，它不循环、也不发 ended
+  it('开着循环、等数据停住时放到了结尾：从头接着放', async () => {
+    const { buffering, playerOf, playing, send } = await openPage()
+    send({ type: 'playback', rate: 1, muted: false, loop: true })
+    const player = playerOf()
+    player.duration = 4
+    send({ type: 'play' })
+    starvedVideos.add(SECOND)
+    player.seek(3.9)
+    expect(player.paused).toBe(true)
+
+    player.seek(4)
+    expect(player.currentTime).toBe(0)
+    expect(player.paused).toBe(false)
+    expect(buffering().at(-1)).toBe(false)
+    expect(playing()).not.toContain(false)
+  })
+
+  it('没开循环、等数据停住时放到了结尾：停在结尾，报出停止播放', async () => {
+    const { playerOf, playing, send } = await openPage()
+    const player = playerOf()
+    player.duration = 4
+    send({ type: 'play' })
+    starvedVideos.add(SECOND)
+    player.seek(3.9)
+
+    player.seek(4)
+    expect(player.currentTime).toBe(4)
+    expect(player.paused).toBe(true)
+    expect(playing().at(-1)).toBe(false)
+  })
+
   it('在结尾点播放：从头放', async () => {
     const { playerOf, send } = await openPage()
     const player = playerOf()
