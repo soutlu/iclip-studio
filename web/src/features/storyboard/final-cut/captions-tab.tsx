@@ -122,6 +122,9 @@ type CaptionsTabProps = {
   recognizing: number
   /** 无法触发字幕识别时的禁用原因；非空时置灰「识别字幕」并在点击时提示。 */
   recognizeBlocked: string | undefined
+  /** 识别结果提示，有值时在「识别字幕」旁展示；收起时调用 `onRecognizeNoteClose`。 */
+  recognizeNote: string | undefined
+  onRecognizeNoteClose: () => void
   onRecognize: () => void
   /** 与原始台词存在差异的字幕映射（字幕 ID → 台词对照），在该句输入框下方展示（见 `useCaptionScripts`）。 */
   scripts: ReadonlyMap<string, ScriptNote>
@@ -159,6 +162,8 @@ export function CaptionsTab({
   addBlocked,
   recognizing,
   recognizeBlocked,
+  recognizeNote,
+  onRecognizeNoteClose,
   onRecognize,
   scripts,
   problem,
@@ -223,19 +228,13 @@ export function CaptionsTab({
             )}
             {onCaptions ? (
               <>
-                <BlockedReason reason={recognizeBlocked}>
-                  <button
-                    aria-disabled={recognizeBlocked === undefined ? undefined : true}
-                    className="wf-chip-btn ui-state ui-focus"
-                    onClick={() => {
-                      if (recognizeBlocked === undefined) onRecognize()
-                    }}
-                    type="button"
-                  >
-                    <Icon decorative name="final-cut-voice" size="sm" />
-                    {recognizing > 0 ? '识别中…' : RECOGNIZE_LABEL}
-                  </button>
-                </BlockedReason>
+                <RecognizeButton
+                  blocked={recognizeBlocked}
+                  note={recognizeNote}
+                  onNoteClose={onRecognizeNoteClose}
+                  onRecognize={onRecognize}
+                  recognizing={recognizing}
+                />
                 {narration === undefined ? null : (
                   <button
                     aria-expanded={narration.open}
@@ -314,6 +313,58 @@ function AddLineButton({ blocked, onAdd }: { blocked: string | undefined; onAdd:
       <TooltipContent className="wf-tip" side="top">
         {blocked ?? ADD_LABEL}
       </TooltipContent>
+    </TooltipRoot>
+  )
+}
+
+/**
+ * 「识别字幕」按钮。不可用时置灰，悬停或点击说明原因（同 `BlockedReason`）；`note` 有值时在按钮旁展示识别结果提示，
+ * 鼠标移开、按 Esc 或再点按钮时收起并调用 `onNoteClose`。
+ */
+function RecognizeButton({
+  blocked,
+  note,
+  onNoteClose,
+  recognizing,
+  onRecognize,
+}: {
+  blocked: string | undefined
+  note: string | undefined
+  onNoteClose: () => void
+  recognizing: number
+  onRecognize: () => void
+}) {
+  const [hint, setHint] = useState(false)
+  const shown = note ?? (hint ? blocked : undefined)
+  return (
+    <TooltipRoot
+      onOpenChange={(open) => {
+        setHint(open && blocked !== undefined)
+        if (!open && note !== undefined) onNoteClose()
+      }}
+      open={shown !== undefined}
+    >
+      <TooltipTrigger
+        asChild
+        onClick={(event) => {
+          if (blocked === undefined) return
+          event.preventDefault()
+          setHint(true)
+        }}
+      >
+        <button
+          aria-disabled={blocked === undefined ? undefined : true}
+          className="wf-chip-btn ui-state ui-focus"
+          onClick={() => {
+            if (blocked === undefined) onRecognize()
+          }}
+          type="button"
+        >
+          <Icon decorative name="final-cut-voice" size="sm" />
+          {recognizing > 0 ? '识别中…' : RECOGNIZE_LABEL}
+        </button>
+      </TooltipTrigger>
+      {shown === undefined ? null : <TooltipContent side="top">{shown}</TooltipContent>}
     </TooltipRoot>
   )
 }
