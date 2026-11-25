@@ -206,7 +206,7 @@ const ADDING_PICKS_TEXT = '选中的镜头正在加入轨道，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
-const ELSEWHERE_TEXT = '字幕已在口播起始的片段中，无需新增'
+const ELSEWHERE_TEXT = '字幕归口播起始的片段，未新增字幕'
 /** 「识别字幕」旁的识别结果提示停留多久；鼠标移开时提前收起。 */
 const RECOGNIZE_NOTE_MS = 4_000
 const READING_TAKES_DUBBING_TEXT = '正在读取素材片，请稍后再生成配音'
