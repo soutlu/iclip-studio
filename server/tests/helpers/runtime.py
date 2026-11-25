@@ -283,7 +283,7 @@ def build_runner(
         name=AGENT_ID,
         tools=list(tools),
         output_type=[str, DeferredToolRequests],
-        capabilities=[StepPersistence(store=step_store), *capabilities],
+        capabilities=[StepPersistence(store=step_store, capture_frontier=True), *capabilities],
     )
     return make_runner(
         engine,
@@ -383,6 +383,9 @@ async def plant_interrupted(
     messages: list[ModelMessage] | None = None,
     attempt: int = 0,
 ) -> str:
+    """一条开跑后进程被杀的消息：对话行里只有运行 ``run_id`` 预存的提问，``messages`` 不为空时是它最后
+    一个检查点。"""
+
     prompt_id = f"prm_{uuid.uuid4().hex[:8]}"
     await queue.submit(
         prompt_id=prompt_id,
@@ -395,6 +398,17 @@ async def plant_interrupted(
         locked_by=DEAD,
     )
     await queue.attach_run(prompt_id, run_id, locked_by=DEAD, attempt=0)
+    await step_store.save_conversation_head(
+        conversation_id,
+        [
+            ModelRequest(
+                parts=[UserPromptPart(content=["把这三个镜头出图"])],
+                run_id=run_id,
+                timestamp=datetime(2026, 9, 1, 10, 0, tzinfo=UTC),
+            )
+        ],
+        revision=0,
+    )
     if messages is not None:
         await step_store.register_run(RunRecord(run_id=run_id, conversation_id=conversation_id))
         await step_store.append_event(

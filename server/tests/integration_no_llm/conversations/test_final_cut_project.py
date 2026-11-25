@@ -11,7 +11,7 @@ import pytest
 from agent_runtime.harness.step_store_pg import PgStepStore
 from fastapi import FastAPI
 from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
-from pydantic_ai_harness.step_persistence import ContinuableSnapshot, RunRecord, StepEvent
+from pydantic_ai_harness.step_persistence import RunRecord, StepEvent
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -346,16 +346,13 @@ async def seed_turn(pg_url: str, conversation_id: str) -> None:
                 run_id=run_id, conversation_id=conversation_id, kind="run_completed", step_index=1
             )
         )
-        await store.save_snapshot(
-            ContinuableSnapshot(
-                run_id=run_id,
-                conversation_id=conversation_id,
-                step_index=1,
-                messages=[
-                    ModelRequest(parts=[UserPromptPart("开拍", timestamp=at)], run_id=run_id),
-                    ModelResponse(parts=[TextPart("好的")], timestamp=at, run_id=run_id),
-                ],
-            )
+        assert await store.save_conversation_head(
+            conversation_id,
+            [
+                ModelRequest(parts=[UserPromptPart("开拍", timestamp=at)], run_id=run_id),
+                ModelResponse(parts=[TextPart("好的")], timestamp=at, run_id=run_id),
+            ],
+            revision=0,
         )
     finally:
         await engine.dispose()

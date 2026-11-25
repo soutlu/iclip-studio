@@ -4,8 +4,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from agent_runtime.harness.job_status import JobStatus
-from agent_runtime.harness.transcript.from_messages import SteeredPrompt
+from agent_runtime.harness.step_store_pg import ConversationHead
+from agent_runtime.harness.transcript.from_messages import RunFacts, SteeredPrompt
 from agent_runtime.harness.transcript.history import TranscriptHistory
 from agent_runtime.harness.transcript.service import TranscriptService
 from agent_runtime.harness.transcript.store import OpBatch, TranscriptStore
@@ -14,6 +14,7 @@ from agent_runtime.transcript.display import ToolDisplayRegistry
 from agent_runtime.transcript.ops import MAIN_AGENT_ID
 from agent_runtime.transcript.wire import OpsPayload, TranscriptPage
 from pydantic import BaseModel
+from pydantic_ai.messages import ModelMessage
 from pydantic_ai_harness.step_persistence import (
     InMemoryStepStore,
     RunRecord,
@@ -50,17 +51,20 @@ class PerRunBatchReads:
 
 
 class EmptyConversationSnapshots(PerRunBatchReads, InMemoryStepStore):
-    async def latest_conversation_snapshot(
-        self, *, conversation_id: str, include_interrupted: bool = False
-    ) -> None:
-        return None
+    async def conversation_head(self, conversation_id: str) -> ConversationHead:
+        return ConversationHead(messages=[], revision=0)
+
+    async def save_conversation_head(
+        self, conversation_id: str, messages: Sequence[ModelMessage], *, revision: int
+    ) -> int | None:
+        raise AssertionError("只读的替身不写对话行")
 
 
 class NoPromptRuns:
     async def prompt_of_runs(self, conversation_id: str) -> dict[str, str]:
         return {}
 
-    async def prompt_status_of_runs(self, conversation_id: str) -> dict[str, JobStatus]:
+    async def run_facts(self, conversation_id: str) -> dict[str, RunFacts]:
         return {}
 
     async def steered_prompts(self, conversation_id: str) -> tuple[SteeredPrompt, ...]:
