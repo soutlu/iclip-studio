@@ -147,7 +147,7 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 
 > - **迁移基线要求**：只能从 `v0.16.3` 或之后的版本直接升级（更早的库须先按 `v0.16.3` 部署文档升至该版本）。
 > - **首次升级到统一 `vX.Y.Z` 运行时镜像前**：先将服务器部署目录中的 `upgrade.sh` 替换为新版本标签上的 [deploy/upgrade.sh](../deploy/upgrade.sh)（保留可执行权限），旧脚本不识别 `vX.Y.Z` 格式的运行时版本号。
-> - **运行时升级到 `v0.4.4` 及以后前**：同样先替换服务器上的 `upgrade.sh`。这一版的运行时迁移按库里已有的数据生成对话行，必须在运行时停下时执行；旧脚本迁移时不停运行时，迁移期间跑完的对话轮次进不了对话行。
+> - **运行时第一次升级到带对话行（`agent_runtime.conversation_heads`）的版本前**：同样先替换服务器上的 `upgrade.sh`（是哪个版本见该版本 Release 的上线前摘要）。这次的运行时迁移按库里已有的数据生成对话行，必须在运行时停下时执行；旧脚本迁移时不停运行时，迁移期间跑完的对话轮次进不了对话行。
 
 每个版本标签 `vX.Y.Z` 均包含全部四个镜像（见[发版与镜像发布](release.md)）。服务器 `.env` 通过 `IMAGE_TAG`（`server / web / render`）和 `RUNTIME_IMAGE_TAG`（`runtime`）分开记录版本，支持独立或同时升级；具体升级范围与需核对的配置文件见该版本 GitHub Release 的上线前摘要。
 
@@ -205,7 +205,7 @@ scripts/publish-components.sh <私有组件库本地路径> <本机输出目录>
 
 上述操作仅回退容器镜像，不会自动回退已执行的数据库迁移，因此仅适用于数据库迁移兼容旧版代码（[只增不删](architecture.md#后端的持久化与迁移)）的版本；若本版包含非兼容迁移（PR 说明与发版摘要会提示），回滚镜像前须先手工处理数据库。
 
-> **运行时从 `v0.4.4` 及以后回滚到更早版本**：更早的版本不写对话行（`agent_runtime.conversation_heads`），回滚期间的对话内容只在快照里。再次升级前，须先在数据库执行 `DROP TABLE agent_runtime.conversation_heads;`，并把 `agent_runtime.alembic_version` 改回 `45f235eaa73b`，再次升级时迁移才会按快照重新生成对话行；不处理的话，脚本会判定运行时数据库已是目标版本而跳过迁移，回滚期间的内容不会出现在聊天记录里。
+> **运行时从带对话行的版本回滚到不带对话行的版本**：不带对话行的版本不写 `agent_runtime.conversation_heads`，回滚期间的对话内容只在快照里。再次升级前，须先在数据库执行 `DROP TABLE agent_runtime.conversation_heads;`，并把 `agent_runtime.alembic_version` 改回 `45f235eaa73b`，再次升级时迁移才会按快照重新生成对话行；不处理的话，脚本会判定运行时数据库已是目标版本而跳过迁移，回滚期间的内容不会出现在聊天记录里。
 
 ### 修改线上配置
 
