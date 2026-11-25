@@ -33,7 +33,6 @@ import { CredentialForm, ModelForm, ProviderCreateForm } from './provider-forms'
 import { CardBadge, CardGlyph, DIRECTORY_GRID, DirectoryCard } from './resource-card'
 import { SectionHeading } from './section-heading'
 import { TestStatus, type Test } from './test-status'
-import { UsageAvatars } from './usage-avatars'
 
 const IDLE: Test = { kind: 'idle' }
 
@@ -209,9 +208,6 @@ function ProviderDetail({
             </span>
           )}
         </div>
-        <span className="mr-2 flex">
-          <UsageAvatars users={users} />
-        </span>
         <IconButton
           disabled={deleteBlocked !== undefined || deleteProvider.isPending}
           label="删除供应商"
@@ -298,7 +294,6 @@ function ProviderDetail({
                   <CardBadge>{MODEL_KIND_LABEL[model.type]}</CardBadge>
                 )}
                 <span className="flex-1" />
-                <UsageAvatars users={model.usedBy} />
                 <RowActions>
                   {model.type === 'llm' ? (
                     <>
@@ -422,7 +417,6 @@ function ProviderDetail({
                   <CardBadge>{`配置组 ${credential.modelGroup}`}</CardBadge>
                 )}
                 <span className="flex-1" />
-                <UsageAvatars users={credential.usedBy} />
                 <RowActions>
                   {isDefault ? null : (
                     <IconButton

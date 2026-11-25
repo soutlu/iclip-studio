@@ -95,7 +95,7 @@ describe('模型与供应商 入口', () => {
     expect(screen.queryByRole('tab', { name: '模型与供应商' })).toBeNull()
   })
 
-  it('打开后列出供应商卡片，默认选中第一个并显示默认密钥的接口地址与在用的 agent', async () => {
+  it('打开后列出供应商卡片，默认选中第一个并显示默认密钥的接口地址', async () => {
     const user = await renderPage()
     await openProviders(user)
     expect(card('阿里云百炼')).toHaveAttribute('aria-current', 'true')
@@ -104,11 +104,6 @@ describe('模型与供应商 入口', () => {
     expect(
       within(panel()).getByText('https://dashscope.aliyuncs.com/compatible-mode/v1'),
     ).toBeVisible()
-    expect(
-      within(panel())
-        .getAllByRole('img', { name: /^在用：/ })
-        .map((node) => node.getAttribute('aria-label')),
-    ).toContain('在用：拆解助手、AI 导演、旧版文案助手、分镜助手')
   })
 })
 
