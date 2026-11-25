@@ -245,9 +245,7 @@ describe('编辑技能', () => {
     const title = within(panel).getByRole('textbox', { name: '技能名称' })
     await user.clear(title)
     await user.type(title, '照参考片做新片')
-    expect(
-      within(panel).getByRole('img', { name: '已发布 v4，有未保存的修改' }),
-    ).toBeInTheDocument()
+    expect(within(panel).getByRole('img', { name: '有未保存的修改' })).toBeInTheDocument()
 
     const briefHash = mockSkillFile('director', 'references/brief-guide.md').hash
     const schemaHash = mockSkillFile('director', 'references/shot-schema.json').hash
@@ -269,9 +267,29 @@ describe('编辑技能', () => {
     expect(sent.find((item) => item.method === 'PATCH')?.body).toEqual({
       displayName: '照参考片做新片',
     })
-    expect(
-      within(panel).getByRole('img', { name: '已发布 v4，草稿有未发布的修改' }),
-    ).toBeInTheDocument()
+    expect(within(panel).getByRole('img', { name: '已保存，未发布' })).toBeInTheDocument()
+    expect(within(panel).getByRole('status')).toHaveTextContent('已保存，未发布')
+  })
+
+  it('只改名称：「发布技能」不可用，底栏写「有未保存的修改」；保存后写「已发布 v4」', async () => {
+    const user = await renderPage()
+    const panel = await openDirectorSkill(user)
+    const save = within(panel).getByRole('button', { name: '保存草稿' })
+    const publish = within(panel).getByRole('button', { name: '发布技能' })
+    expect(within(panel).getByRole('status')).toHaveTextContent('已发布 v4')
+
+    await user.type(within(panel).getByRole('textbox', { name: '技能名称' }), '（新版）')
+    expect(within(panel).getByRole('status')).toHaveTextContent('有未保存的修改')
+    expect(save).toBeEnabled()
+    expect(publish).toBeDisabled()
+
+    await user.click(save)
+    await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('已发布 v4'))
+    expect(within(panel).getByRole('img', { name: '已发布 v4' })).toBeInTheDocument()
+    expect(within(panel).getByRole('textbox', { name: '技能名称' })).toHaveValue(
+      '照参考片做新视频（新版）',
+    )
+    expect(publish).toBeDisabled()
   })
 
   it('改标识后保存只 PATCH 新标识，不写文件；存好后标识框是新标识', async () => {
@@ -283,9 +301,8 @@ describe('编辑技能', () => {
 
     await user.clear(name)
     await user.type(name, 'film-director')
-    expect(
-      within(panel).getByRole('img', { name: '已发布 v4，有未保存的修改' }),
-    ).toBeInTheDocument()
+    expect(within(panel).getByRole('img', { name: '有未保存的修改' })).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: '发布技能' })).toBeDisabled()
     await user.click(within(panel).getByRole('button', { name: '保存草稿' }))
     await waitFor(() =>
       expect(within(panel).getByRole('button', { name: '保存草稿' })).toBeDisabled(),
@@ -381,6 +398,7 @@ describe('编辑技能', () => {
     expect(await within(panel).findByRole('alert')).toHaveTextContent(
       'shot-schema.json 超过大小上限；单个文件不超过 1 MB，全部文件合计不超过 5 MB',
     )
+    expect(within(panel).queryByRole('status')).toBeNull()
     expect(within(panel).getByRole('button', { name: '保存草稿' })).toBeEnabled()
   })
 
@@ -562,7 +580,7 @@ describe('编辑技能', () => {
         HttpResponse.json({ detail: 'SKILL.md 的 frontmatter 缺少 description' }, { status: 422 }),
       ),
     )
-    await user.type(within(panel).getByRole('textbox', { name: '技能名称' }), '！')
+    await user.type(within(panel).getByRole('textbox', { name: '简短说明' }), '！')
     await user.click(within(panel).getByRole('button', { name: '发布技能' }))
     expect(await within(panel).findByRole('alert')).toHaveTextContent(
       '发布失败：SKILL.md 的 frontmatter 缺少 description',
