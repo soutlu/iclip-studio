@@ -748,7 +748,10 @@
             <div class="space-row"><code>gap-8</code><i class="space-line" style="--space: 32px"></i><b>32px</b></div>
             <div class="space-row"><code>gap-10</code><i class="space-line" style="--space: 40px"></i><b>40px</b></div>
             <div class="space-row"><code>gap-12</code><i class="space-line" style="--space: 48px"></i><b>48px</b></div>
-            <p class="type-source-note">内边距与元素间距遵循 4px 步进；<code>[Npx]</code> 仅限轨道、舞台等布局几何。</p>
+            <p class="type-source-note">1. 大块布局一律用 4px 倍数：页面、卡片、弹窗、表单间距只用整数档（<code>1</code> / <code>2</code> / <code>3</code> / <code>4</code> / <code>5</code> / <code>6</code> / <code>8</code> / <code>10</code> / <code>12</code>…，即 4px / 8px / 12px / 16px…）。</p>
+            <p class="type-source-note">2. 紧凑小件允许用 2px 半档（仅限 14px 以内）：按钮、小标签、工作台工具栏可用 <code>0.5</code> / <code>1.5</code> / <code>2.5</code> / <code>3.5</code>（即 2px / 6px / 10px / 14px）；超过 16px 后人眼分不出 2px 差别，禁止再写 <code>4.5</code>（18px）、<code>5.5</code>（22px）这类半档。</p>
+            <p class="type-source-note">3. 一律禁止奇数像素和中括号硬写像素：禁止 3px / 5px / 7px / 9px 以及 <code>.25</code> / <code>.75</code> 小数（如 <code>gap-0.75</code>、<code>px-1.25</code>）；禁止 <code>px-[15px]</code>、<code>gap-[7px]</code>、<code>px-[22px]</code> 这类临时凑数的写法，页面级大边距统一用 <code>--layout-*</code> 变量。</p>
+            <p class="type-source-note">以上针对内边距、外边距与间隙（<code>p</code> / <code>m</code> / <code>gap</code> / <code>space</code>）；轨道、舞台等布局几何的定位与尺寸不在此列；由 <code>pnpm lint:design</code> 检查，提交时也会自动跑。</p>
           </div>
 
           <div class="scale-group">

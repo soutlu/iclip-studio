@@ -9,6 +9,15 @@ const BASELINE_PATH = join(ROOT, 'scripts', 'design-guard.baseline.json')
 
 const EXEMPT = new Set(['src/app/base.css', 'src/app/globals.css'])
 
+// 间距工具类前缀：变体（sm: / hover: / [&>*]: 等）以冒号结尾，前缀后可带旧式 ! 与负号。
+const TW_SPACING =
+  /(?:^|[\s'"`:])!?-?(?:p[xytrblse]?|m[xytrblse]?|gap(?:-[xy])?|space-[xy]|scroll-[pm][xytrblse]?)-/
+    .source
+const CSS_SPACING_DECL =
+  /(?<![\w-])(?:(?:row-|column-)?gap|(?:scroll-)?(?:padding|margin)(?:-[a-z-]+)?)\s*:([^;{}]*)/g
+const CSS_PX = /(?<![\w.-])-?(\d*\.?\d+)px\b/g
+const onCssSpacingGrid = (px) => px % 4 === 0 || (px <= 14 && px % 4 === 2)
+
 const RULES = [
   {
     id: 'bare-hex-color',
@@ -143,6 +152,29 @@ const RULES = [
     re: /(?:^|[\s'"`:])bg-primary(?:-container)?\/\d+/g,
   },
   {
+    id: 'arbitrary-spacing',
+    desc: '禁止手写 [Npx] 间距，请改用标准档位（如 px-5=20px / px-6=24px）或 --layout-* 变量',
+    ext: ['.ts', '.tsx'],
+    re: new RegExp(`${TW_SPACING}\\[-?[\\d.]+px\\]`, 'g'),
+  },
+  {
+    id: 'off-grid-spacing-tsx',
+    desc: '非法间距档位（仅允许整数档，及 ≤14px 的 0.5/1.5/2.5/3.5 小件半档）',
+    ext: ['.ts', '.tsx'],
+    // 半档只给 ≤14px 的紧凑小件：到 16px 以上人眼分不出 2px 差别，4.5 / 5.5 起一律拦；.25 / .75 不在栅格上
+    re: new RegExp(`${TW_SPACING}(?:px|(?![0-3]\\.5(?![\\d.]))\\d+\\.\\d+)(?![\\w.])`, 'g'),
+  },
+  {
+    id: 'off-grid-spacing-css',
+    desc: 'CSS 间距须为 4px 倍数（≤14px 小件可用 2/6/10/14px），禁止 3px/5px/7px 等奇数零头',
+    ext: ['.css'],
+    // 一条声明可能含多个像素值，逐个计数
+    count: (line) =>
+      [...line.matchAll(CSS_SPACING_DECL)]
+        .flatMap(([, value]) => [...value.matchAll(CSS_PX)])
+        .filter(([, px]) => !onCssSpacingGrid(Number(px))).length,
+  },
+  {
     id: 'invalid-design-allow',
     desc: '豁免缺少原因说明（格式：design-allow -- <原因>）',
     ext: ['.css', '.ts', '.tsx'],
@@ -178,9 +210,9 @@ for (const rule of RULES) {
     const lines = text.split('\n')
     lines.forEach((line, i) => {
       if (rule.id !== 'invalid-design-allow' && i > 0 && ALLOW_RE.test(lines[i - 1])) return
-      const m = line.match(rule.re)
-      if (m) {
-        counts[rule.id] += m.length
+      const n = rule.count ? rule.count(line) : (line.match(rule.re)?.length ?? 0)
+      if (n) {
+        counts[rule.id] += n
         hits[rule.id].push(`${relative(ROOT, file)}:${i + 1}`)
       }
     })

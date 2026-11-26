@@ -6,6 +6,7 @@
 
 - **优先复用基础组件**：基础按钮、弹窗、输入框、用户头像（`@/shared/ui/user-avatar`）及只读源码预览（`@/shared/ui/source-editor` 的 `SourceViewer`）等优先复用 `src/shared/ui/` 中的组件；Toast 提示统一使用 `@/shared/ui/toast`；列表中的音频试听统一使用 `@/shared/ui/audition` 的 `useAudition`（全局互斥播放，所在区域隐藏或卸载时自动停止）；组件进退场动画统一使用 `tw-animate-css` 的 `animate-in` / `animate-out` 及设计系统 Token，不单独手写一套新的动画 Keyframes。
 - **类型与样式约定**：组件 Props 声明明确的 TypeScript 类型（优先靠近组件定义，跨模块复用时再提取到公共文件）。列表渲染 `key` 必须使用稳定的业务 ID（不要用数组下标）。动态合并 `className` 统一使用 `cn()`，多变体组件样式使用 `cva` 定义。
+- **间距只走档位**：4px 整数档，14px 以内小件可用 0.5 / 1.5 / 2.5 / 3.5 半档，不写奇数像素、.25 / .75 小数和 `[Npx]`；规则见 [design-system.html](../../design-system.html) 的 Spacing 组，由 `pnpm lint:design` 检查。
 - **异步请求与自定义 Hook**：支持取消的查询需透传 `AbortSignal`；自定义 Hook 统一以 `use*` 命名并保持返回结构稳定。
 - **深浅色主题**：全局主题由 `src/shared/lib/theme.ts` 统一控制在 `<html>` 标签的 `.dark` 类名上；组件内部直接使用语义化主题 Token，不要各自维护一套独立的主题状态。
 

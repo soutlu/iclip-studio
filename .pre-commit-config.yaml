@@ -41,6 +41,12 @@ repos:
         language: system
         pass_filenames: false
         files: ^web/
+      - id: web-design-guard
+        name: web design-guard
+        entry: bash -c 'cd web && node scripts/design-guard.mjs'
+        language: system
+        pass_filenames: false
+        files: ^web/src/.*\.(css|ts|tsx)$
   # pre-push：仅在推送改动涉及 Python 代码或 runtime.ref 时运行对应项目的 pyright
   # （server 依赖 plugins/video，两边改动均触发 server 检查）；其余检查由 CI 执行。
   - repo: local
