@@ -173,7 +173,7 @@ function BgmTraits({ values, onChange }: FieldsProps) {
         }
         value={values.mood}
       />
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-4">
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
         <SinglePick
           className="min-w-0 flex-1"
           field="genre"
