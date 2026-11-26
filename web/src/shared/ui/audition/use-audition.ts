@@ -11,7 +11,8 @@ type AuditionOptions = {
 /**
  * 音频试听：同一时间只放一条，所有条目共用一个播放器。
  * - `current`：当前这条的编号（在放或暂停着），`playing`：正在出声的那条（暂停、放完、放不出来时是 null）。
- * - `toggle`：没放过的从头放，是当前这条就暂停或续放；`seek` 跳到总时长的某个比例处；`retry` 放不出来时重来；
+ * - `toggle`：没放过的从头放，是当前这条就暂停或续放；`seek` 跳到总时长的某个比例处（读不到时长时按
+ *   `fallbackMs` 算）；`retry` 放不出来时重来；
  *   `stop` 停下并清掉 `current`。
  * - 组件卸掉、`active` 变成假时都停下。播放进度用 `useAuditionProgress` 单独订阅，不让整个列表跟着每帧重画。
  */
@@ -27,7 +28,7 @@ export function useAudition({ active, onError }: AuditionOptions) {
     current: current?.id ?? null,
     playing: current !== null && !paused ? current.id : null,
     toggle: (id: string, url: string) => player.toggle(id, url, onError),
-    seek: (ratio: number) => player.seek(ratio),
+    seek: (ratio: number, fallbackMs?: number) => player.seek(ratio, fallbackMs),
     retry: () => player.retry(onError),
     stop: () => player.stop(),
     player,

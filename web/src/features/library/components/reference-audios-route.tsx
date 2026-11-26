@@ -62,24 +62,41 @@ export function ReferenceAudiosRoute({ tabs, scope, onScopeChange }: ReferenceAu
   return (
     <LibraryPageShell
       attachments={
-        <DialogRoot
-          onOpenChange={(open) => {
-            if (!open) close()
-          }}
-          open={dialog !== null}
-        >
-          {dialog === null ? null : dialog.kind === 'add' ? (
-            <AddAudioDialog
-              audition={audition}
-              initialKind={scope.kind === 'all' ? 'voice' : scope.kind}
-              onDone={close}
-            />
-          ) : dialog.kind === 'edit' ? (
-            <EditAudioDialog audio={dialog.audio} key={dialog.audio.id} onDone={close} />
-          ) : (
-            <RemoveAudioDialog audio={dialog.audio} onDone={close} />
+        <>
+          {barAudio === null ? null : (
+            // 挂在滚动区的末尾：列表短时也贴着视口底边，长时滚到底停在最后一行下面，不挡住它
+            <div className="sticky bottom-5 mt-auto mb-5 flex justify-center px-4 sm:px-(--layout-list-page-gutter)">
+              <div className="w-full max-w-190">
+                <AuditionBar
+                  audition={audition}
+                  detail={audioTraitsText(barAudio)}
+                  durationMs={barAudio.durationMs}
+                  onToggle={() => audition.toggle(barAudio.id, barAudio.url)}
+                  peaks={barAudio.peaks}
+                  title={barAudio.title}
+                />
+              </div>
+            </div>
           )}
-        </DialogRoot>
+          <DialogRoot
+            onOpenChange={(open) => {
+              if (!open) close()
+            }}
+            open={dialog !== null}
+          >
+            {dialog === null ? null : dialog.kind === 'add' ? (
+              <AddAudioDialog
+                audition={audition}
+                initialKind={scope.kind === 'all' ? 'voice' : scope.kind}
+                onDone={close}
+              />
+            ) : dialog.kind === 'edit' ? (
+              <EditAudioDialog audio={dialog.audio} key={dialog.audio.id} onDone={close} />
+            ) : (
+              <RemoveAudioDialog audio={dialog.audio} onDone={close} />
+            )}
+          </DialogRoot>
+        </>
       }
       filters={
         <AudioToolbar
@@ -137,20 +154,6 @@ export function ReferenceAudiosRoute({ tabs, scope, onScopeChange }: ReferenceAu
           q={scope.q}
           traits={scope.traits}
         />
-      )}
-      {barAudio === null ? null : (
-        <div className="sticky bottom-5 mt-4 flex justify-center">
-          <div className="w-full max-w-190">
-            <AuditionBar
-              audition={audition}
-              detail={audioTraitsText(barAudio)}
-              durationMs={barAudio.durationMs}
-              onToggle={() => audition.toggle(barAudio.id, barAudio.url)}
-              peaks={barAudio.peaks}
-              title={barAudio.title}
-            />
-          </div>
-        </div>
       )}
     </LibraryPageShell>
   )

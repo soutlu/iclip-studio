@@ -103,11 +103,20 @@ export class AuditionPlayer {
     if (this.audio !== null && this.state.current !== null) this.start(this.audio, onError)
   }
 
-  /** 跳到总时长的 `ratio`（0～1）处；还没读到时长时不动。 */
-  seek(ratio: number) {
+  /**
+   * 跳到总时长的 `ratio`（0～1）处。元素还没读到有限的时长时（如没给长度的流）按 `fallbackMs` 算，
+   * 也没有就不动。
+   */
+  seek(ratio: number, fallbackMs?: number) {
     const audio = this.audio
-    if (audio === null || this.state.current === null || !Number.isFinite(audio.duration)) return
-    audio.currentTime = Math.min(1, Math.max(0, ratio)) * audio.duration
+    if (audio === null || this.state.current === null) return
+    const seconds = Number.isFinite(audio.duration)
+      ? audio.duration
+      : fallbackMs === undefined
+        ? NaN
+        : fallbackMs / 1000
+    if (!Number.isFinite(seconds)) return
+    audio.currentTime = Math.min(1, Math.max(0, ratio)) * seconds
     this.refresh()
   }
 

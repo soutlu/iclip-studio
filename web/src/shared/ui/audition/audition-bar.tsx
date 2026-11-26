@@ -75,7 +75,11 @@ export function AuditionBar({
             className="min-w-0 flex-1"
             peaks={peaks}
             progress={ratio}
-            seek={{ durationMs: totalMs, label: `播放进度：${title}`, onSeek: audition.seek }}
+            seek={{
+              durationMs: totalMs,
+              label: `播放进度：${title}`,
+              onSeek: (ratio) => audition.seek(ratio, totalMs),
+            }}
           />
           <span className="shrink-0 text-caption text-on-surface-faint tabular-nums max-sm:hidden">
             {audioDurationText(totalMs)}
