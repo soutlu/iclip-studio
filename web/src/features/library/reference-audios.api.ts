@@ -10,22 +10,69 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import {
+  latestReferenceAudiosQuery,
   referenceAudioKeys,
   referenceAudiosQuery,
+  type AudioFilterKey,
+  type AudioKind,
+  type AudioTraitFilter,
   type ReferenceAudio,
-  type ReferenceAudioFilter,
 } from '@/shared/api/reference-audios'
 
-/** 「音频库」页签的筛选：子类（null 是全部）和关键词。 */
-export type ReferenceAudioScope = ReferenceAudioFilter
+/** 「音频库」页签：某个子类，或「全部」（分三段各列最新几条）。 */
+export type ReferenceAudioTab = AudioKind | 'all'
 
-export const DEFAULT_REFERENCE_AUDIO_SCOPE: ReferenceAudioScope = { audioKind: null, q: '' }
+/** 「音频库」页签的筛选：页签、关键词和属性（只用得上当前子类的那几项）。 */
+export type ReferenceAudioScope = { kind: ReferenceAudioTab; q: string; traits: AudioTraitFilter }
+
+export const DEFAULT_REFERENCE_AUDIO_SCOPE: ReferenceAudioScope = {
+  kind: 'voice',
+  q: '',
+  traits: {},
+}
+
+/** 各子类能按哪几项属性筛，按工具行上的先后。 */
+export const AUDIO_KIND_FILTERS = {
+  voice: ['locale', 'scenario', 'gender', 'age'],
+  bgm: ['mood', 'genre', 'tempo'],
+  sfx: ['sfxCategory'],
+} as const satisfies Record<AudioKind, readonly AudioFilterKey[]>
+
+/** 只留 `kind` 用得上的属性筛选，去掉空的；「全部」不按属性筛。 */
+export const traitsFor = (kind: ReferenceAudioTab, traits: AudioTraitFilter): AudioTraitFilter => {
+  if (kind === 'all') return {}
+  const kept: AudioTraitFilter = {}
+  for (const key of AUDIO_KIND_FILTERS[kind]) {
+    const values = traits[key]
+    if (values !== undefined && values.length > 0) Object.assign(kept, { [key]: values })
+  }
+  return kept
+}
+
+/** 「全部」里每段只列最新几条。 */
+export const LATEST_PER_KIND = 5
 
 export type ReferenceAudioDraft = Omit<z.input<typeof zReferenceAudioCreateIn>, 'uploadId'>
 export type ReferenceAudioChange = z.input<typeof zReferenceAudioUpdateIn>
 
-export const useReferenceAudios = (scope: ReferenceAudioScope) =>
-  useInfiniteQuery({ ...referenceAudiosQuery(scope), gcTime: 30 * 60_000 })
+/** 某个子类的列表，按关键词和属性筛，往下滚接着读。 */
+export const useReferenceAudios = (kind: AudioKind, q: string, traits: AudioTraitFilter) =>
+  useInfiniteQuery({
+    ...referenceAudiosQuery({ audioKind: kind, q, ...traitsFor(kind, traits) }),
+    gcTime: 30 * 60_000,
+  })
+
+/** 「全部」的三段：各子类按关键词匹配的最新几条和总条数，按音色、配乐、音效的先后。 */
+export const useLatestReferenceAudios = (q: string) => {
+  const voice = useQuery(latestReferenceAudiosQuery({ audioKind: 'voice', q }, LATEST_PER_KIND))
+  const bgm = useQuery(latestReferenceAudiosQuery({ audioKind: 'bgm', q }, LATEST_PER_KIND))
+  const sfx = useQuery(latestReferenceAudiosQuery({ audioKind: 'sfx', q }, LATEST_PER_KIND))
+  return [
+    { kind: 'voice', query: voice },
+    { kind: 'bgm', query: bgm },
+    { kind: 'sfx', query: sfx },
+  ] as const
+}
 
 /** 各子类有几条（没有的是 0）。 */
 export const useReferenceAudioFilters = () =>
@@ -61,7 +108,7 @@ export const useAddReferenceAudio = () => {
   })
 }
 
-/** 改标题、备注、语种、台词：只发改了的，清空的发 null。 */
+/** 改名称、描述、台词和属性：只发改了的，清空的发 null（场景发 []）。 */
 export const useUpdateReferenceAudio = () => {
   const invalidate = useInvalidate()
   return useMutation({

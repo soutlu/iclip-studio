@@ -11,10 +11,14 @@ import {
   type LibraryScope,
   type LibraryTab,
   type ReferenceAudioScope,
+  traitsFor,
   type ReferenceScope,
   type WholeFilmScope,
 } from '@/features/library'
-import { zReferenceAudioOut } from '@/shared/api/generated/zod.gen'
+import {
+  zListReferenceAudiosReferencesAudiosGetQuery,
+  zReferenceAudioOut,
+} from '@/shared/api/generated/zod.gen'
 import {
   dateRangeFromSearch,
   dateRangeSearchFields,
@@ -23,6 +27,20 @@ import {
 
 const zLibraryTab = z.enum(LIBRARY_TAB_VALUES)
 
+const audioQuery = zListReferenceAudiosReferencesAudiosGetQuery.shape
+
+/** 音频库的属性筛选：可重复的数组参数，取值同列表接口。 */
+const audioTraitParams = {
+  locale: audioQuery.locale.unwrap().unwrap().optional().catch(undefined),
+  gender: audioQuery.gender.unwrap().unwrap().optional().catch(undefined),
+  age: audioQuery.age.unwrap().unwrap().optional().catch(undefined),
+  scenario: audioQuery.scenario.unwrap().unwrap().optional().catch(undefined),
+  mood: audioQuery.mood.unwrap().unwrap().optional().catch(undefined),
+  genre: audioQuery.genre.unwrap().unwrap().optional().catch(undefined),
+  tempo: audioQuery.tempo.unwrap().unwrap().optional().catch(undefined),
+  sfxCategory: audioQuery.sfxCategory.unwrap().unwrap().optional().catch(undefined),
+}
+
 export const librarySearchSchema = z.object({
   ...dateRangeSearchFields,
   tab: zLibraryTab.optional().catch(undefined),
@@ -30,7 +48,12 @@ export const librarySearchSchema = z.object({
   q: z.string().max(100).optional().catch(undefined),
   userName: z.string().min(1).optional().catch(undefined),
   tags: z.array(z.uuid()).min(1).optional().catch(undefined),
-  audioKind: zReferenceAudioOut.shape.audioKind.optional().catch(undefined),
+  // 音频库页签：不写是音色，「全部」写成 all
+  audioKind: z
+    .union([zReferenceAudioOut.shape.audioKind, z.literal('all')])
+    .optional()
+    .catch(undefined),
+  ...audioTraitParams,
   video: z.uuid().optional().catch(undefined),
   version: z.uuid().optional().catch(undefined),
   reference: z.uuid().optional().catch(undefined),
@@ -86,17 +109,34 @@ export function searchFromReferenceScope(scope: ReferenceScope): LibrarySearch {
   }
 }
 
-export const referenceAudioScopeFromSearch = (search: LibrarySearch): ReferenceAudioScope => ({
-  audioKind: search.audioKind ?? DEFAULT_REFERENCE_AUDIO_SCOPE.audioKind,
-  q: search.q ?? DEFAULT_REFERENCE_AUDIO_SCOPE.q,
-})
+export function referenceAudioScopeFromSearch(search: LibrarySearch): ReferenceAudioScope {
+  const kind = search.audioKind ?? DEFAULT_REFERENCE_AUDIO_SCOPE.kind
+  const { locale, gender, age, scenario, mood, genre, tempo, sfxCategory } = search
+  return {
+    kind,
+    q: search.q ?? DEFAULT_REFERENCE_AUDIO_SCOPE.q,
+    traits: traitsFor(kind, { locale, gender, age, scenario, mood, genre, tempo, sfxCategory }),
+  }
+}
+
+const listOrUndefined = <T>(values: readonly T[] | undefined) =>
+  values === undefined || values.length === 0 ? undefined : [...values]
 
 export function searchFromReferenceAudioScope(scope: ReferenceAudioScope): LibrarySearch {
   const q = scope.q.trim()
+  const traits = traitsFor(scope.kind, scope.traits)
   return {
-    audioKind: scope.audioKind ?? undefined,
+    age: listOrUndefined(traits.age),
+    audioKind: scope.kind === DEFAULT_REFERENCE_AUDIO_SCOPE.kind ? undefined : scope.kind,
+    gender: listOrUndefined(traits.gender),
+    genre: listOrUndefined(traits.genre),
+    locale: listOrUndefined(traits.locale),
+    mood: listOrUndefined(traits.mood),
     q: q === '' ? undefined : q,
+    scenario: listOrUndefined(traits.scenario),
+    sfxCategory: listOrUndefined(traits.sfxCategory),
     tab: 'audios',
+    tempo: listOrUndefined(traits.tempo),
   }
 }
 
