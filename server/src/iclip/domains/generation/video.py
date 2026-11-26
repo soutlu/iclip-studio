@@ -12,6 +12,7 @@ import structlog
 from iclip.common.urls import is_http_url
 from iclip.domains.generation.model_groups import ModelGroups
 from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.processing import EditReferenceCutter
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -23,6 +24,7 @@ from iclip.domains.generation.schemas import (
     DRAFT_TASK_FIELD,
     NOT_FORWARDED_FIELDS,
     VideoDraftCompletionRequest,
+    VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
 )
@@ -59,10 +61,12 @@ class HttpVideoProvider:
         settings: VideoProviderSettings,
         *,
         model_groups: ModelGroups,
+        edit_references: EditReferenceCutter,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
         self._model_groups = model_groups
+        self._edit_references = edit_references
         self._transport = transport
 
     @property
@@ -99,6 +103,8 @@ class HttpVideoProvider:
             url = self._settings.draft_complete_url
             payload = request.model_dump(include=set(_DRAFT_COMPLETE_FIELDS))
         else:
+            if isinstance(request, VideoEditRequest) and request.reference_video_urls:
+                await self._edit_references.cut(job, request)
             url = self._settings.submit_url
             payload = _with_model(
                 request.model_dump(exclude_none=True, exclude=set(NOT_FORWARDED_FIELDS)),

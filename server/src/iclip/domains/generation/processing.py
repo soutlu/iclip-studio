@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
@@ -10,6 +11,7 @@ import httpx
 import structlog
 
 from iclip.domains.generation.models import GenerationJob
+from iclip.domains.generation.ports import RemoteMediaProbe
 from iclip.domains.generation.provider import (
     ProviderError,
     ProviderProgress,
@@ -23,6 +25,7 @@ from iclip.domains.generation.schemas import (
     ClipStage,
     ComposeSegment,
     VideoComposeRequest,
+    VideoEditRequest,
 )
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.errors import MediaError
@@ -63,80 +66,56 @@ def _stage_reporter(report_stage: ReportStage, job_id: uuid.UUID) -> _Report:
     return report
 
 
-async def _store(object_store: PublicObjectStore, key: str, content: bytes) -> str:
-    try:
-        return await object_store.put_public_object(
-            object_key=key, content=content, content_type=_CONTENT_TYPE
-        )
-    except ObjectStoreUnavailable as exc:
-        raise ProviderError(
-            f"视频加工完了但存不进桶: {exc}",
-            code="OUTPUT_STORE_FAILED",
-            retryable=False,
-        ) from exc
+class LocalClipProcessor:
+    """本机视频加工：按片段列表取素材、按原片画幅帧率切拼重编码、存进桶里。
 
+    合成与编辑段切参考片段共用这一个实例，同时在跑的加工（下载、编码、读产物、上传整段）
+    不超过 ``concurrency``。
+    """
 
-class FfmpegComposeProvider:
     def __init__(
         self,
         *,
         object_store: PublicObjectStore,
-        report_stage: ReportStage,
         codec: MediaCodec,
         fetch_url: Callable[[str], str],
+        concurrency: int,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._object_store = object_store
-        self._report_stage = report_stage
         self._codec = codec
         self._fetch_url = fetch_url
         self._transport = transport
+        self._slots = asyncio.Semaphore(concurrency)
 
-    @property
-    def name(self) -> str:
-        return PROVIDER_NAME
+    async def render(
+        self, segments: Sequence[ComposeSegment], *, object_key: str, report: _Report
+    ) -> tuple[str, int]:
+        """把 ``segments`` 依次切拼成一条视频存到 ``object_key``，返回公网地址与实测时长（毫秒）。
 
-    async def submit(self, job: GenerationJob) -> ProviderSubmission:
-        report = _stage_reporter(self._report_stage, job.id)
-        request = request_of(job, VideoComposeRequest, provider=PROVIDER_NAME)
-        content, duration_ms = await self._render_composite(request, report)
-        await report(CLIP_UPLOADING)
-        url = await _store(
-            self._object_store, MEDIA_PATHS.video_master(job_id=job.id, ext=_EXT), content
-        )
-        return ProviderSubmission(
-            provider_task_id=str(job.id),
-            provider_status="completed",
-            output_url=url,
-            duration_ms=duration_ms,
-        )
+        取不到素材报 ``MEDIA_SOURCE_UNREACHABLE``，加工失败报 ``MEDIA_PROCESS_FAILED``，存不进桶报
+        ``OUTPUT_STORE_FAILED``，都不可重试。
+        """
 
-    async def poll(self, job: GenerationJob) -> ProviderProgress:
-        raise ProviderError(
-            "本地视频加工是同步的，没有轮询阶段",
-            code="PROVIDER_POLL_UNSUPPORTED",
-            retryable=False,
-        )
-
-    async def _render_composite(
-        self, request: VideoComposeRequest, report: _Report
-    ) -> tuple[bytes, int]:
-        with TemporaryDirectory(prefix="iclip-clip-") as tmp:
-            root = Path(tmp)
-            dest = root / f"out.{_EXT}"
-            await report(CLIP_FETCHING)
-            sources = await self._fetch([segment.url for segment in request.segments], root)
-            try:
-                cuts = await _cuts(request.segments, sources)
-                profile = await _target_profile(cuts)
-                await report(CLIP_PROCESSING)
-                await cut_concat(cuts, profile=profile, dest=dest, codec=self._codec)
-                duration_ms = await probe_duration_ms(dest)
-            except MediaError as exc:
-                raise ProviderError(
-                    f"视频加工失败: {exc}", code="MEDIA_PROCESS_FAILED", retryable=False
-                ) from exc
-            return dest.read_bytes(), duration_ms
+        async with self._slots:
+            with TemporaryDirectory(prefix="iclip-clip-") as tmp:
+                root = Path(tmp)
+                dest = root / f"out.{_EXT}"
+                await report(CLIP_FETCHING)
+                sources = await self._fetch([segment.url for segment in segments], root)
+                try:
+                    cuts = await _cuts(segments, sources)
+                    profile = await _target_profile(cuts)
+                    await report(CLIP_PROCESSING)
+                    await cut_concat(cuts, profile=profile, dest=dest, codec=self._codec)
+                    duration_ms = await probe_duration_ms(dest)
+                except MediaError as exc:
+                    raise ProviderError(
+                        f"视频加工失败: {exc}", code="MEDIA_PROCESS_FAILED", retryable=False
+                    ) from exc
+                content = dest.read_bytes()
+            await report(CLIP_UPLOADING)
+            return await self._store(object_key, content), duration_ms
 
     async def _fetch(self, urls: Sequence[str], root: Path) -> dict[str, Path]:
         fetched: dict[str, Path] = {}
@@ -155,6 +134,102 @@ class FfmpegComposeProvider:
                     ) from exc
                 fetched[url] = target
         return fetched
+
+    async def _store(self, key: str, content: bytes) -> str:
+        try:
+            return await self._object_store.put_public_object(
+                object_key=key, content=content, content_type=_CONTENT_TYPE
+            )
+        except ObjectStoreUnavailable as exc:
+            raise ProviderError(
+                f"视频加工完了但存不进桶: {exc}",
+                code="OUTPUT_STORE_FAILED",
+                retryable=False,
+            ) from exc
+
+
+class FfmpegComposeProvider:
+    def __init__(self, processor: LocalClipProcessor, *, report_stage: ReportStage) -> None:
+        self._processor = processor
+        self._report_stage = report_stage
+
+    @property
+    def name(self) -> str:
+        return PROVIDER_NAME
+
+    async def submit(self, job: GenerationJob) -> ProviderSubmission:
+        request = request_of(job, VideoComposeRequest, provider=PROVIDER_NAME)
+        url, duration_ms = await self._processor.render(
+            request.segments,
+            object_key=MEDIA_PATHS.video_master(job_id=job.id, ext=_EXT),
+            report=_stage_reporter(self._report_stage, job.id),
+        )
+        return ProviderSubmission(
+            provider_task_id=str(job.id),
+            provider_status="completed",
+            output_url=url,
+            duration_ms=duration_ms,
+        )
+
+    async def poll(self, job: GenerationJob) -> ProviderProgress:
+        raise ProviderError(
+            "本地视频加工是同步的，没有轮询阶段",
+            code="PROVIDER_POLL_UNSUPPORTED",
+            retryable=False,
+        )
+
+
+class EditReferenceCutter:
+    """编辑段交上游之前，从基底产物上按替换区间精确切出参考片段，存到这条编辑段固定的地址。
+
+    切的是 ``[range_start_ms, min(range_end_ms, 基底时长))``，画幅帧率沿用基底。
+    """
+
+    def __init__(
+        self,
+        processor: LocalClipProcessor,
+        *,
+        report_stage: ReportStage,
+        record_of: Callable[[uuid.UUID], Awaitable[GenerationJob]],
+        media_probe: RemoteMediaProbe,
+    ) -> None:
+        self._processor = processor
+        self._report_stage = report_stage
+        self._record_of = record_of
+        self._media_probe = media_probe
+
+    async def cut(self, job: GenerationJob, request: VideoEditRequest) -> None:
+        if job.source_job_id is None:
+            raise RuntimeError(f"编辑段 {job.id} 没有基底")
+        base = await self._record_of(job.source_job_id)
+        url = base.output.url
+        if url is None:
+            raise ProviderError(
+                f"基底 {base.id} 没有产物地址，取不到要加工的素材",
+                code="MEDIA_SOURCE_UNREACHABLE",
+                retryable=False,
+            )
+        base_ms = base.output.duration_ms
+        if base_ms is None:
+            try:
+                base_ms = await self._media_probe.duration_ms(url)
+            except MediaError as exc:
+                raise ProviderError(
+                    f"取不到要加工的素材: {exc}",
+                    code="MEDIA_SOURCE_UNREACHABLE",
+                    retryable=False,
+                ) from exc
+        segment = ComposeSegment(
+            source_job_id=base.id,
+            url=url,
+            start=request.range_start_ms / 1000,
+            end=min(request.range_end_ms, base_ms) / 1000,
+        )
+        await self._processor.render(
+            [segment],
+            object_key=MEDIA_PATHS.edit_reference(job_id=job.id),
+            report=_stage_reporter(self._report_stage, job.id),
+        )
 
 
 async def _cuts(segments: Sequence[ComposeSegment], sources: Mapping[str, Path]) -> list[MediaCut]:
@@ -191,6 +266,8 @@ async def _target_profile(cuts: Sequence[MediaCut]) -> VideoProfile:
 
 __all__ = [
     "PROVIDER_NAME",
+    "EditReferenceCutter",
     "FfmpegComposeProvider",
+    "LocalClipProcessor",
     "ReportStage",
 ]

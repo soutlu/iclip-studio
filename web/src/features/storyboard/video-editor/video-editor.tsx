@@ -356,7 +356,6 @@ function Editor({
   const shotSpan =
     range === undefined || shots === undefined ? undefined : coveredSpan(shots, range)
   const sourcePreview = range !== undefined && preview === 'source'
-  const referenceClips = range === undefined ? [] : [{ mediaUrl, ...range }]
   const selectedDuration = range === undefined ? 0 : range.end - range.start
 
   const generationBlockOf = (referenceImageCount: number) =>
@@ -599,8 +598,7 @@ function Editor({
         conversationId,
         taskId: root.taskId,
         sourceJobId: root.id,
-        generation:
-          mode === 'image' ? { mode, seconds: chosen.imageSeconds } : { mode, referenceClips },
+        generation: mode === 'image' ? { mode, seconds: chosen.imageSeconds } : { mode },
         range,
         model: chosen.model,
         prompt: text.trim(),

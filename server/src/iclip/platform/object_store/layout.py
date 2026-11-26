@@ -26,6 +26,9 @@ class MediaPaths:
     def video_master(self, *, job_id: uuid.UUID, ext: str) -> str:
         return f"{OSS_ROOT}/video-masters/{job_id}.{ext}"
 
+    def edit_reference(self, *, job_id: uuid.UUID) -> str:
+        return f"{OSS_ROOT}/edit-references/{job_id}.mp4"
+
     def whole_film(self, *, job_id: uuid.UUID) -> str:
         return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 

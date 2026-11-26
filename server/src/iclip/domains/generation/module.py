@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Final
 
 import httpx
@@ -21,7 +22,12 @@ from iclip.domains.generation.models import STATUS_SUBMITTING
 from iclip.domains.generation.music import MUSIC_MODEL, QwenMusicProvider
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
 from iclip.domains.generation.ports import ConversationLineage, ReferenceAssets
-from iclip.domains.generation.processing import FfmpegComposeProvider, ReportStage
+from iclip.domains.generation.processing import (
+    EditReferenceCutter,
+    FfmpegComposeProvider,
+    LocalClipProcessor,
+    ReportStage,
+)
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
     GenerationQueue,
@@ -49,6 +55,7 @@ from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSetti
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.probe import probe_remote_duration_ms
+from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import PublicObjectStore
 
 
@@ -99,6 +106,7 @@ def build_generation_module(
     image_text_to_image_task: str,
     image_edit_task: str,
     object_store: PublicObjectStore,
+    public_url: Callable[[str], str],
     queue_connector: procrastinate.BaseConnector,
     media_codec: MediaCodec,
     fetch_url: Callable[[str], str],
@@ -125,10 +133,25 @@ def build_generation_module(
         raise RuntimeError("高清版（超分）的提交地址与模型规格须同时配置，缺一不可")
     settings = queue_settings or GenerationQueueSettings()
     report_stage = _clip_stage_reporter(repo)
-    video_provider = HttpVideoProvider(video, model_groups=model_groups, transport=video_transport)
-    compose_provider = FfmpegComposeProvider(
-        object_store=object_store, report_stage=report_stage, codec=media_codec, fetch_url=fetch_url
+    media_probe = _FetchingProbe(fetch_url)
+    processor = LocalClipProcessor(
+        object_store=object_store,
+        codec=media_codec,
+        fetch_url=fetch_url,
+        concurrency=settings.compose_concurrency,
     )
+    video_provider = HttpVideoProvider(
+        video,
+        model_groups=model_groups,
+        edit_references=EditReferenceCutter(
+            processor,
+            report_stage=report_stage,
+            record_of=partial(repo.get, owner=None),
+            media_probe=media_probe,
+        ),
+        transport=video_transport,
+    )
+    compose_provider = FfmpegComposeProvider(processor, report_stage=report_stage)
 
     image_providers = [
         _image_provider(
@@ -212,7 +235,8 @@ def build_generation_module(
         image_default_model=image_default_model,
         clear_completion=clear_completion,
         lineage=lineage,
-        media_probe=_FetchingProbe(fetch_url),
+        media_probe=media_probe,
+        edit_reference_url=lambda job_id: public_url(MEDIA_PATHS.edit_reference(job_id=job_id)),
         references=references,
         subtitles=subtitle_target,
         dubbing_provider=dubbing_target,

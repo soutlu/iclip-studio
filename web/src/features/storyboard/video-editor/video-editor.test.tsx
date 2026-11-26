@@ -17,7 +17,6 @@ import { draftStorageKey } from './use-draft'
 import { VideoEditor } from './video-editor'
 
 const files = vi.hoisted(() => new Map<string, { keyframes: number[]; duration: number }>())
-const referenceSamples = vi.hoisted(() => [] as { url: string; start: number; end: number }[])
 type HeldRead = {
   promise: Promise<null>
   resolve: (track: null) => void
@@ -30,59 +29,10 @@ const audioReads = vi.hoisted(() => ({
 
 vi.mock('mediabunny', async () => {
   const { createMediaReaderMock } = await import('@/testing/media-reader')
-  class BufferTarget {
-    buffer: ArrayBuffer | null = null
-  }
-  class Mp4OutputFormat {}
-  class Output {
-    readonly target: BufferTarget
-    state = 'pending'
-    constructor(options: { target: BufferTarget }) {
-      this.target = options.target
-    }
-    addVideoTrack = () => {}
-    start = () => Promise.resolve()
-    finalize = () => {
-      this.target.buffer = new ArrayBuffer(8)
-      this.state = 'finalized'
-      return Promise.resolve()
-    }
-    cancel = () => Promise.resolve()
-  }
-  class Quality {}
-  class VideoSampleSource {
-    add = () => Promise.resolve()
-    close = () => {}
-  }
-  class VideoSampleSink {
-    private readonly url: string
-    constructor(track: { url: string }) {
-      this.url = track.url
-    }
-    async *samples(start: number, end: number) {
-      referenceSamples.push({ url: this.url, start, end })
-      yield {
-        timestamp: start,
-        duration: end - start,
-        setTimestamp: () => {},
-        setDuration: () => {},
-        close: () => {},
-      }
-    }
-  }
-  return {
-    ...createMediaReaderMock(files, (url) => {
-      audioReads.opened.push(url)
-      return audioReads.held.get(url)?.promise ?? Promise.resolve(null)
-    }),
-    BufferTarget,
-    Quality,
-    VideoSampleSink,
-    VideoSampleSource,
-    canEncodeVideo: () => Promise.resolve(true),
-    Mp4OutputFormat,
-    Output,
-  }
+  return createMediaReaderMock(files, (url) => {
+    audioReads.opened.push(url)
+    return audioReads.held.get(url)?.promise ?? Promise.resolve(null)
+  })
 })
 
 const CONVERSATION = 'conversation-1'
@@ -283,7 +233,6 @@ afterEach(() => {
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
   files.clear()
-  referenceSamples.length = 0
   for (const held of audioReads.held.values()) held.resolve(null)
   audioReads.held.clear()
   audioReads.opened.length = 0
@@ -669,8 +618,7 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(generateButton()).toBeEnabled())
     await user.click(generateButton())
     await waitFor(() => expect(submitted).toHaveLength(1))
-    expect(submitted[0]).toMatchObject({ range_start_ms: 700, range_end_ms: 2500 })
-    expect(referenceSamples).toEqual([{ url: ossRoot, start: 0.7, end: 2.5 }])
+    expect(submitted[0]).toMatchObject({ mode: 'edit', range_start_ms: 700, range_end_ms: 2500 })
   })
 
   it('拖选区把手期间卡上的首帧、尾帧停在按下时那一帧，松手后换成新的起止', async () => {
@@ -832,9 +780,9 @@ describe('AI 改段的弹出卡', () => {
     try {
       await waitFor(() => expect(submitted).toHaveLength(1))
       expect(submitted[0]).toMatchObject({
+        mode: 'image',
         model: 'vendor-a-seedance-2-5-flash',
         seconds: 4,
-        reference_video_urls: [],
       })
       expect(duration().closest('[aria-disabled]')).toHaveAttribute('aria-disabled', 'true')
       fireEvent.keyDown(duration(), { key: 'End' })
@@ -883,9 +831,8 @@ describe('AI 改段的弹出卡', () => {
     await waitFor(() => expect(submitted).toHaveLength(1))
     expect(submitted[0]?.['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
     expect(submitted[0]?.['prompt']).toBe('人物转身')
-    expect(submitted[0]?.['reference_video_urls']).toEqual([])
+    expect(submitted[0]?.['mode']).toBe('image')
     expect(submitted[0]?.['source_job_id']).toBe(ROOT_ID)
-    expect(referenceSamples).toEqual([])
     await waitFor(() => expect(generateButton()).toBeEnabled())
 
     await user.click(await shot(3))
@@ -902,7 +849,7 @@ describe('AI 改段的弹出卡', () => {
       `${sourceUrl}?x-oss-process=video/snapshot,t_2000,f_jpg,w_1280,h_0`,
     ])
     expect(submitted[1]?.['prompt']).toBe('人物走开')
-    expect(submitted[1]?.['reference_video_urls']).toEqual([])
+    expect(submitted[1]?.['mode']).toBe('image')
   })
 
   it.each([
@@ -1068,7 +1015,7 @@ describe('AI 改段的弹出卡', () => {
     expect(submitted[0]?.['prompt']).toMatch(/^@Image1@Image2@Image3\s+调整灯光$/)
     const uploaded = expect.stringMatching(/\/mock-oss\//) as unknown
     expect(submitted[0]?.['reference_image_urls']).toEqual([uploaded, uploaded, uploaded])
-    expect(submitted[0]?.['reference_video_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
+    expect(submitted[0]?.['mode']).toBe('edit')
   })
 
   it.each(['图生', '编辑'] as const)(
@@ -1193,7 +1140,7 @@ describe('AI 改段的弹出卡', () => {
     },
   )
 
-  it('草稿里选用了编辑段时，参考片段仍只从原片上取选区那一段', async () => {
+  it('草稿里选用了编辑段时，编辑仍按原片上的选区提交', async () => {
     storeWholeEdit()
     serveChain([editSegment({ id: EDIT_ID })])
     const submitted: Record<string, unknown>[] = []
@@ -1220,8 +1167,12 @@ describe('AI 改段的弹出卡', () => {
     await user.click(generateButton())
 
     await waitFor(() => expect(submitted).toHaveLength(1))
-    expect(submitted[0]).toMatchObject({ range_start_ms: 1000, range_end_ms: 4000 })
-    expect(referenceSamples).toEqual([{ url: ROOT_URL, start: 1, end: 4 }])
+    expect(submitted[0]).toMatchObject({
+      mode: 'edit',
+      source_job_id: ROOT_ID,
+      range_start_ms: 1000,
+      range_end_ms: 4000,
+    })
   })
 
   it('多次复制镜头提示词依次追加，保留已有文字和参考图，浮窗保持打开', async () => {

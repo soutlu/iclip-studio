@@ -15,9 +15,6 @@ export const resetMockUploads = () => {
   ledger.clear()
 }
 
-export const isMockVideoUpload = (url: string): boolean =>
-  confirmedUploads.get(url)?.startsWith('video/') ?? false
-
 export const mockConfirmedUpload = (
   uploadId: string,
 ): { url: string; contentType: string; body: ArrayBuffer | undefined } | undefined => {

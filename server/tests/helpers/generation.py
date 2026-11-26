@@ -77,6 +77,7 @@ from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
 from iclip.platform.media.codec import SOFTWARE
 from iclip.platform.media.errors import MediaError
+from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import StoredObject
 from tests.helpers.app import OBJECT_STORE_KEYS, TEST_OBJECT_STORE, make_runtime_config
 from tests.helpers.fetch_url import as_is
@@ -126,7 +127,7 @@ def edit_request(**overrides: Any) -> VideoEditRequest:
         "prompt": "一只猫跳上窗台",
         "user_name": "logan",
         "seconds": -1,
-        "reference_video_urls": ["https://cdn.test/iclip/agent/uploads/clip.mp4"],
+        "reference_video_urls": ["https://cdn.test/iclip/agent/edit-references/clip.mp4"],
         "range_start_ms": 1000,
         "range_end_ms": 4000,
     }
@@ -751,6 +752,7 @@ def film_image_service(
     *,
     image_models: Sequence[str] = ("nano_banana_pro", "gpt-image-2.5"),
 ) -> GenerationService:
+    store = MemoryObjectStore()
     return build_generation_module(
         repo,
         act_as=ActAs(InMemoryUserRepository()),
@@ -771,7 +773,8 @@ def film_image_service(
         image_env="test",
         image_text_to_image_task="text-to-image",
         image_edit_task="image-edit",
-        object_store=MemoryObjectStore(),
+        object_store=store,
+        public_url=store.public_url,
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
         fetch_url=as_is,
@@ -797,23 +800,18 @@ class FixedLineage:
 
 
 class FakeReferenceAssets:
-    """参考资产与上传的替身：只认给定的参考片段地址、资料库 id、音色与（属主, 上传 id）的音频上传。"""
+    """参考资产与上传的替身：只认给定的资料库 id、音色与（属主, 上传 id）的音频上传。"""
 
     def __init__(
         self,
-        usable: Collection[str] = (),
         *,
         listed: Collection[uuid.UUID] = (),
         voices: Mapping[uuid.UUID, VoiceSample] | None = None,
         audio_uploads: Mapping[tuple[uuid.UUID, uuid.UUID], str] | None = None,
     ) -> None:
-        self._usable = frozenset(usable)
         self._listed = frozenset(listed)
         self._voices = dict(voices or {})
         self._audio_uploads = dict(audio_uploads or {})
-
-    async def usable_clip(self, principal: Principal, url: str) -> bool:
-        return url in self._usable
 
     async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
         return tuple(one for one in reference_ids if one not in self._listed)
@@ -878,6 +876,12 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}"
 
 
+def edit_reference_url(job_id: uuid.UUID) -> str:
+    """默认 ``MemoryObjectStore`` 桶里这条编辑段参考片段的公网地址。"""
+
+    return MemoryObjectStore().public_url(MEDIA_PATHS.edit_reference(job_id=job_id))
+
+
 async def plant_old_job(engine: AsyncEngine, job: GenerationJob) -> uuid.UUID:
     """在迁移到较早版本的库上种一条生成记录，只写基线就有的列。
 
@@ -920,6 +924,7 @@ __all__ = [
     "build_queue",
     "compose_request",
     "config_with_media",
+    "edit_reference_url",
     "edit_request",
     "film_image_service",
     "image_request",

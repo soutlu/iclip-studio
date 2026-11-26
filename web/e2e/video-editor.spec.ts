@@ -105,36 +105,6 @@ const submitEdit = async (page: Page, dialog: Locator) => {
   return { body: sent.postDataJSON() as Record<string, unknown>, editId: accepted.generation.id }
 }
 
-const holdReferenceUpload = async (page: Page) => {
-  await page.evaluate(() => {
-    const OriginalRequest = XMLHttpRequest
-    const pending: (() => void)[] = []
-    class GatedRequest extends OriginalRequest {
-      private storagePut = false
-
-      override open(method: string, url: string | URL) {
-        this.storagePut = method === 'PUT' && String(url).includes('/mock-oss/')
-        super.open(method, url)
-      }
-
-      override send(body?: Document | XMLHttpRequestBodyInit | null) {
-        if (this.storagePut) pending.push(() => super.send(body))
-        else super.send(body)
-      }
-    }
-    window.XMLHttpRequest = GatedRequest
-    window.addEventListener(
-      'release-reference-upload',
-      () => {
-        window.XMLHttpRequest = OriginalRequest
-        pending.forEach((send) => send())
-      },
-      { once: true },
-    )
-  })
-  return () => page.evaluate(() => window.dispatchEvent(new Event('release-reference-upload')))
-}
-
 const expectCard = async (dialog: Locator, title: string, detail: string) => {
   await expect(card(dialog).getByText(title, { exact: true })).toBeVisible()
   await expect(card(dialog).getByText(detail, { exact: true })).toBeVisible()
@@ -173,15 +143,16 @@ test('编辑一段：选镜头生成，结果在编辑轨上按关键帧切段�
   const { body, editId } = await submitEdit(page, dialog)
   const baseJobId = new URL(page.url()).searchParams.get('video')
   expect(body).toMatchObject({
+    mode: 'edit',
     source_job_id: baseJobId,
     range_start_ms: 1000,
     range_end_ms: 3000,
-    reference_video_urls: [expect.stringMatching(/\/mock-oss\//)],
     model: 'wan3.0-video',
     prompt: '换成黄昏的暖光，逆光打在人和滑板上，动作和机位不变，色调参考@Image1',
-    seconds: -1,
     reference_image_urls: [expect.stringMatching(/\/mock-oss\//)],
   })
+  expect(body).not.toHaveProperty('seconds')
+  expect(body).not.toHaveProperty('reference_video_urls')
 
   await expect(lane(dialog).getByRole('button', { name: '镜头 2–3 · 生成中' })).toBeVisible()
   const partName = (seg: number) => `镜头 2–3 的编辑片段 · 第 ${seg} 段 · 1.0 秒`
@@ -534,8 +505,8 @@ test('图生和编辑按模型分别校验时长，图生 1 张图作首帧时�
     prompt: '人物转身',
     range_start_ms: 1000,
     range_end_ms: 2000,
+    mode: 'image',
     seconds: 30,
-    reference_video_urls: [],
   })
   expect(body['reference_image_urls']).toEqual([expect.stringMatching(/\/mock-oss\//)])
   await expect(requestBox(dialog).getByText('人物造型.png')).toBeVisible()
@@ -580,8 +551,8 @@ test('提交尚未受理时刷新会出现浏览器原生离开提示', async ({
   const dialog = await openEditor(page)
   await waitForShots(dialog)
   await shot(dialog, 2).click()
-  await requestBox(dialog).fill('等待上传期间刷新')
-  await holdReferenceUpload(page)
+  await requestBox(dialog).fill('等待受理期间刷新')
+  await pauseMockResponses(page, '/api/generations/video-edits')
   await generateButton(dialog).click()
   await expect(card(dialog).getByRole('button', { name: '正在提交', exact: true })).toBeVisible()
   const leave = page.waitForEvent('dialog')

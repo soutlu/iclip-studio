@@ -189,6 +189,7 @@ def _module(
         image_text_to_image_task="text-to-image",
         image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
+        public_url=MemoryObjectStore().public_url,
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
         fetch_url=as_is,
@@ -235,6 +236,7 @@ async def _make_everything(
     edit = await module.service.submit_video_edit(
         principal,
         VideoEditIn(
+            mode="image",
             source_job_id=take.id,
             conversation_id=CONVERSATION,
             range_start_ms=0,

@@ -91,12 +91,6 @@ class InMemoryUploadRepository:
         ]
         return min(found, key=lambda row: (row.created_at, row.id), default=None)
 
-    async def owned_video_at(self, owner: uuid.UUID, url: str) -> bool:
-        return any(
-            row.kind == "video" and row.owner_user_id == owner and row.url == url
-            for row in self.rows.values()
-        )
-
     async def list_in_conversation(
         self,
         conversation_id: uuid.UUID,

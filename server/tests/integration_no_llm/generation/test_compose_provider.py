@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 import pytest
 
-from iclip.domains.generation.processing import FfmpegComposeProvider
+from iclip.domains.generation.processing import FfmpegComposeProvider, LocalClipProcessor
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
 from iclip.platform.media.codec import SOFTWARE, MediaCodec
@@ -87,11 +87,14 @@ async def _compose(
 ) -> tuple[str, bytes]:
     store = MemoryObjectStore()
     provider = FfmpegComposeProvider(
-        object_store=store,
+        LocalClipProcessor(
+            object_store=store,
+            codec=codec,
+            fetch_url=fetch_url,
+            concurrency=1,
+            transport=_client(sources),
+        ),
         report_stage=(stages or _Stages()).report,
-        codec=codec,
-        fetch_url=fetch_url,
-        transport=_client(sources),
     )
     submission = await provider.submit(
         make_job(compose_request(segments=segments), provider="ffmpeg")
@@ -319,11 +322,14 @@ async def test_a_broken_stage_report_does_not_fail_the_job(sources: dict[str, by
 
 async def test_a_source_that_cannot_be_fetched_fails_without_retry() -> None:
     provider = FfmpegComposeProvider(
-        object_store=MemoryObjectStore(),
+        LocalClipProcessor(
+            object_store=MemoryObjectStore(),
+            codec=SOFTWARE,
+            fetch_url=as_is,
+            concurrency=1,
+            transport=_client({}),
+        ),
         report_stage=_Stages().report,
-        codec=SOFTWARE,
-        fetch_url=as_is,
-        transport=_client({}),
     )
     job = make_job(
         compose_request(

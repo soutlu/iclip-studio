@@ -17,7 +17,6 @@ import {
 } from '../storyboard.api'
 import { loadCrossOriginImage } from '../cross-origin-image'
 import type { SecondsRange } from '../editing/clip'
-import type { PlaySegment } from '../editing/play-layout'
 import { clipGenerationBlock } from './clip-generation'
 import type { PixelRect, Size } from './first-frames'
 
@@ -131,8 +130,7 @@ type Origin = {
   taskId: string | null
 }
 
-type ClipGeneration =
-  { mode: 'image'; seconds: number } | { mode: 'edit'; referenceClips: readonly PlaySegment[] }
+type ClipGeneration = { mode: 'image'; seconds: number } | { mode: 'edit' }
 
 export const submitClipGeneration = async (
   input: Origin & {
@@ -146,22 +144,14 @@ export const submitClipGeneration = async (
   },
 ): Promise<GenerationJob> => {
   const { generation, model } = input
+  const rangeStartMs = Math.round(input.range.start * 1000)
+  const rangeEndMs = Math.round(input.range.end * 1000)
   const block = clipGenerationBlock(model, {
     mode: generation.mode,
-    seconds:
-      generation.mode === 'image'
-        ? generation.seconds
-        : generation.referenceClips.reduce((sum, clip) => sum + clip.end - clip.start, 0),
+    seconds: generation.mode === 'image' ? generation.seconds : (rangeEndMs - rangeStartMs) / 1000,
     referenceImageCount: input.referenceImageUrls.length,
   })
   if (block !== undefined) throw new UserFacingError(block.message)
-  let referenceVideoUrls: string[] = []
-  if (generation.mode === 'edit') {
-    const { concatenateReferenceClips } = await import('./reference-clip')
-    const file = await concatenateReferenceClips(generation.referenceClips)
-    const { url } = await uploadMediaFile(file, 'video')
-    referenceVideoUrls = [url]
-  }
   const referenceImageUrls = await Promise.all(
     input.referenceImageUrls.map(async (url) => {
       const rect = input.frameCrops?.get(url)
@@ -173,13 +163,13 @@ export const submitClipGeneration = async (
     conversation_id: input.conversationId,
     task_id: input.taskId,
     source_job_id: input.sourceJobId,
-    range_start_ms: Math.round(input.range.start * 1000),
-    range_end_ms: Math.round(input.range.end * 1000),
-    reference_video_urls: referenceVideoUrls,
+    range_start_ms: rangeStartMs,
+    range_end_ms: rangeEndMs,
     model: model.id,
     prompt: input.prompt,
     reference_image_urls: referenceImageUrls,
-    seconds: generation.mode === 'image' ? generation.seconds : -1,
+    mode: generation.mode,
+    ...(generation.mode === 'image' ? { seconds: generation.seconds } : {}),
   }
   const result = await apiFetch('/generations/video-edits', zGenerationEnvelope, {
     method: 'POST',
