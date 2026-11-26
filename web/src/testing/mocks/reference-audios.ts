@@ -17,6 +17,18 @@ export const MOCK_SAMPLE_AUDIO_URL = 'http://localhost/mock-audio/sample.mp3'
 /** 上传的音频入库时量出来的时长：和测试音频一样 6 秒。 */
 const MEASURED_MS = 6_000
 
+/** 没填属性、没量过波形的一条。 */
+const NO_TRAITS = {
+  age: null,
+  bpm: null,
+  gender: null,
+  genre: null,
+  mood: null,
+  peaks: null,
+  scenarios: [],
+  sfxCategory: null,
+} satisfies Partial<Row>
+
 const rows: Row[] = []
 let seq = 0
 
@@ -30,6 +42,7 @@ export const addMockReferenceAudio = ({
   seq += 1
   const createdAt = new Date(Date.UTC(2026, 9, 1, 8, seq)).toISOString()
   const row: Row = {
+    ...NO_TRAITS,
     audioKind: 'voice',
     createdAt,
     description: null,
@@ -146,6 +159,7 @@ export const referenceAudioHandlers = (viewer: () => string) => [
     const now = new Date().toISOString()
     seq += 1
     const row: Row = {
+      ...NO_TRAITS,
       audioKind: body.audioKind,
       createdAt: now,
       description: body.description ?? null,

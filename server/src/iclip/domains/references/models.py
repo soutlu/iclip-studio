@@ -25,6 +25,39 @@ AUDIO_KINDS: Final[tuple[AudioKind, ...]] = get_args(AudioKind)
 MIN_VOICE_MS: Final = 3_000
 MAX_VOICE_MS: Final = 30_000
 
+VoiceGender = Literal["male", "female", "neutral"]
+VoiceAge = Literal["young", "middle", "senior"]
+VoiceScenario = Literal[
+    "commercials",
+    "social",
+    "documentaries",
+    "explainers",
+    "tutorials",
+    "trailers",
+    "characters",
+    "wellness",
+]
+BgmMood = Literal["warm", "relaxed", "uplifting", "epic", "suspense"]
+BgmGenre = Literal["acoustic", "piano", "electronic", "orchestral"]
+SfxCategory = Literal["transition", "ui", "impact", "ambience", "foley"]
+
+MAX_SCENARIOS: Final = 2
+MIN_BPM: Final = 20
+MAX_BPM: Final = 300
+
+Tempo = Literal["slow", "medium", "fast"]
+"""按 ``bpm`` 分的速度档：``slow`` 低于 ``SLOW_BELOW_BPM``，``fast`` 高于 ``FAST_ABOVE_BPM``，
+其余是 ``medium``。"""
+
+TEMPO_SLOW: Final = "slow"
+TEMPO_MEDIUM: Final = "medium"
+TEMPO_FAST: Final = "fast"
+SLOW_BELOW_BPM: Final = 90
+FAST_ABOVE_BPM: Final = 120
+
+# 列表行与试听条画的波形有多少根柱子。
+PEAK_BUCKETS: Final = 120
+
 BreakdownStatus = Literal["pending", "running", "completed", "failed"]
 
 STATUS_PENDING: Final = "pending"
@@ -75,8 +108,31 @@ class ReferenceVideo:
 
 
 @dataclass(frozen=True, slots=True)
+class AudioTraits:
+    """参考音频的选填属性，各属其类：性别、年龄段、使用场景只有音色有，情绪、曲风、``bpm`` 只有
+    配乐有，音效类别只有音效有。"""
+
+    gender: VoiceGender | None = None
+    age: VoiceAge | None = None
+    scenarios: tuple[VoiceScenario, ...] = ()
+    mood: BgmMood | None = None
+    genre: BgmGenre | None = None
+    bpm: int | None = None
+    sfx_category: SfxCategory | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MeasuredAudio:
+    """入库时按地址量出来的：时长（毫秒），与 ``PEAK_BUCKETS`` 个归一到 0～1 的波形峰值。"""
+
+    duration_ms: int
+    peaks: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ReferenceAudio:
-    """一条参考音频：主表的身份、归属与时长，加音频子表的子类、语种与台词（只有音色有台词）。"""
+    """一条参考音频：主表的身份、归属与时长，加音频子表的子类、语种、台词（只有音色有台词）、属性
+    与波形峰值（这批属性之前入库的没有峰值）。"""
 
     id: uuid.UUID
     url: str
@@ -90,6 +146,8 @@ class ReferenceAudio:
     audio_kind: AudioKind
     locale: TargetLocale | None
     transcript: str | None
+    traits: AudioTraits
+    peaks: tuple[float, ...] | None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None
@@ -108,6 +166,8 @@ class NewReferenceAudio:
     audio_kind: AudioKind
     locale: TargetLocale | None
     transcript: str | None
+    traits: AudioTraits
+    peaks: tuple[float, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +178,7 @@ class AudioText:
     description: str | None
     locale: TargetLocale | None
     transcript: str | None
+    traits: AudioTraits
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,8 +226,17 @@ class Scope:
 
 @dataclass(frozen=True, slots=True)
 class AudioScope:
+    """参考音频列表的筛选：每个元组里命中任一即算，空元组不筛；``locales`` 里的 ``None`` 是没设语种。"""
+
     audio_kind: AudioKind | None = None
-    locale: TargetLocale | None = None
+    locales: tuple[TargetLocale | None, ...] = ()
+    genders: tuple[VoiceGender, ...] = ()
+    ages: tuple[VoiceAge, ...] = ()
+    scenarios: tuple[VoiceScenario, ...] = ()
+    moods: tuple[BgmMood, ...] = ()
+    genres: tuple[BgmGenre, ...] = ()
+    tempos: tuple[Tempo, ...] = ()
+    sfx_categories: tuple[SfxCategory, ...] = ()
     user_name: str | None = None
     q: str | None = None
     since: datetime | None = None
@@ -190,24 +260,37 @@ __all__ = [
     "ERROR_MODEL_UNAVAILABLE",
     "ERROR_TIMEOUT",
     "ERROR_VIDEO_UNREADABLE",
+    "FAST_ABOVE_BPM",
     "KIND_AUDIO",
     "KIND_VIDEO",
+    "MAX_BPM",
+    "MAX_SCENARIOS",
     "MAX_VOICE_MS",
+    "MIN_BPM",
     "MIN_VOICE_MS",
+    "PEAK_BUCKETS",
+    "SLOW_BELOW_BPM",
     "STATUS_COMPLETED",
     "STATUS_FAILED",
     "STATUS_PENDING",
     "STATUS_RUNNING",
+    "TEMPO_FAST",
+    "TEMPO_MEDIUM",
+    "TEMPO_SLOW",
     "TEST_VIDEO_COMPLETED",
     "TEST_VIDEO_FAILED",
     "TEST_VIDEO_RUNNING",
     "AudioKind",
     "AudioScope",
     "AudioText",
+    "AudioTraits",
+    "BgmGenre",
+    "BgmMood",
     "BreakdownErrorCode",
     "BreakdownFailed",
     "BreakdownStatus",
     "Claim",
+    "MeasuredAudio",
     "NewReferenceAudio",
     "Outcome",
     "ReferenceAudio",
@@ -215,6 +298,11 @@ __all__ = [
     "ReferenceKind",
     "ReferenceVideo",
     "Scope",
+    "SfxCategory",
+    "Tempo",
     "TestVideoJob",
     "TestVideoStatus",
+    "VoiceAge",
+    "VoiceGender",
+    "VoiceScenario",
 ]

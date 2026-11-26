@@ -2102,12 +2102,33 @@ export const zModelOptionsOut = z.object({
  * ReferenceAudioCreateIn
  *
  * 把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成
- * 的背景音乐（``sourceJobId``）。台词只有音色能填。
+ * 的背景音乐（``sourceJobId``）。台词只有音色能填，属性各属其类。
  */
 export const zReferenceAudioCreateIn = z.object({
+  age: z.enum(['young', 'middle', 'senior']).nullish(),
   audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  bpm: z.int().gte(20).lte(300).nullish(),
   description: z.string().min(1).max(2000).nullish(),
+  gender: z.enum(['male', 'female', 'neutral']).nullish(),
+  genre: z.enum(['acoustic', 'piano', 'electronic', 'orchestral']).nullish(),
   locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  mood: z.enum(['warm', 'relaxed', 'uplifting', 'epic', 'suspense']).nullish(),
+  scenarios: z
+    .array(
+      z.enum([
+        'commercials',
+        'social',
+        'documentaries',
+        'explainers',
+        'tutorials',
+        'trailers',
+        'characters',
+        'wellness',
+      ]),
+    )
+    .max(2)
+    .nullish(),
+  sfxCategory: z.enum(['transition', 'ui', 'impact', 'ambience', 'foley']).nullish(),
   sourceJobId: z.uuid().nullish(),
   title: z.string().min(1).max(200),
   transcript: z.string().min(1).max(2000).nullish(),
@@ -2129,13 +2150,32 @@ export const zReferenceAudioFiltersOut = z.object({
  * 一条参考音频。
  */
 export const zReferenceAudioOut = z.object({
+  age: z.enum(['young', 'middle', 'senior']).nullable(),
   audioKind: z.enum(['voice', 'bgm', 'sfx']),
+  bpm: z.int().nullable(),
   canEdit: z.boolean(),
   createdAt: z.iso.datetime(),
   description: z.string().nullable(),
   durationMs: z.int(),
+  gender: z.enum(['male', 'female', 'neutral']).nullable(),
+  genre: z.enum(['acoustic', 'piano', 'electronic', 'orchestral']).nullable(),
   id: z.uuid(),
   locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullable(),
+  mood: z.enum(['warm', 'relaxed', 'uplifting', 'epic', 'suspense']).nullable(),
+  peaks: z.array(z.number()).nullable(),
+  scenarios: z.array(
+    z.enum([
+      'commercials',
+      'social',
+      'documentaries',
+      'explainers',
+      'tutorials',
+      'trailers',
+      'characters',
+      'wellness',
+    ]),
+  ),
+  sfxCategory: z.enum(['transition', 'ui', 'impact', 'ambience', 'foley']).nullable(),
   sourceJobId: z.uuid().nullable(),
   title: z.string(),
   transcript: z.string().nullable(),
@@ -2148,12 +2188,33 @@ export const zReferenceAudioOut = z.object({
 /**
  * ReferenceAudioUpdateIn
  *
- * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是
- * 清空；标题不能清空。台词只有音色能填。
+ * 改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 与各项属性给
+ * ``null`` 是清空（``scenarios`` 也可给 ``[]``）；标题不能清空。台词只有音色能填，属性各属其类。
  */
 export const zReferenceAudioUpdateIn = z.object({
+  age: z.enum(['young', 'middle', 'senior']).nullish(),
+  bpm: z.int().gte(20).lte(300).nullish(),
   description: z.string().min(1).max(2000).nullish(),
+  gender: z.enum(['male', 'female', 'neutral']).nullish(),
+  genre: z.enum(['acoustic', 'piano', 'electronic', 'orchestral']).nullish(),
   locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  mood: z.enum(['warm', 'relaxed', 'uplifting', 'epic', 'suspense']).nullish(),
+  scenarios: z
+    .array(
+      z.enum([
+        'commercials',
+        'social',
+        'documentaries',
+        'explainers',
+        'tutorials',
+        'trailers',
+        'characters',
+        'wellness',
+      ]),
+    )
+    .max(2)
+    .nullish(),
+  sfxCategory: z.enum(['transition', 'ui', 'impact', 'ambience', 'foley']).nullish(),
   title: z.string().min(1).max(200).nullish(),
   transcript: z.string().min(1).max(2000).nullish(),
 })
@@ -5407,7 +5468,27 @@ export const zUpdateProviderModelModelProvidersProviderIdModelsModelTypeModelNam
 
 export const zListReferenceAudiosReferencesAudiosGetQuery = z.object({
   audioKind: z.enum(['voice', 'bgm', 'sfx']).nullish(),
-  locale: z.enum(['zh', 'en', 'de', 'es', 'fr']).nullish(),
+  locale: z.array(z.enum(['zh', 'en', 'de', 'es', 'fr', 'none'])).nullish(),
+  gender: z.array(z.enum(['male', 'female', 'neutral'])).nullish(),
+  age: z.array(z.enum(['young', 'middle', 'senior'])).nullish(),
+  scenario: z
+    .array(
+      z.enum([
+        'commercials',
+        'social',
+        'documentaries',
+        'explainers',
+        'tutorials',
+        'trailers',
+        'characters',
+        'wellness',
+      ]),
+    )
+    .nullish(),
+  mood: z.array(z.enum(['warm', 'relaxed', 'uplifting', 'epic', 'suspense'])).nullish(),
+  genre: z.array(z.enum(['acoustic', 'piano', 'electronic', 'orchestral'])).nullish(),
+  tempo: z.array(z.enum(['slow', 'medium', 'fast'])).nullish(),
+  sfxCategory: z.array(z.enum(['transition', 'ui', 'impact', 'ambience', 'foley'])).nullish(),
   userName: z.string().max(150).nullish(),
   q: z.string().max(100).nullish(),
   since: z.iso.datetime().nullish(),

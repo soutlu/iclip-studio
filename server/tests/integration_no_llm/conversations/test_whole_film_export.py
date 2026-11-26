@@ -33,7 +33,7 @@ from iclip.domains.generation.schemas import (
 )
 from iclip.domains.generation.video import PROVIDER_NAME as VIDEO_PROVIDER_NAME
 from iclip.domains.references.infra_sql import SqlReferenceAudioStore
-from iclip.domains.references.models import NewReferenceAudio
+from iclip.domains.references.models import AudioTraits, NewReferenceAudio
 from iclip.domains.uploads.infra_sql import SqlUploadRepository
 from iclip.domains.uploads.models import MediaUpload
 from tests.helpers.app import make_client
@@ -220,6 +220,8 @@ async def _library_audio(engine: AsyncEngine, owner: uuid.UUID, url: str) -> uui
             audio_kind="bgm",
             locale=None,
             transcript=None,
+            traits=AudioTraits(),
+            peaks=(1.0,),
         )
     )
     return audio.id

@@ -16,7 +16,7 @@ from iclip.app.reference_test_video import TEST_VIDEO_MODEL
 from iclip.config import RuntimeConfig
 from iclip.config.models import IclipStudioSection
 from iclip.domains.identity.public import Principal
-from iclip.domains.references.models import ReferenceKind, TestVideoJob
+from iclip.domains.references.models import MeasuredAudio, ReferenceKind, TestVideoJob
 from iclip.domains.references.test_prompt import TestPrompt
 from iclip.platform.media.errors import MediaError
 from iclip.platform.runtime_api.client import RuntimeClient
@@ -68,14 +68,20 @@ class NoMediaSources:
         raise AssertionError("这里不该查生成记录")
 
 
-class FixedDurations:
-    """按地址答时长的替身；没给的地址量不出来。"""
+FIXED_PEAKS = (0.25, 1.0, 0.5)
+
+
+class FixedMeasurements:
+    """按地址答时长的替身，波形峰值总是 ``FIXED_PEAKS``；没给的地址量不出来。"""
 
     def __init__(self, durations: Mapping[str, int] | None = None) -> None:
         self.durations = dict(durations or {})
 
-    async def __call__(self, url: str, /) -> int | None:
-        return self.durations.get(url)
+    async def __call__(self, url: str, /) -> MeasuredAudio | None:
+        duration_ms = self.durations.get(url)
+        if duration_ms is None:
+            return None
+        return MeasuredAudio(duration_ms=duration_ms, peaks=FIXED_PEAKS)
 
 
 async def upload_video(client: httpx.AsyncClient, bucket: MemoryObjectStore) -> str:
@@ -303,10 +309,11 @@ async def reference_row(engine: AsyncEngine, reference_id: uuid.UUID) -> dict[st
 __all__ = [
     "DEFAULT_TAGS",
     "DOCUMENT",
+    "FIXED_PEAKS",
     "VIDEO",
     "FakeArk",
     "FakeSampler",
-    "FixedDurations",
+    "FixedMeasurements",
     "NoMediaSources",
     "NoTestVideos",
     "ark_pipeline",

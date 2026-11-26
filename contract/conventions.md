@@ -327,9 +327,9 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ### 参考音频 `/references/audios`
 
-- **列表与筛选项**：`GET /references/audios` 支持按子类 `audioKind`（`voice | bgm | sfx`）、语种 `locale`、`userName`、关键词 `q`、`[since, until)` 筛选及 `cursor` 分页；`GET /references/audios/filters` 返回各子类及属主条数。
-- **入库 `POST /references/audios`**：`uploadId`（本人音频上传）与 `sourceJobId`（调用者可见的已完成背景音乐）二选一必填（不符返回 `404`），不做 URL 去重，每次新建返回 `201`。入库时服务端实测时长写入 `durationMs`：无法探测、或音色（`voice`）时长不在 3～30 秒范围内返回 `422`；仅 `voice` 允许填写台词 `transcript`（`locale` 限 `zh / en / de / es / fr`）。
-- **修改与移除**：`PATCH /references/audios/{id}` 按需更新元数据（传 `null` 清空可空字段，非 `voice` 保留 `transcript` 返回 `422`）；`DELETE` 软删除不影响已生成的历史配音。
+- **列表与筛选项**：`GET /references/audios` 支持按子类 `audioKind`（`voice | bgm | sfx`）、`userName`、关键词 `q`、`[since, until)` 筛选及 `cursor` 分页；语种 `locale`（`none` 为没设语种）与各项属性（`gender`、`age`、`scenario`、`mood`、`genre`、`tempo`、`sfxCategory`）均可重复传，同一参数内任一命中、不同参数同时满足；`GET /references/audios/filters` 返回各子类及属主条数。
+- **入库 `POST /references/audios`**：`uploadId`（本人音频上传）与 `sourceJobId`（调用者可见的已完成背景音乐）二选一必填（不符返回 `404`），不做 URL 去重，每次新建返回 `201`。入库时服务端解码一遍，实测时长写入 `durationMs` 并算出波形峰值 `peaks`：无法解码、或音色（`voice`）时长不在 3～30 秒范围内返回 `422`；仅 `voice` 允许填写台词 `transcript`（`locale` 限 `zh / en / de / es / fr`）；属性各属其类，跨子类填写返回 `422`。
+- **修改与移除**：`PATCH /references/audios/{id}` 按需更新元数据与属性（传 `null` 清空可空字段，非 `voice` 保留 `transcript` 或留有别的子类属性返回 `422`）；`DELETE` 软删除不影响已生成的历史配音。
 
 ## 15. 资料库标签 (Library Tags)
 

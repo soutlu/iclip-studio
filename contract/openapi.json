@@ -9064,8 +9064,24 @@
       },
       "ReferenceAudioCreateIn": {
         "additionalProperties": false,
-        "description": "把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成\n的背景音乐（``sourceJobId``）。台词只有音色能填。",
+        "description": "把一段音频放进参考音频库：调用者本人的一条音频上传（``uploadId``），或调用者看得到的一条已完成\n的背景音乐（``sourceJobId``）。台词只有音色能填，属性各属其类。",
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "enum": [
+                  "young",
+                  "middle",
+                  "senior"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
           "audioKind": {
             "enum": [
               "voice",
@@ -9074,6 +9090,20 @@
             ],
             "title": "Audiokind",
             "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "description": "每分钟拍数，20～300",
+                "maximum": 300.0,
+                "minimum": 20.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
           },
           "description": {
             "anyOf": [
@@ -9087,6 +9117,39 @@
               }
             ],
             "title": "Description"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "enum": [
+                  "male",
+                  "female",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "enum": [
+                  "acoustic",
+                  "piano",
+                  "electronic",
+                  "orchestral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "locale": {
             "anyOf": [
@@ -9105,6 +9168,68 @@
               }
             ],
             "title": "Locale"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "enum": [
+                  "warm",
+                  "relaxed",
+                  "uplifting",
+                  "epic",
+                  "suspense"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "scenarios": {
+            "anyOf": [
+              {
+                "description": "使用场景，至多 2 个、不重复",
+                "items": {
+                  "enum": [
+                    "commercials",
+                    "social",
+                    "documentaries",
+                    "explainers",
+                    "tutorials",
+                    "trailers",
+                    "characters",
+                    "wellness"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenarios"
+          },
+          "sfxCategory": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transition",
+                  "ui",
+                  "impact",
+                  "ambience",
+                  "foley"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfxcategory"
           },
           "sourceJobId": {
             "anyOf": [
@@ -9199,6 +9324,22 @@
         "additionalProperties": false,
         "description": "一条参考音频。",
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "enum": [
+                  "young",
+                  "middle",
+                  "senior"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
           "audioKind": {
             "enum": [
               "voice",
@@ -9207,6 +9348,17 @@
             ],
             "title": "Audiokind",
             "type": "string"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
           },
           "canEdit": {
             "title": "Canedit",
@@ -9232,6 +9384,39 @@
             "title": "Durationms",
             "type": "integer"
           },
+          "gender": {
+            "anyOf": [
+              {
+                "enum": [
+                  "male",
+                  "female",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "enum": [
+                  "acoustic",
+                  "piano",
+                  "electronic",
+                  "orchestral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -9254,6 +9439,74 @@
               }
             ],
             "title": "Locale"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "enum": [
+                  "warm",
+                  "relaxed",
+                  "uplifting",
+                  "epic",
+                  "suspense"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "peaks": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "波形峰值：120 个，归一到 0～1（全程静音时全是 0）；入库时没量过波形的旧条目为 null，重新上传才有",
+            "title": "Peaks"
+          },
+          "scenarios": {
+            "items": {
+              "enum": [
+                "commercials",
+                "social",
+                "documentaries",
+                "explainers",
+                "tutorials",
+                "trailers",
+                "characters",
+                "wellness"
+              ],
+              "type": "string"
+            },
+            "title": "Scenarios",
+            "type": "array"
+          },
+          "sfxCategory": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transition",
+                  "ui",
+                  "impact",
+                  "ambience",
+                  "foley"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfxcategory"
           },
           "sourceJobId": {
             "anyOf": [
@@ -9324,6 +9577,14 @@
           "audioKind",
           "locale",
           "transcript",
+          "gender",
+          "age",
+          "scenarios",
+          "mood",
+          "genre",
+          "bpm",
+          "sfxCategory",
+          "peaks",
           "userName",
           "uploadId",
           "sourceJobId",
@@ -9336,8 +9597,38 @@
       },
       "ReferenceAudioUpdateIn": {
         "additionalProperties": false,
-        "description": "改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 给 ``null`` 是\n清空；标题不能清空。台词只有音色能填。",
+        "description": "改一条参考音频：给了的字段才改，``description`` / ``locale`` / ``transcript`` 与各项属性给\n``null`` 是清空（``scenarios`` 也可给 ``[]``）；标题不能清空。台词只有音色能填，属性各属其类。",
         "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "enum": [
+                  "young",
+                  "middle",
+                  "senior"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "bpm": {
+            "anyOf": [
+              {
+                "description": "每分钟拍数，20～300",
+                "maximum": 300.0,
+                "minimum": 20.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bpm"
+          },
           "description": {
             "anyOf": [
               {
@@ -9350,6 +9641,39 @@
               }
             ],
             "title": "Description"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "enum": [
+                  "male",
+                  "female",
+                  "neutral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "genre": {
+            "anyOf": [
+              {
+                "enum": [
+                  "acoustic",
+                  "piano",
+                  "electronic",
+                  "orchestral"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genre"
           },
           "locale": {
             "anyOf": [
@@ -9368,6 +9692,68 @@
               }
             ],
             "title": "Locale"
+          },
+          "mood": {
+            "anyOf": [
+              {
+                "enum": [
+                  "warm",
+                  "relaxed",
+                  "uplifting",
+                  "epic",
+                  "suspense"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mood"
+          },
+          "scenarios": {
+            "anyOf": [
+              {
+                "description": "使用场景，至多 2 个、不重复",
+                "items": {
+                  "enum": [
+                    "commercials",
+                    "social",
+                    "documentaries",
+                    "explainers",
+                    "tutorials",
+                    "trailers",
+                    "characters",
+                    "wellness"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scenarios"
+          },
+          "sfxCategory": {
+            "anyOf": [
+              {
+                "enum": [
+                  "transition",
+                  "ui",
+                  "impact",
+                  "ambience",
+                  "foley"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfxcategory"
           },
           "title": {
             "anyOf": [
@@ -23932,7 +24318,7 @@
     },
     "/references/audios": {
       "get": {
-        "description": "全站没移除的参考音频，建立晚的排前面。\n\n``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）；``locale`` 筛语种；\n``userName`` 筛属主；``q`` 按字面包含匹配标题、备注与台词；时间窗 ``[since, until)`` 作用在\n建立时刻上。``total`` 只在第一页给。",
+        "description": "全站没移除的参考音频，建立晚的排前面。\n\n``audioKind`` 筛子类（``voice`` 音色、``bgm`` 配乐、``sfx`` 音效）。``locale``、``gender``、\n``age``、``scenario``、``mood``、``genre``、``tempo``、``sfxCategory`` 都可以重复给：同一个\n参数里命中任一即算，不同参数都要命中；``locale=none`` 筛没设语种的，``scenario`` 命中使用场景\n里的任一个，``tempo`` 按 ``bpm`` 分档。``userName`` 筛属主；``q`` 按字面包含匹配标题、备注\n与台词；时间窗 ``[since, until)`` 作用在建立时刻上。``total`` 只在第一页给。",
         "operationId": "list_reference_audios_references_audios_get",
         "parameters": [
           {
@@ -23957,26 +24343,212 @@
             }
           },
           {
+            "description": "语种，可重复；``none`` 是没设语种的",
             "in": "query",
             "name": "locale",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "enum": [
-                    "zh",
-                    "en",
-                    "de",
-                    "es",
-                    "fr"
-                  ],
-                  "type": "string"
+                  "items": {
+                    "enum": [
+                      "zh",
+                      "en",
+                      "de",
+                      "es",
+                      "fr",
+                      "none"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
+              "description": "语种，可重复；``none`` 是没设语种的",
               "title": "Locale"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gender",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "male",
+                      "female",
+                      "neutral"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Gender"
+            }
+          },
+          {
+            "in": "query",
+            "name": "age",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "young",
+                      "middle",
+                      "senior"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Age"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scenario",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "commercials",
+                      "social",
+                      "documentaries",
+                      "explainers",
+                      "tutorials",
+                      "trailers",
+                      "characters",
+                      "wellness"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scenario"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mood",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "warm",
+                      "relaxed",
+                      "uplifting",
+                      "epic",
+                      "suspense"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Mood"
+            }
+          },
+          {
+            "in": "query",
+            "name": "genre",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "acoustic",
+                      "piano",
+                      "electronic",
+                      "orchestral"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "description": "按 bpm 分的速度档，可重复：``slow`` 低于 90，``medium`` 90～120，``fast`` 高于 120；没填 bpm 的不命中",
+            "in": "query",
+            "name": "tempo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "slow",
+                      "medium",
+                      "fast"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "按 bpm 分的速度档，可重复：``slow`` 低于 90，``medium`` 90～120，``fast`` 高于 120；没填 bpm 的不命中",
+              "title": "Tempo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sfxCategory",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "transition",
+                      "ui",
+                      "impact",
+                      "ambience",
+                      "foley"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sfxcategory"
             }
           },
           {
@@ -24116,7 +24688,7 @@
         ]
       },
       "post": {
-        "description": "把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐\n（``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。\n\n入库时按地址量时长：量不出来 ``422``；音色（``voice``）要在 3 到 30 秒之间，别的子类\n大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色能填，``locale`` 只认 ``zh``、\n``en``、``de``、``es``、``fr``。别人的上传、不是音频的上传、看不到或不是背景音乐的生成\n记录、不存在的 id 都是 ``404``。``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人\n放进去。",
+        "description": "把调用者自己的一条音频上传（``uploadId``），或调用者看得到的一条已完成的背景音乐\n（``sourceJobId``）放进参考音频库，每次都新建一条（``201``）。\n\n入库时按地址解码一遍，量时长并算波形峰值 ``peaks``：量不出来 ``422``；音色（``voice``）\n要在 3 到 30 秒之间，别的子类大于 0 即可，不合规 ``422``。台词 ``transcript`` 只有音色\n能填，``locale`` 只认 ``zh``、``en``、``de``、``es``、``fr``。属性都选填、各属其类：\n``gender``、``age``、``scenarios``（至多 2 个、不重复）只有音色能填，``mood``、``genre``、\n``bpm`` 只有配乐能填，``sfxCategory`` 只有音效能填，填了别的子类的是 ``422``。别人的\n上传、不是音频的上传、看不到或不是背景音乐的生成记录、不存在的 id 都是 ``404``。\n``userName`` 同媒体生成，持 ``users:act_as`` 时替那个人放进去。",
         "operationId": "create_reference_audio_references_audios_post",
         "requestBody": {
           "content": {
@@ -24305,7 +24877,7 @@
         ]
       },
       "patch": {
-        "description": "属主或治理者改标题、备注、语种、台词；给了的才改，给 ``null`` 清空（标题不能清空）。\n不是音色却要留着台词是 ``422``，别人的是 ``403``。",
+        "description": "属主或治理者改标题、备注、语种、台词与属性；给了的才改，给 ``null`` 清空（``scenarios``\n也可给 ``[]``；标题不能清空）。不是音色却要留着台词、改完留着不属于本子类的属性是 ``422``，\n别人的是 ``403``。",
         "operationId": "update_reference_audio_references_audios__reference_id__patch",
         "parameters": [
           {

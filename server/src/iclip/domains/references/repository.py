@@ -11,6 +11,7 @@ from iclip.domains.references.models import (
     AudioText,
     BreakdownErrorCode,
     Claim,
+    MeasuredAudio,
     NewReferenceAudio,
     ReferenceAudio,
     ReferenceCursor,
@@ -131,9 +132,9 @@ class MediaSources(Protocol):
         ...
 
 
-class MediaDuration(Protocol):
-    async def __call__(self, url: str, /) -> int | None:
-        """这个地址上媒体的时长（毫秒）；量不出来为 None。"""
+class AudioMeasure(Protocol):
+    async def __call__(self, url: str, /) -> MeasuredAudio | None:
+        """这个地址上音频的时长与波形峰值，同一次解码量出；量不出来为 None。"""
         ...
 
 
@@ -157,8 +158,8 @@ class TestVideos(Protocol):
 
 
 __all__ = [
+    "AudioMeasure",
     "BreakdownQueue",
-    "MediaDuration",
     "MediaSources",
     "ReferenceAudioStore",
     "ReferenceStore",

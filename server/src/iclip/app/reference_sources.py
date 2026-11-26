@@ -10,10 +10,15 @@ from iclip.domains.generation.models import GenerationJob, is_base_master
 from iclip.domains.generation.repository import GenerationRepository
 from iclip.domains.generation.schemas import KIND_AUDIO, OPERATION_GENERATE, STATUS_COMPLETED
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
-from iclip.domains.references.models import KIND_VIDEO, ReferenceKind
+from iclip.domains.references.models import (
+    KIND_VIDEO,
+    PEAK_BUCKETS,
+    MeasuredAudio,
+    ReferenceKind,
+)
 from iclip.domains.uploads.service import UploadService
 from iclip.platform.media.errors import MediaError
-from iclip.platform.media.probe import probe_remote_duration_ms
+from iclip.platform.media.probe import measure_remote_audio
 
 _logger = structlog.stdlib.get_logger(__name__)
 
@@ -52,18 +57,20 @@ def _finished_music(job: GenerationJob) -> bool:
     )
 
 
-class ProbedDuration:
-    """参考资产的 ``MediaDuration``：用 ffprobe 按地址量时长，量不出来记一条警告、答 None。"""
+class ProbedAudio:
+    """参考音频的 ``AudioMeasure``：用 ffmpeg 按地址解码一遍，量时长与波形峰值；量不出来记一条警告、
+    答 None。"""
 
     def __init__(self, fetch_url: Callable[[str], str]) -> None:
         self._fetch_url = fetch_url
 
-    async def __call__(self, url: str, /) -> int | None:
+    async def __call__(self, url: str, /) -> MeasuredAudio | None:
         try:
-            return await probe_remote_duration_ms(self._fetch_url(url))
+            levels = await measure_remote_audio(self._fetch_url(url), buckets=PEAK_BUCKETS)
         except MediaError as exc:
-            _logger.warning("量不出参考音频的时长", error=str(exc))
+            _logger.warning("量不出参考音频的时长与波形", error=str(exc))
             return None
+        return MeasuredAudio(duration_ms=levels.duration_ms, peaks=levels.peaks)
 
 
-__all__ = ["ProbedDuration", "ReferenceMediaSources"]
+__all__ = ["ProbedAudio", "ReferenceMediaSources"]

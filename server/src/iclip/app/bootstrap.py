@@ -42,7 +42,7 @@ from iclip.app.logging import configure_logging
 from iclip.app.preview_host import PreviewHostSplit
 from iclip.app.prompt_attachments import PromptAttachmentImporter
 from iclip.app.reference_breakdown import ReferenceBreakdownsAdapter, build_reference_breakdown
-from iclip.app.reference_sources import ProbedDuration, ReferenceMediaSources
+from iclip.app.reference_sources import ProbedAudio, ReferenceMediaSources
 from iclip.app.reference_test_video import GenerationTestVideos
 from iclip.app.runtime_events import RuntimeEvents
 from iclip.app.runtime_internal import (
@@ -139,7 +139,7 @@ from iclip.domains.references.infra_sql import (
     SqlReferenceStore,
 )
 from iclip.domains.references.module import BreakdownSetup, build_references_module
-from iclip.domains.references.repository import MediaDuration, VideoBreakdowns
+from iclip.domains.references.repository import AudioMeasure, VideoBreakdowns
 from iclip.domains.skills.module import build_skills_module
 from iclip.domains.tagging.infra_sql import SqlTagStore
 from iclip.domains.tagging.module import TaggingSetup, build_tagging_module
@@ -363,7 +363,7 @@ def build_app(
     media_codec: MediaCodec | None = None,
     runtime_transport: httpx.AsyncBaseTransport | None = None,
     media_probe: UrlProber | None = None,
-    reference_duration: MediaDuration | None = None,
+    reference_audio_measure: AudioMeasure | None = None,
 ) -> FastAPI:
     settings = resolve_settings(config)
     if settings.db_schema != DB_SCHEMA:
@@ -591,9 +591,9 @@ def build_app(
         sources=ReferenceMediaSources(
             uploads.service if uploads is not None else None, generation_repo
         ),
-        duration=reference_duration
-        if reference_duration is not None
-        else ProbedDuration(fetch_url),
+        measure=reference_audio_measure
+        if reference_audio_measure is not None
+        else ProbedAudio(fetch_url),
         breakdown=breakdown_setup,
         tagging=tagging.service,
         uploads_available=public_objects is not None,

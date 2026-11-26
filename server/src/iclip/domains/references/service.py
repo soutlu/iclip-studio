@@ -26,17 +26,25 @@ from iclip.domains.references.models import (
     AudioKind,
     AudioScope,
     AudioText,
+    AudioTraits,
+    BgmGenre,
+    BgmMood,
     NewReferenceAudio,
     Outcome,
     ReferenceAudio,
     ReferenceCursor,
     ReferenceVideo,
     Scope,
+    SfxCategory,
+    Tempo,
     TestVideoJob,
+    VoiceAge,
+    VoiceGender,
+    VoiceScenario,
 )
 from iclip.domains.references.repository import (
+    AudioMeasure,
     BreakdownQueue,
-    MediaDuration,
     MediaSources,
     ReferenceAudioStore,
     ReferenceStore,
@@ -59,6 +67,7 @@ from iclip.domains.references.schemas import (
     ReferenceVideoUpdateIn,
     TestVideoIn,
     TestVideoOut,
+    trait_kind_error,
 )
 from iclip.domains.references.test_prompt import build_test_prompt
 from iclip.domains.tagging.public import KIND_REFERENCE, EntryKey, TaggingService
@@ -401,6 +410,7 @@ class ReferenceService:
 
 
 def _audio_out(principal: Principal, row: ReferenceAudio) -> ReferenceAudioOut:
+    traits = row.traits
     return ReferenceAudioOut(
         id=row.id,
         url=row.url,
@@ -410,6 +420,14 @@ def _audio_out(principal: Principal, row: ReferenceAudio) -> ReferenceAudioOut:
         audio_kind=row.audio_kind,
         locale=row.locale,
         transcript=row.transcript,
+        gender=traits.gender,
+        age=traits.age,
+        scenarios=list(traits.scenarios),
+        mood=traits.mood,
+        genre=traits.genre,
+        bpm=traits.bpm,
+        sfx_category=traits.sfx_category,
+        peaks=list(row.peaks) if row.peaks is not None else None,
         user_name=row.owner_user_name,
         upload_id=row.upload_id,
         source_job_id=row.source_job_id,
@@ -430,19 +448,19 @@ def _check_duration(audio_kind: AudioKind, duration_ms: int) -> None:
 
 
 class ReferenceAudioService:
-    """参考音频库：音色、配乐、音效。不打标，不拆解。"""
+    """参考音频库：音色、配乐、音效，各带自己的选填属性。不打标，不拆解。"""
 
     def __init__(
         self,
         store: ReferenceAudioStore,
         *,
         sources: MediaSources,
-        duration: MediaDuration,
+        measure: AudioMeasure,
         uploads_available: bool,
     ) -> None:
         self._store = store
         self._sources = sources
-        self._duration = duration
+        self._measure = measure
         self._uploads_available = uploads_available
 
     @property
@@ -453,7 +471,8 @@ class ReferenceAudioService:
         return self.accepts_uploads and principal.has(UPLOAD_PERMISSION)
 
     async def create(self, principal: Principal, body: ReferenceAudioCreateIn) -> ReferenceAudioOut:
-        """入库时按地址量时长：量不出来、音色不在 3 到 30 秒之间都是 ``ValidationFailed``。"""
+        """入库时按地址解码一遍，量时长与波形峰值：量不出来、音色不在 3 到 30 秒之间都是
+        ``ValidationFailed``。"""
 
         if not self.accepts_uploads:
             raise RuntimeError("参考音频库不收上传，建行的入口不该挂上")
@@ -467,16 +486,16 @@ class ReferenceAudioService:
             raise RuntimeError("ReferenceAudioCreateIn 应当已核对过来源给且只给一个")
         if url is None:
             raise NotFound(missing)
-        duration_ms = await self._duration(url)
-        if duration_ms is None:
-            raise ValidationFailed("无法获取音频时长，请更换可正常播放的音频")
-        _check_duration(body.audio_kind, duration_ms)
+        measured = await self._measure(url)
+        if measured is None:
+            raise ValidationFailed("无法获取音频时长与波形，请更换可正常播放的音频")
+        _check_duration(body.audio_kind, measured.duration_ms)
         row = await self._store.insert(
             NewReferenceAudio(
                 url=url,
                 title=body.title,
                 description=body.description,
-                duration_ms=duration_ms,
+                duration_ms=measured.duration_ms,
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 upload_id=body.upload_id,
@@ -484,6 +503,8 @@ class ReferenceAudioService:
                 audio_kind=body.audio_kind,
                 locale=body.locale,
                 transcript=body.transcript,
+                traits=body.traits_over(AudioTraits()),
+                peaks=measured.peaks,
             )
         )
         return _audio_out(principal, row)
@@ -493,7 +514,14 @@ class ReferenceAudioService:
         principal: Principal,
         *,
         audio_kind: AudioKind | None = None,
-        locale: TargetLocale | None = None,
+        locales: Sequence[TargetLocale | None] = (),
+        genders: Sequence[VoiceGender] = (),
+        ages: Sequence[VoiceAge] = (),
+        scenarios: Sequence[VoiceScenario] = (),
+        moods: Sequence[BgmMood] = (),
+        genres: Sequence[BgmGenre] = (),
+        tempos: Sequence[Tempo] = (),
+        sfx_categories: Sequence[SfxCategory] = (),
         user_name: str | None = None,
         q: str | None = None,
         since: datetime | None = None,
@@ -508,7 +536,14 @@ class ReferenceAudioService:
         keyword = q.strip() if q is not None else ""
         scope = AudioScope(
             audio_kind=audio_kind,
-            locale=locale,
+            locales=_unique(locales),
+            genders=_unique(genders),
+            ages=_unique(ages),
+            scenarios=_unique(scenarios),
+            moods=_unique(moods),
+            genres=_unique(genres),
+            tempos=_unique(tempos),
+            sfx_categories=_unique(sfx_categories),
             user_name=user_name,
             q=keyword or None,
             since=since,
@@ -553,9 +588,13 @@ class ReferenceAudioService:
             description=body.description if "description" in given else row.description,
             locale=body.locale if "locale" in given else row.locale,
             transcript=body.transcript if "transcript" in given else row.transcript,
+            traits=body.traits_over(row.traits),
         )
         if text.transcript is not None and row.audio_kind != AUDIO_VOICE:
             raise ValidationFailed("仅音色类型支持填写台词")
+        misplaced = trait_kind_error(row.audio_kind, text.traits)
+        if misplaced is not None:
+            raise ValidationFailed(misplaced)
         if not await self._store.update(reference_id, text):
             raise NotFound("参考音频库中不存在该音频")
         return await self.get(principal, reference_id)

@@ -115,7 +115,7 @@
 |---|---|
 | **常规业务模块** | 各模块在自有的 `domains/*/infra_sql.py` 中维护数据表；外部 PDM 款目录通过 `domains/products/catalog_pg.py` 的独立只读连接池查询 |
 | **上传台账（`domains/uploads/`）** | 独立维护 `iclip.media_uploads` 表（与 `generation_jobs` 分离），记录前端直传与消息外部图片转存；表级不设外键与 CHECK 约束，枚举在应用层校验（[uploads/models.py](../server/src/iclip/domains/uploads/models.py)），视频确认时按 OSS 对象 MD5 去重；生成、参考资产与成片导出均经 `app/` 组合根解耦调用 |
-| **参考资产（`domains/references/`）** | 采用 `iclip.references` 主表 + `reference_videos` / `reference_audios` 一对一子表（无表级外键与 CHECK 约束，同事务读写，视频子表改动同步刷新主表 `updated_at`）。参考视频新增与恢复通过 `pg_advisory_xact_lock` 按 URL 串行去重；参考音频不去重，入库时在组合根用 `ffprobe` 实测时长；资料库标签关联主表（仅视频打标），试生成任务 ID 写回 `test_job_id` |
+| **参考资产（`domains/references/`）** | 采用 `iclip.references` 主表 + `reference_videos` / `reference_audios` 一对一子表（无表级外键与 CHECK 约束，同事务读写，视频子表改动同步刷新主表 `updated_at`）。参考视频新增与恢复通过 `pg_advisory_xact_lock` 按 URL 串行去重；参考音频不去重，入库时在组合根用 `ffmpeg` 解码一遍，实测时长并算出波形峰值，属性与峰值存在音频子表的 `meta`（JSONB）；资料库标签关联主表（仅视频打标），试生成任务 ID 写回 `test_job_id` |
 | **资料库标签（`domains/tagging/`）** | 独立维护标签树、被打标条目与关联关系三张表（见 [ADR-0006](adr/0006-library-tags-as-data.md)、[ADR-0007](adr/0007-library-tag-value-depth.md)）；修改标签树结构时先获取事务级咨询锁再校验重名与层级/数量上限 |
 | **资料库聚合查询（`domains/library/reports_pg.py`）** | 不建冗余表，跨「生成记录、对话、用户」三表实时聚合素材卡封面与分叉继承关系；爆款素材库直接关联标签域条目表与生成记录表 |
 | **审计统计报表（`domains/audit/reports_pg.py`）** | 不建持久表。先短查询获取对话 ID，释放连接后经 `runtime_facts.py` 调运行时 `/v1/stats/*` 拉取会话耗时与 Token 记录，再于单事务内写入事务级临时表供全部指标 SQL 汇总 |
