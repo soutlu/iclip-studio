@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { GlyphProps } from './duo-glyph'
+import { glyphSvgProps } from './glyph-svg-props'
 import './audio-cover-glyphs.css'
 
 const SEC = 'audition-glyph-sec'
@@ -8,25 +9,12 @@ const TONE_FILL = 'audition-glyph-tone-fill'
 const TONE_STROKE = 'audition-glyph-tone-stroke'
 
 const coverGlyph = (body: ReactNode) =>
-  function AudioCoverGlyph({
-    size = 24,
-    strokeWidth: _strokeWidth,
-    absoluteStrokeWidth: _absoluteStrokeWidth,
-    ...props
-  }: GlyphProps) {
-    return (
-      <svg height={size} width={size} {...props} fill="none" viewBox="0 0 24 24">
-        {body}
-      </svg>
-    )
+  function AudioCoverGlyph(props: GlyphProps) {
+    return <svg {...glyphSvgProps(props)}>{body}</svg>
   }
 
-/**
- * 音频封面（音色 8 款 + 配乐 4 款）专用双层声学图标：基于 24×24 物理像素网格绘制，
- * 副结构统一在 `<g>` 内以 `currentColor` 整组降透，主视觉锚点读取 `--audition-cover-tone`。
- */
+/** 音频封面图标（音色 8 款、配乐 4 款）：主形颜色读 `--icon-tone-color`，不给时跟文字色。 */
 export const AUDIO_COVER_GLYPHS = {
-  // ── 音色（8 款）────────────────────────────────────────────────────────────
   'audio-cover-bright': coverGlyph(
     <>
       <g className={SEC_SOFT} fill="currentColor">
@@ -130,7 +118,6 @@ export const AUDIO_COVER_GLYPHS = {
     </>,
   ),
 
-  // ── 配乐（4 款）────────────────────────────────────────────────────────────
   'audio-cover-piano': coverGlyph(
     <>
       <g className={SEC} stroke="currentColor" strokeLinecap="round">

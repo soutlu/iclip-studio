@@ -1,5 +1,5 @@
-/* 音频封面底块：浅色白瓷微光、深色石墨微光，仅保留 1px 中性发丝细边与顶部内高光，零背景色偏 */
 .audition-cover {
+  --audition-cover-glyph-size: var(--icon-xl);
   border-radius: var(--radius-control);
   transition:
     box-shadow var(--dur-s) var(--ease),
@@ -7,6 +7,7 @@
 }
 
 .audition-cover.is-md {
+  --audition-cover-glyph-size: 28px;
   border-radius: var(--radius-md);
 }
 
@@ -18,7 +19,7 @@
   );
   box-shadow:
     var(--shadow-xs),
-    0 0 0 1px var(--color-panel-line),
+    0 0 0 1px var(--audition-cover-line, var(--color-panel-line)),
     var(--shadow-specular);
   color: var(--color-on-surface);
 }
@@ -31,35 +32,53 @@
   );
 }
 
-.group\/cover:hover .audition-cover:not(.is-playing),
-.group\/cover:focus-visible .audition-cover:not(.is-playing),
-.audition-cover.group\/cover:hover:not(.is-playing),
-.audition-cover.group\/cover:focus-visible:not(.is-playing),
+/* 悬停、聚焦可点的外层（或封面自己），以及暂停着：细边加深，声学图标换成播放标 */
+.audition-cover-host:is(:hover, :focus-visible),
 .audition-cover.is-paused {
-  box-shadow:
-    var(--shadow-xs),
-    0 0 0 1px var(--color-panel-line-strong),
-    var(--shadow-specular);
+  --audition-cover-line: var(--color-panel-line-strong);
+  --audition-cover-play: 1;
+}
+
+.audition-cover-glyph,
+.audition-cover-play {
+  display: grid;
+  place-items: center;
+  transition:
+    opacity var(--dur-s) var(--ease),
+    scale var(--dur-s) var(--ease);
+}
+
+.audition-cover-glyph {
+  opacity: calc(1 - var(--audition-cover-play, 0));
+  scale: calc(1 - var(--audition-cover-play, 0) * 0.1);
+}
+
+.audition-cover-play {
+  position: absolute;
+  inset: 0;
+  opacity: var(--audition-cover-play, 0);
+  pointer-events: none;
+  scale: calc(0.9 + var(--audition-cover-play, 0) * 0.1);
 }
 
 .audition-cover[data-tone='copper'] {
-  --audition-cover-tone: var(--color-tone-copper);
+  --icon-tone-color: var(--color-tone-copper);
 }
 
 .audition-cover[data-tone='teal'] {
-  --audition-cover-tone: var(--color-tone-teal);
+  --icon-tone-color: var(--color-tone-teal);
 }
 
 .audition-cover[data-tone='umber'] {
-  --audition-cover-tone: var(--color-tone-umber);
+  --icon-tone-color: var(--color-tone-umber);
 }
 
 .audition-cover[data-tone='slate'] {
-  --audition-cover-tone: var(--color-tone-slate);
+  --icon-tone-color: var(--color-tone-slate);
 }
 
 .audition-cover[data-tone='ochre'] {
-  --audition-cover-tone: var(--color-tone-ochre);
+  --icon-tone-color: var(--color-tone-ochre);
 }
 
 /* 正在试听的那条封面上跳动的三根小音柱，颜色跟文字色走 */

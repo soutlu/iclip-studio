@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AudioCover, audioCoverAppearance } from './audio-cover'
 
 describe('audioCoverAppearance', () => {
-  it('按音色场景与声线区分图形和色调，相邻常见音色不撞形撞色', () => {
+  it('按音色场景与声线匹配封面图形和色调', () => {
     const bright = audioCoverAppearance('v-1', {
       audioKind: 'voice',
       gender: 'female',
@@ -89,9 +89,12 @@ describe('audioCoverAppearance', () => {
       glyph: 'audio-cover-vinyl',
       tone: 'ochre',
     })
-    expect(audioCoverAppearance('b-raw', { audioKind: 'bgm' })).toEqual(
-      audioCoverAppearance('b-raw', { audioKind: 'bgm' }),
-    )
+    expect([
+      'audio-cover-piano',
+      'audio-cover-acoustic',
+      'audio-cover-electronic',
+      'audio-cover-vinyl',
+    ]).toContain(audioCoverAppearance('b-raw', { audioKind: 'bgm' }).glyph)
   })
 })
 

@@ -1072,7 +1072,9 @@
   content: '';
 }
 
-.wf-caption.is-current {
+.wf-caption.is-current,
+.wf-voice-option:is(.is-picked, .is-current),
+.wf-song.is-playing {
   box-shadow:
     var(--shadow-panel-card),
     0 0 0 1px var(--wf-control-ring),
@@ -1436,7 +1438,7 @@
   gap: 8px;
 }
 
-/* 一张音色卡：整张是试听键（封面、名字、属性），右边「✓ 当前」胶囊或悬停露出的「选用」；选中项仅微抬卡片与细边，不描重黑框 */
+/* 一张音色卡：整张是试听键（封面、名字、属性），右边「✓ 当前」胶囊或悬停露出的「选用」 */
 .wf-voice-option {
   flex: none;
   flex-direction: row;
@@ -1446,21 +1448,6 @@
   transition:
     background-color var(--dur-s) var(--ease),
     box-shadow var(--dur-s) var(--ease);
-}
-
-.wf-voice-option:is(.is-picked, .is-current) {
-  box-shadow:
-    var(--shadow-pill),
-    0 0 0 1px var(--color-panel-line-strong),
-    var(--shadow-specular);
-}
-
-.dark .wf-voice-option.is-picked {
-  background: var(--color-surface-container);
-}
-
-.wf-voice-option:hover {
-  box-shadow: var(--shadow-float), var(--shadow-specular);
 }
 
 .wf-voice-option-play {
@@ -1492,7 +1479,7 @@
   font-weight: 600;
 }
 
-.dark .wf-voice-option.is-picked .wf-voice-option-used {
+.dark .wf-voice-option-used {
   background: var(--color-surface-container-highest);
 }
 
@@ -1631,21 +1618,17 @@
   align-items: center;
   gap: 11px;
   padding: 9px 11px;
-  transition: box-shadow var(--dur-s) var(--ease);
+  transition:
+    background-color var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
 }
 
-/* 当前试听的那条（在放或暂停着）轻抬卡片与细边，不描重黑框 */
-.wf-song.is-playing {
-  box-shadow:
-    var(--shadow-pill),
-    0 0 0 1px var(--color-panel-line-strong),
-    var(--shadow-specular);
-}
-
-.dark .wf-song.is-playing {
+/* 选中的音色卡、当前试听的配乐（在放或暂停着）深色下垫一层底 */
+.dark :is(.wf-voice-option:is(.is-picked, .is-current), .wf-song.is-playing) {
   background: var(--color-surface-container);
 }
 
+.wf-voice-option:hover,
 .wf-song:hover:not(.is-lifting) {
   box-shadow: var(--shadow-float), var(--shadow-specular);
 }

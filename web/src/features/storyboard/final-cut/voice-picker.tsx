@@ -325,7 +325,7 @@ type VoiceOptionProps = {
   onUse: () => void
 }
 
-/** 选音面板里的一张音色卡：整张点了试听 / 暂停，右边 ✓ 或「选用」。 */
+/** 选音面板里的一张音色卡：整张点了试听 / 暂停，右边「当前」或「选用」。 */
 function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: VoiceOptionProps) {
   const current = audition.current === voice.id
   const playing = audition.playing === voice.id
@@ -334,7 +334,7 @@ function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: Voic
       <button
         aria-label={playing ? `暂停试听：${voice.title}` : `试听：${voice.title}`}
         aria-pressed={playing}
-        className="group/cover wf-voice-option-play ui-focus"
+        className="audition-cover-host wf-voice-option-play ui-focus"
         onClick={onToggle}
         type="button"
       >
@@ -362,9 +362,9 @@ function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: Voic
         </AudioCardText>
       </button>
       {picked ? (
-        <span aria-label="正在使用" className="wf-voice-option-used" role="img">
+        <span className="wf-voice-option-used">
           <Icon decorative name="final-cut-in-use" size="xs" />
-          <span aria-hidden>当前</span>
+          当前
         </span>
       ) : (
         <BlockedReason reason={blocked}>
