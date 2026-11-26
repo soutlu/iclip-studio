@@ -140,18 +140,21 @@ def build_generation_module(
         fetch_url=fetch_url,
         concurrency=settings.compose_concurrency,
     )
+    record_of = partial(repo.get, owner=None)
     video_provider = HttpVideoProvider(
         video,
         model_groups=model_groups,
         edit_references=EditReferenceCutter(
             processor,
             report_stage=report_stage,
-            record_of=partial(repo.get, owner=None),
+            record_of=record_of,
             media_probe=media_probe,
         ),
         transport=video_transport,
     )
-    compose_provider = FfmpegComposeProvider(processor, report_stage=report_stage)
+    compose_provider = FfmpegComposeProvider(
+        processor, report_stage=report_stage, record_of=record_of
+    )
 
     image_providers = [
         _image_provider(

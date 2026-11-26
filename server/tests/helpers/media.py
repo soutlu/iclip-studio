@@ -69,11 +69,12 @@ def synthesize_video(
     size: str,
     seconds: int,
     audio: bool,
+    rate: int = 10,
     faststart: bool = False,
     keyframes: Sequence[float] | None = None,
     flip_at: float | None = None,
 ) -> bytes:
-    pattern = f"testsrc=size={size}:rate=10"
+    pattern = f"testsrc=size={size}:rate={rate}"
     if flip_at is not None:
         pattern += f",negate=enable='gte(t,{flip_at})'"
     args = ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", pattern]

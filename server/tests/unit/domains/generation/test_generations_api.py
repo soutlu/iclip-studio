@@ -57,6 +57,7 @@ from tests.helpers.generation import (
     make_composite,
     make_cut,
     make_edit,
+    make_enhancement,
     make_job,
     stored_request,
     trial_request,
@@ -1019,6 +1020,7 @@ async def test_image_models_endpoint_needs_read_permission() -> None:
 
 BASE_URL = "https://example.com/base.mp4"
 EDITED_URL = "https://example.com/edited.mp4"
+OTHER_URL = "https://example.com/other.mp4"
 
 
 def seed_take(
@@ -1574,18 +1576,14 @@ async def test_a_composite_needs_a_finished_master_as_its_base(role: str) -> Non
     assert set(repo.jobs) == seeded
 
 
-@pytest.mark.parametrize("role", ["别的基底的编辑段", "还在跑的编辑段", "另一条素材片"])
-async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: str) -> None:
+async def test_a_composite_splices_in_another_take_of_the_conversation_and_its_edit() -> None:
     repo = InMemoryGenerationRepository()
-    owner = uuid.uuid4()
-    take = seed_take(repo, owner=owner)
-    other = seed_take(repo, owner=owner)
-    if role == "别的基底的编辑段":
-        stranger = seed_edit(repo, other)
-    elif role == "还在跑的编辑段":
-        stranger = seed_edit(repo, take, status=STATUS_SUBMITTED)
-    else:
-        stranger = other
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    take = seed_take(repo, owner=owner, conversation=conversation, shot_index=1)
+    seeded_other = seed_take(repo, owner=owner, conversation=conversation, shot_index=2)
+    other = replace(seeded_other, output=GenerationOutput(url=OTHER_URL))
+    repo.jobs[other.id] = other
+    other_edit = seed_edit(repo, other)
     seeded = set(repo.jobs)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
     async with client(app) as http:
@@ -1593,6 +1591,51 @@ async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: 
             "/generations/video-composites",
             json={
                 "baseJobId": str(take.id),
+                "conversationId": str(conversation),
+                "segments": [
+                    {"sourceJobId": str(take.id), "start": 0, "end": 1},
+                    {"sourceJobId": str(other.id), "start": 0, "end": 2},
+                    {"sourceJobId": str(other_edit.id), "start": 0},
+                ],
+            },
+        )
+
+    assert response.status_code == 202, response.text
+    stored = only_new(repo, seeded)
+    assert (stored.source_job_id, stored.root_job_id, stored.shot_index) == (take.id, take.id, 1), (
+        "来源、原作与镜号随基底"
+    )
+    assert stored_request(stored).model_dump(mode="json", by_alias=True)["segments"] == [
+        {"sourceJobId": str(take.id), "url": BASE_URL, "start": 0, "end": 1},
+        {"sourceJobId": str(other.id), "url": OTHER_URL, "start": 0, "end": 2},
+        {"sourceJobId": str(other_edit.id), "url": EDITED_URL, "start": 0, "end": None},
+    ]
+
+
+@pytest.mark.parametrize("role", ["试生成", "高清版", "还在跑的编辑段"])
+async def test_every_segment_comes_from_a_finished_take_or_edit(role: str) -> None:
+    repo = InMemoryGenerationRepository()
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    take = seed_take(repo, owner=owner, conversation=conversation)
+    if role == "还在跑的编辑段":
+        stranger = seed_edit(repo, take, status=STATUS_SUBMITTED)
+    else:
+        stranger = replace(
+            make_job(trial_request()) if role == "试生成" else make_enhancement(take),
+            status=STATUS_COMPLETED,
+            owner_user_id=owner,
+            conversation_id=conversation,
+            output=GenerationOutput(url=OTHER_URL),
+        )
+        repo.jobs[stranger.id] = stranger
+    seeded = set(repo.jobs)
+    app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
+    async with client(app) as http:
+        response = await http.post(
+            "/generations/video-composites",
+            json={
+                "baseJobId": str(take.id),
+                "conversationId": str(conversation),
                 "segments": [
                     {"sourceJobId": str(take.id), "start": 0, "end": 1},
                     {"sourceJobId": str(stranger.id), "start": 0},
@@ -1601,15 +1644,17 @@ async def test_every_segment_comes_from_the_base_or_a_finished_edit_of_it(role: 
         )
 
     assert response.status_code == 422, response.text
-    assert response.json()["detail"]
+    assert response.json()["detail"] == "每段须出自本对话的素材片或已完成的编辑段"
     assert set(repo.jobs) == seeded
 
 
-async def test_a_segment_from_an_edit_in_another_conversation_is_out_of_scope() -> None:
+@pytest.mark.parametrize("role", ["素材片", "编辑段"])
+async def test_a_segment_from_another_conversation_is_out_of_scope(role: str) -> None:
     repo = InMemoryGenerationRepository()
     owner, conversation = uuid.uuid4(), uuid.uuid4()
     take = seed_take(repo, owner=owner, conversation=conversation)
-    elsewhere = replace(seed_edit(repo, take), conversation_id=uuid.uuid4())
+    stranger = seed_take(repo, owner=owner) if role == "素材片" else seed_edit(repo, take)
+    elsewhere = replace(stranger, conversation_id=uuid.uuid4())
     repo.jobs[elsewhere.id] = elsewhere
     seeded = set(repo.jobs)
     app = build_test_app(repo, granted=principal("generation:submit", user_id=owner))
