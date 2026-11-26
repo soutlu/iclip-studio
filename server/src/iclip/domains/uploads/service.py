@@ -245,9 +245,6 @@ class UploadService:
             return None
         return upload.url
 
-    async def owns_video_at(self, principal: Principal, url: str) -> bool:
-        return await self._repo.owned_video_at(principal.user_id, url)
-
     async def _discard_duplicate(self, object_key: str, *, upload_id: uuid.UUID) -> None:
         try:
             await self._objects.delete_object(object_key)

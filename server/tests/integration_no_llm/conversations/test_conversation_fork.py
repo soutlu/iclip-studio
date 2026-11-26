@@ -3,8 +3,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import NoReturn
 
 import httpx
@@ -26,11 +24,8 @@ from iclip.domains.conversations.service import ConversationService
 from iclip.domains.generation.infra_sql import SqlGenerationRepository
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.identity.public import Principal
-from iclip.domains.uploads.infra_sql import SqlUploadRepository
-from iclip.domains.uploads.models import MediaUpload
 from iclip.platform.db.engine import build_engine
 from iclip.platform.media.codec import SOFTWARE
-from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.agents import AgentSeed, seed_agents
 from tests.helpers.app import make_client, settled
 from tests.helpers.auth import register_and_login, set_roles_in_db
@@ -42,8 +37,6 @@ from tests.helpers.generation import (
     make_job,
     video_request,
 )
-from tests.helpers.media import synthesize_video
-from tests.helpers.media_server import serving
 from tests.helpers.model_providers import GOOD_KEY, KeyCheckingProbe
 from tests.helpers.pg import connected, reset_database
 from tests.helpers.runtime_backed import build_backed_app, config_services_of
@@ -514,37 +507,14 @@ async def listed_ids(client: httpx.AsyncClient, conversation_id: str) -> set[str
     return {item["id"] for item in listed.json()["items"]}
 
 
-@pytest.mark.skipif(not ffmpeg_available(), reason="受理编辑要探参考片段的时长，本机没有 ffprobe")
 async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
     media_app: FastAPI, pg_url: str
 ) -> None:
     engine = build_engine(pg_url)
     repo = SqlGenerationRepository(engine)
-    with TemporaryDirectory(prefix="fork-clip-") as tmp:
-        clip_bytes = synthesize_video(
-            Path(tmp) / "clip.mp4", size="160x120", seconds=4, audio=False
-        )
     try:
-        async with make_client(media_app) as client, serving({"clip.mp4": clip_bytes}) as media:
+        async with make_client(media_app) as client:
             owner = uuid.UUID(await login_as(client, pg_url, username="logan"))
-            clip_url = media.url("clip.mp4")
-            await SqlUploadRepository(engine).insert(
-                MediaUpload(
-                    id=uuid.uuid4(),
-                    owner_user_id=owner,
-                    api_key_id=None,
-                    conversation_id=None,
-                    kind="video",
-                    url=clip_url,
-                    content_type="video/mp4",
-                    size_bytes=len(clip_bytes),
-                    duration_ms=4000,
-                    width=160,
-                    height=120,
-                    content_md5=None,
-                    created_at=datetime.now(UTC),
-                )
-            )
             source = await open_conversation(client)
             await seed_turns(pg_url, source, ["第一句"])
             take = await complete(
@@ -582,12 +552,11 @@ async def test_a_fork_inherits_finished_takes_instead_of_copying_them(
                 return await client.post(
                     "/generations/video-edits",
                     json={
+                        "mode": "edit",
                         "source_job_id": str(base),
-                        "range_start_ms": 1000,
-                        "range_end_ms": 3000,
-                        "reference_video_urls": [clip_url],
+                        "range_start_ms": 0,
+                        "range_end_ms": 4000,
                         "model": "vendor-a-seedance-2-5",
-                        "seconds": -1,
                         "prompt": "换一双鞋",
                         "conversation_id": copy,
                     },

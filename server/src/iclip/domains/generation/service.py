@@ -137,6 +137,7 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
+        edit_reference_url: Callable[[uuid.UUID], str],
         references: ReferenceAssets,
         subtitles: ProviderTarget | None = None,
         dubbing_provider: str | None = None,
@@ -161,6 +162,7 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
+        self._edit_reference_url = edit_reference_url
         self._references = references
         self._subtitles = subtitles
         self._dubbing_provider = dubbing_provider
@@ -205,64 +207,65 @@ class GenerationService:
         if clip_spec is None:
             raise ValidationFailed(f"{request.model} 尚未接入片段生成")
         spec = clip_spec.spec
-        upstream = clip_spec.edit_mode if request.reference_video_urls else UpstreamMode()
+        edit_limits = None
+        upstream = UpstreamMode()
         _require_user_name(request.user_name)
         if len(request.reference_image_urls) > spec.max_reference_images:
             raise ValidationFailed(
                 f"{request.model} 最多支持 {spec.max_reference_images} 张参考图片"
             )
-        if request.reference_video_urls:
-            if spec.edit is None:
+        if request.mode == "edit":
+            edit_limits = spec.edit
+            if edit_limits is None:
                 raise ValidationFailed(f"{request.model} 不支持片段编辑")
-            if request.seconds != -1:
-                raise ValidationFailed("片段编辑的 seconds 必须为 -1，跟随实际参考时长")
+            if request.seconds is not None:
+                raise ValidationFailed("编辑模式的生成时长跟随所选区间，请去掉 seconds")
+            upstream = clip_spec.edit_mode
+            seconds = -1
         else:
             if not request.reference_image_urls:
                 raise ValidationFailed("图生视频至少需要引用一张图片")
+            if request.seconds is None:
+                raise ValidationFailed("图生模式须用 seconds 指定生成时长")
             if not spec.image.min_seconds <= request.seconds <= spec.image.max_seconds:
                 raise ValidationFailed(
                     f"{request.model} 图生时长必须为 "
                     f"{spec.image.min_seconds}–{spec.image.max_seconds} 秒的整数"
                 )
+            seconds = request.seconds
         options = upstream.options(request.provider_options)
         base = await self._check_source(principal, request.source_job_id, request.conversation_id)
         _require_base(base)
         aspect_ratio = None
-        if (
-            not request.reference_video_urls
-            and len(request.reference_image_urls) > _MAX_FIRST_FRAMES
-        ):
+        if edit_limits is None and len(request.reference_image_urls) > _MAX_FIRST_FRAMES:
             aspect_ratio = await self._original_aspect_ratio(
                 principal, base, request.conversation_id
             )
-        clip_url = None
-        if request.reference_video_urls:
-            (clip_url,) = request.reference_video_urls
-            if not await self._references.usable_clip(principal, clip_url):
-                raise ValidationFailed(
-                    "reference_video_urls 须为调用者本人上传的视频或资料库中的参考视频"
-                )
         base_ms = base.output.duration_ms
         if base_ms is None:
             base_ms = await self._probe_duration(base.output.url, what="基底", job_id=base.id)
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
-        if clip_url is not None and spec.edit is not None:
-            clip_ms = await self._probe_duration(clip_url, what="参考片段", job_id=None)
-            if not spec.edit.min_seconds * 1000 <= clip_ms <= spec.edit.max_seconds * 1000:
+        job_id = uuid.uuid4()
+        reference_video_urls: list[str] = []
+        if edit_limits is not None:
+            clip_ms = min(request.range_end_ms, base_ms) - request.range_start_ms
+            if not edit_limits.min_seconds * 1000 <= clip_ms <= edit_limits.max_seconds * 1000:
                 raise ValidationFailed(
-                    f"{request.model} 编辑参考时长必须为 "
-                    f"{spec.edit.min_seconds}–{spec.edit.max_seconds} 秒"
+                    f"{request.model} 编辑区间须为 "
+                    f"{edit_limits.min_seconds}–{edit_limits.max_seconds} 秒，"
+                    f"当前所选为 {format_seconds(clip_ms / 1000)} 秒，请调整区间"
                 )
+            reference_video_urls = [self._edit_reference_url(job_id)]
         edit = VideoEditRequest(
             model=request.model,
             prompt=upstream.prompt(request.prompt),
             user_name=request.user_name,
             reference_image_urls=request.reference_image_urls,
-            reference_video_urls=request.reference_video_urls,
+            reference_video_urls=reference_video_urls,
             # 不带分辨率时由上游自己定档，和原片不是一档的话合成时就得缩放。
             resolution=await self._original_resolution(base),
             aspect_ratio=aspect_ratio,
-            seconds=request.seconds,
+            seconds=seconds,
             provider_options=options,
             range_start_ms=request.range_start_ms,
             range_end_ms=request.range_end_ms,
@@ -282,6 +285,7 @@ class GenerationService:
             source_job_id=base.id,
             model_group=model_group,
             upstream_model=upstream_model,
+            job_id=job_id,
         )
 
     async def submit_video_compose(
@@ -392,7 +396,7 @@ class GenerationService:
             )
         return ratio
 
-    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID | None) -> int:
+    async def _probe_duration(self, url: str | None, *, what: str, job_id: uuid.UUID) -> int:
         if url is None:
             raise RuntimeError(f"生成记录 {job_id} 核对过却没有产物地址")
         try:
@@ -452,10 +456,12 @@ class GenerationService:
         source_job_id: uuid.UUID | None = None,
         model_group: str | None = None,
         upstream_model: str | None = None,
+        job_id: uuid.UUID | None = None,
     ) -> GenerationJob:
         created = await self._queue_new(
             _pending_job(
                 request,
+                job_id=job_id,
                 owner_user_id=principal.user_id,
                 api_key_id=principal.api_key_id,
                 provider=provider,
@@ -984,10 +990,11 @@ def _pending_job(
     source_job_id: uuid.UUID | None = None,
     model_group: str | None = None,
     upstream_model: str | None = None,
+    job_id: uuid.UUID | None = None,
 ) -> GenerationJob:
     now = datetime.now(UTC)
     return GenerationJob(
-        id=uuid.uuid4(),
+        id=uuid.uuid4() if job_id is None else job_id,
         owner_user_id=owner_user_id,
         api_key_id=api_key_id,
         conversation_id=conversation_id,

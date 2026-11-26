@@ -30,11 +30,6 @@ class VoiceSample:
 class ReferenceAssets(Protocol):
     """生成要用的参考资产与上传，由组合根接到参考资产库与上传台账上。"""
 
-    async def usable_clip(self, principal: Principal, url: str) -> bool:
-        """局部编辑能不能拿这个地址作参考片段：调用者本人的一条视频上传，或资料库里一条没移除的
-        参考视频。"""
-        ...
-
     async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
         """``reference_ids`` 里不在资料库、或已经移除的那些，按原顺序。"""
         ...

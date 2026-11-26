@@ -16,11 +16,6 @@ class GenerationReferenceAssets:
         self._uploads = uploads
         self._references = references
 
-    async def usable_clip(self, principal: Principal, url: str) -> bool:
-        if await self._uploads.owns_video_at(principal, url):
-            return True
-        return await self._references.listed_video_at(url)
-
     async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
         return await self._references.unlisted(reference_ids)
 

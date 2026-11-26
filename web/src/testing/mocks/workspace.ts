@@ -24,7 +24,7 @@ import sampleWideUrl from '../fixtures/sample-video-wide.mp4?no-inline'
 import sampleVideoUrl from '../fixtures/sample-video.mp4?no-inline'
 import { VIDEO_MODELS } from '../video-models'
 import { MOCK_MUSIC_SECONDS, MOCK_MUSIC_URL } from './audio'
-import { addMockUpload, isMockVideoUpload } from './uploads'
+import { addMockUpload } from './uploads'
 
 const FRAME_A =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='320'%3E%3Crect width='180' height='320' fill='%23e4ded2'/%3E%3Ccircle cx='90' cy='120' r='38' fill='%23a8742a'/%3E%3Crect x='60' y='170' width='60' height='110' fill='%236b5330'/%3E%3C/svg%3E"
@@ -50,6 +50,7 @@ const httpFrames = (): MockFrames => {
 
 const VIDEO_URL = sampleVideoUrl
 const EDITED_URL = sampleEditedUrl
+const EDIT_REFERENCE_URL = 'https://cdn.example.test/iclip/agent/edit-references/mock.mp4'
 const VIDEO_MS = 6000
 const EDITED_MS = 3000
 const LONG_VIDEO_URL = sampleLongUrl
@@ -1082,21 +1083,19 @@ export const workspaceHandlers = [
         { status: 422 },
       )
     }
-    const clips = body.reference_video_urls ?? []
-    if (
-      clips.length > 1 ||
-      (clips.length === 0 && (body.reference_image_urls?.length ?? 0) === 0)
-    ) {
+    const editing = body.mode === 'edit'
+    const seconds = body.seconds ?? null
+    if (editing && seconds !== null) {
       return HttpResponse.json(
-        { detail: '请提供一条编辑视频，或至少一张图生参考图' },
+        { detail: '编辑模式的生成时长跟随所选区间，请去掉 seconds' },
         { status: 422 },
       )
     }
-    if (clips[0] !== undefined && !isMockVideoUpload(clips[0])) {
-      return HttpResponse.json(
-        { detail: 'reference_video_urls 必须是调用者本人上传的一段视频' },
-        { status: 422 },
-      )
+    if (!editing && (body.reference_image_urls?.length ?? 0) === 0) {
+      return HttpResponse.json({ detail: '图生视频至少需要引用一张图片' }, { status: 422 })
+    }
+    if (!editing && seconds === null) {
+      return HttpResponse.json({ detail: '图生模式须用 seconds 指定生成时长' }, { status: 422 })
     }
     const created = acceptGeneration({
       kind: 'video',
@@ -1105,8 +1104,8 @@ export const workspaceHandlers = [
         model: body.model,
         prompt: body.prompt,
         reference_image_urls: body.reference_image_urls ?? [],
-        reference_video_urls: clips,
-        seconds: body.seconds ?? null,
+        reference_video_urls: editing ? [EDIT_REFERENCE_URL] : [],
+        seconds: editing ? -1 : seconds,
         provider_options: body.provider_options ?? null,
       },
       conversationId: body.conversation_id ?? null,

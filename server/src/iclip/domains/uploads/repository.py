@@ -16,8 +16,6 @@ class UploadRepository(Protocol):
 
     async def earliest_video_with_md5(self, content_md5: str) -> MediaUpload | None: ...
 
-    async def owned_video_at(self, owner: uuid.UUID, url: str) -> bool: ...
-
     async def list_in_conversation(
         self,
         conversation_id: uuid.UUID,

@@ -100,6 +100,7 @@ def _module(repo: InMemoryGenerationRepository, sent: list[httpx.Request]) -> Ge
         image_text_to_image_task="text-to-image",
         image_edit_task="image-edit",
         object_store=MemoryObjectStore(),
+        public_url=MemoryObjectStore().public_url,
         queue_connector=InMemoryConnector(),
         media_codec=SOFTWARE,
         fetch_url=as_is,

@@ -7701,13 +7701,13 @@ export type VideoDraftCompletionIn = {
 /**
  * VideoEditIn
  *
- * 一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。
+ * 一次编辑段的受理输入：一次上游视频请求，外加替换基底、区间与生成方式。
  *
- * 转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的
- * 片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。
- * ``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条
- * 记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条
- * ``VideoEditRequest``：来源与原作落列，区间记在请求快照里。
+ * ``mode`` 为 ``image`` 时按正文引用的图片生成替换片段，``seconds`` 必填；为 ``edit`` 时由服务端
+ * 在交上游前从基底精确切出 ``[range_start_ms, range_end_ms)``（终点超出基底时切到基底结尾）作参考
+ * 视频，不收 ``seconds``，生成时长跟随参考。产物时长不必等于基底替换区间。``mode`` 不落库、不发上游。
+ * 不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条 ``VideoEditRequest``：
+ * 来源与原作落列，区间记在请求快照里，编辑模式的参考片段地址记在 ``reference_video_urls``。
  */
 export type VideoEditIn = {
   /**
@@ -7720,6 +7720,10 @@ export type VideoEditIn = {
   metadata?: {
     [key: string]: unknown
   } | null
+  /**
+   * Mode
+   */
+  mode: 'image' | 'edit'
   /**
    * Model
    */
@@ -7747,13 +7751,9 @@ export type VideoEditIn = {
    */
   reference_image_urls?: Array<string>
   /**
-   * Reference Video Urls
-   */
-  reference_video_urls?: Array<string>
-  /**
    * Seconds
    */
-  seconds: number
+  seconds?: number | null
   /**
    * Source Job Id
    */

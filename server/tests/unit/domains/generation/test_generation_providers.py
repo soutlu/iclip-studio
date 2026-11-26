@@ -4,6 +4,7 @@ import json
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import replace
+from functools import partial
 from typing import get_args
 
 import httpx
@@ -18,7 +19,11 @@ from iclip.domains.generation.image_upstream import (
 from iclip.domains.generation.model_groups import ModelGroup, ModelGroups
 from iclip.domains.generation.models import GenerationJob, GenerationOutput
 from iclip.domains.generation.nano_banana import NANO_BANANA_PRO
-from iclip.domains.generation.processing import FfmpegComposeProvider
+from iclip.domains.generation.processing import (
+    EditReferenceCutter,
+    FfmpegComposeProvider,
+    LocalClipProcessor,
+)
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
 from iclip.domains.generation.schemas import (
     IMAGE_ASPECT_RATIOS,
@@ -34,6 +39,8 @@ from tests.helpers.fetch_url import as_is
 from tests.helpers.generation import (
     SHOT_IMAGE_URLS,
     SHOT_PROMPT,
+    FakeMediaProbe,
+    InMemoryGenerationRepository,
     MemoryObjectStore,
     compose_request,
     draft_completion_request,
@@ -101,10 +108,26 @@ def seedream_ok(request: httpx.Request) -> httpx.Response:
     return httpx.Response(200, content=b"JPGDATA", headers={"content-type": "image/jpeg"})
 
 
+def local_processor() -> LocalClipProcessor:
+    return LocalClipProcessor(
+        object_store=MemoryObjectStore(), codec=SOFTWARE, fetch_url=as_is, concurrency=1
+    )
+
+
+def edit_references() -> EditReferenceCutter:
+    return EditReferenceCutter(
+        local_processor(),
+        report_stage=_report_stage,
+        record_of=partial(InMemoryGenerationRepository().get, owner=None),
+        media_probe=FakeMediaProbe(),
+    )
+
+
 def video_provider(handler: Handler) -> HttpVideoProvider:
     return HttpVideoProvider(
         VIDEO_SETTINGS,
         model_groups=VIDEO_GROUPS,
+        edit_references=edit_references(),
         transport=httpx.MockTransport(handler),
     )
 
@@ -554,12 +577,7 @@ async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
             make_job(compose_request()),
         ),
         (
-            FfmpegComposeProvider(
-                object_store=MemoryObjectStore(),
-                report_stage=_report_stage,
-                codec=SOFTWARE,
-                fetch_url=as_is,
-            ),
+            FfmpegComposeProvider(local_processor(), report_stage=_report_stage),
             make_job(video_request()),
         ),
     ],
@@ -667,7 +685,10 @@ def enhance_provider(
     handler: Handler, *, settings: VideoProviderSettings = ENHANCE_SETTINGS
 ) -> HttpVideoProvider:
     return HttpVideoProvider(
-        settings, model_groups=VIDEO_GROUPS, transport=httpx.MockTransport(handler)
+        settings,
+        model_groups=VIDEO_GROUPS,
+        edit_references=edit_references(),
+        transport=httpx.MockTransport(handler),
     )
 
 
@@ -806,7 +827,10 @@ def grouped_provider(
     handler: Handler, *, settings: VideoProviderSettings = DRAFT_SETTINGS
 ) -> HttpVideoProvider:
     return HttpVideoProvider(
-        settings, model_groups=MKT_GROUPS, transport=httpx.MockTransport(handler)
+        settings,
+        model_groups=MKT_GROUPS,
+        edit_references=edit_references(),
+        transport=httpx.MockTransport(handler),
     )
 
 

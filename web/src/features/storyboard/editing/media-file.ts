@@ -23,7 +23,7 @@ const METADATA_ONLY = { metadataOnly: true } as const
 export const openInput = (url: string) =>
   new Input({ source: new UrlSource(url), formats: [MP4, QTFF, MP3, WAVE] })
 
-export const asUserFacing = (cause: unknown, message: string): UserFacingError =>
+const asUserFacing = (cause: unknown, message: string): UserFacingError =>
   cause instanceof UserFacingError ? cause : new UserFacingError(message, { cause })
 
 export const readKeyframes = async (url: string): Promise<KeyframeIndex> => {

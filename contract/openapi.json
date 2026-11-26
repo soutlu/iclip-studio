@@ -14677,7 +14677,7 @@
       },
       "VideoEditIn": {
         "additionalProperties": false,
-        "description": "一次编辑段的受理输入：一次上游视频请求，外加只记账的替换基底与区间。\n\n转发给上游的字段照上游命名。有参考视频时编辑调用方按当前选用素材裁剪、拼接后上传的\n片段；没有参考视频时按正文引用的图片生成替换片段。产物时长不必等于基底替换区间。\n``source_job_id`` 与 ``range_start_ms`` / ``range_end_ms`` 只记账、不参与处理，有了它们这条\n记录才是编辑段。不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条\n``VideoEditRequest``：来源与原作落列，区间记在请求快照里。",
+        "description": "一次编辑段的受理输入：一次上游视频请求，外加替换基底、区间与生成方式。\n\n``mode`` 为 ``image`` 时按正文引用的图片生成替换片段，``seconds`` 必填；为 ``edit`` 时由服务端\n在交上游前从基底精确切出 ``[range_start_ms, range_end_ms)``（终点超出基底时切到基底结尾）作参考\n视频，不收 ``seconds``，生成时长跟随参考。产物时长不必等于基底替换区间。``mode`` 不落库、不发上游。\n不收 ``shot`` 与原作：编辑段只有正文，原作由基底定。受理后落库的是一条 ``VideoEditRequest``：\n来源与原作落列，区间记在请求快照里，编辑模式的参考片段地址记在 ``reference_video_urls``。",
         "properties": {
           "conversation_id": {
             "anyOf": [
@@ -14702,6 +14702,14 @@
               }
             ],
             "title": "Metadata"
+          },
+          "mode": {
+            "enum": [
+              "image",
+              "edit"
+            ],
+            "title": "Mode",
+            "type": "string"
           },
           "model": {
             "maxLength": 200,
@@ -14745,19 +14753,17 @@
             "title": "Reference Image Urls",
             "type": "array"
           },
-          "reference_video_urls": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 1,
-            "title": "Reference Video Urls",
-            "type": "array"
-          },
           "seconds": {
-            "minimum": -1.0,
-            "title": "Seconds",
-            "type": "integer"
+            "anyOf": [
+              {
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
           },
           "source_job_id": {
             "format": "uuid",
@@ -14791,12 +14797,12 @@
           }
         },
         "required": [
+          "mode",
           "source_job_id",
           "range_start_ms",
           "range_end_ms",
           "model",
-          "prompt",
-          "seconds"
+          "prompt"
         ],
         "title": "VideoEditIn",
         "type": "object"
@@ -21398,7 +21404,7 @@
     },
     "/generations/video-edits": {
       "post": {
-        "description": "为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长\n能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频\n或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
+        "description": "为素材片上的区间生成替换片段。mode 为 image 时图生，为 edit 时编辑；模型与两种模式的\n时长能力由 video-models 声明。图生必须引用图片并用 seconds 指定整秒时长；编辑不收\nseconds，区间长度（终点超出基底时算到基底结尾）要满足模型的编辑时长限制。不合格 422、不入队。\n\n编辑模式由服务端在交上游之前从基底精确切出所选区间作参考视频：片段长期保存，地址受理时\n就记进 request.reference_video_urls；切段期间 clipStage 依次报 fetching / processing /\nuploading。取不到基底记 MEDIA_SOURCE_UNREACHABLE、切段失败记 MEDIA_PROCESS_FAILED、\n存不进桶记 OUTPUT_STORE_FAILED，都不重试，此时不会交给上游。\n\nsource_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，\n独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。\nuser_name 的规则同出片。",
         "operationId": "submit_video_edit_generations_video_edits_post",
         "requestBody": {
           "content": {

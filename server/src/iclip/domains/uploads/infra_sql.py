@@ -16,7 +16,6 @@ from sqlalchemy import (
     Text,
     Uuid,
     and_,
-    exists,
     func,
     or_,
     select,
@@ -119,15 +118,6 @@ class SqlUploadRepository:
             .order_by(_UPLOADS.created_at, _UPLOADS.id)
             .limit(1)
         )
-
-    async def owned_video_at(self, owner: uuid.UUID, url: str) -> bool:
-        stmt = select(
-            exists().where(
-                _UPLOADS.url == url, _UPLOADS.kind == "video", _UPLOADS.owner_user_id == owner
-            )
-        )
-        async with self._engine.connect() as conn:
-            return bool((await conn.execute(stmt)).scalar_one())
 
     async def list_in_conversation(
         self,

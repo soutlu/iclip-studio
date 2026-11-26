@@ -83,9 +83,14 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoEditIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """为素材片上的区间生成替换片段。参考视频为空时图生，有一条时编辑；模型与两种模式的时长
-        能力由 video-models 声明。图生必须引用图片并指定整秒时长；编辑参考须为本人上传的视频
-        或资料库里一条没移除的参考视频，实测时长要满足模型限制，seconds 固定为 -1。不合格 422、不入队。
+        """为素材片上的区间生成替换片段。mode 为 image 时图生，为 edit 时编辑；模型与两种模式的
+        时长能力由 video-models 声明。图生必须引用图片并用 seconds 指定整秒时长；编辑不收
+        seconds，区间长度（终点超出基底时算到基底结尾）要满足模型的编辑时长限制。不合格 422、不入队。
+
+        编辑模式由服务端在交上游之前从基底精确切出所选区间作参考视频：片段长期保存，地址受理时
+        就记进 request.reference_video_urls；切段期间 clipStage 依次报 fetching / processing /
+        uploading。取不到基底记 MEDIA_SOURCE_UNREACHABLE、切段失败记 MEDIA_PROCESS_FAILED、
+        存不进桶记 OUTPUT_STORE_FAILED，都不重试，此时不会交给上游。
 
         source_job_id 与 range_start_ms / range_end_ms 记下基底与替换区间，使用基底媒体时间，
         独立于生成时长。基底须为本对话自己的或继承来的已完成素材片，区间须在其时长之内。

@@ -391,13 +391,6 @@ UPDATE iclip.reference_audios
 SET locale = :locale, transcript = :transcript, meta = meta || CAST(:traits AS jsonb)
 WHERE reference_id = :id""")
 
-_LISTED_VIDEO_AT: Final = text(f"""
-SELECT EXISTS (
-    SELECT 1 FROM iclip.references r
-    JOIN iclip.reference_videos v ON v.reference_id = r.id
-    WHERE r.kind = '{KIND_VIDEO}' AND r.url = :url AND r.deleted_at IS NULL
-)""")
-
 _LISTED_IDS: Final = text(f"""
 SELECT r.id FROM iclip.references r
 LEFT JOIN iclip.reference_videos v ON v.reference_id = r.id
@@ -829,12 +822,6 @@ class SqlReferenceLookup:
 
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
-
-    async def listed_video_at(self, url: str) -> bool:
-        """资料库里有没有这个地址的一条没移除的参考视频。"""
-
-        async with self._engine.connect() as conn:
-            return bool((await conn.execute(_LISTED_VIDEO_AT, {"url": url})).scalar_one())
 
     async def unlisted(self, reference_ids: Sequence[uuid.UUID]) -> tuple[uuid.UUID, ...]:
         """``reference_ids`` 里不在资料库、或已经移除的那些，按原顺序。"""
