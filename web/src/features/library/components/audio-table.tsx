@@ -144,6 +144,7 @@ function AudioRow({ audio, actions }: { audio: ReferenceAudio; actions: AudioRow
             onToggle={() => onToggle(audio)}
             state={playing ? 'playing' : current ? 'paused' : 'idle'}
             title={audio.title}
+            traits={audio}
           >
             {current ? <AuditionBuffering audition={audition} /> : null}
           </AudioCover>

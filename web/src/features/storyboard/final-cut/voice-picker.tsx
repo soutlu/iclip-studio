@@ -334,7 +334,7 @@ function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: Voic
       <button
         aria-label={playing ? `暂停试听：${voice.title}` : `试听：${voice.title}`}
         aria-pressed={playing}
-        className="wf-voice-option-play ui-focus"
+        className="group/cover wf-voice-option-play ui-focus"
         onClick={onToggle}
         type="button"
       >
@@ -343,6 +343,7 @@ function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: Voic
           size="sm"
           state={playing ? 'playing' : current ? 'paused' : 'idle'}
           title={voice.title}
+          traits={voice}
         >
           {current ? <AuditionBuffering audition={audition} /> : null}
         </AudioCover>
@@ -362,7 +363,8 @@ function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: Voic
       </button>
       {picked ? (
         <span aria-label="正在使用" className="wf-voice-option-used" role="img">
-          <Icon decorative name="check" size="sm" />
+          <Icon decorative name="final-cut-in-use" size="xs" />
+          <span aria-hidden>当前</span>
         </span>
       ) : (
         <BlockedReason reason={blocked}>

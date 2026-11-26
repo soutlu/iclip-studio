@@ -505,6 +505,7 @@ function AudioRow({
           size="sm"
           state={playing ? 'playing' : current ? 'paused' : 'idle'}
           title={title}
+          traits={reference}
         >
           {current ? <AuditionBuffering audition={audition} /> : null}
         </AudioCover>

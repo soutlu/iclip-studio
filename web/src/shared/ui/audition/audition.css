@@ -1,3 +1,67 @@
+/* 音频封面底块：浅色白瓷微光、深色石墨微光，仅保留 1px 中性发丝细边与顶部内高光，零背景色偏 */
+.audition-cover {
+  border-radius: var(--radius-control);
+  transition:
+    box-shadow var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+}
+
+.audition-cover.is-md {
+  border-radius: var(--radius-md);
+}
+
+.audition-cover:not(.is-playing) {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-card) 0%,
+    var(--color-surface-container-low) 100%
+  );
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 1px var(--color-panel-line),
+    var(--shadow-specular);
+  color: var(--color-on-surface);
+}
+
+.dark .audition-cover:not(.is-playing) {
+  background-image: linear-gradient(
+    180deg,
+    var(--color-surface-container-high) 0%,
+    var(--color-surface-container) 100%
+  );
+}
+
+.group\/cover:hover .audition-cover:not(.is-playing),
+.group\/cover:focus-visible .audition-cover:not(.is-playing),
+.audition-cover.group\/cover:hover:not(.is-playing),
+.audition-cover.group\/cover:focus-visible:not(.is-playing),
+.audition-cover.is-paused {
+  box-shadow:
+    var(--shadow-xs),
+    0 0 0 1px var(--color-panel-line-strong),
+    var(--shadow-specular);
+}
+
+.audition-cover[data-tone='copper'] {
+  --audition-cover-tone: var(--color-tone-copper);
+}
+
+.audition-cover[data-tone='teal'] {
+  --audition-cover-tone: var(--color-tone-teal);
+}
+
+.audition-cover[data-tone='umber'] {
+  --audition-cover-tone: var(--color-tone-umber);
+}
+
+.audition-cover[data-tone='slate'] {
+  --audition-cover-tone: var(--color-tone-slate);
+}
+
+.audition-cover[data-tone='ochre'] {
+  --audition-cover-tone: var(--color-tone-ochre);
+}
+
 /* 正在试听的那条封面上跳动的三根小音柱，颜色跟文字色走 */
 .audition-eq {
   display: inline-flex;

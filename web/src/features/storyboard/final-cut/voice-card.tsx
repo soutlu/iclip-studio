@@ -57,6 +57,7 @@ export function CurrentVoice({
           size="sm"
           state={playing ? 'playing' : current ? 'paused' : 'idle'}
           title={name}
+          traits={audio}
         >
           {current ? <AuditionBuffering audition={audition} /> : null}
         </AudioCover>

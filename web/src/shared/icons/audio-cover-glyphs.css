@@ -1,0 +1,24 @@
+/* 音频封面双层图标：副结构先在独立 <g> 中整组合成再降不透明度，消除笔画交界叠黑；主形读取封面语义色变量。 */
+.audition-glyph-sec {
+  opacity: 0.28;
+}
+
+.audition-glyph-sec-soft {
+  opacity: 0.16;
+}
+
+.dark .audition-glyph-sec {
+  opacity: 0.3;
+}
+
+.dark .audition-glyph-sec-soft {
+  opacity: 0.17;
+}
+
+.audition-glyph-tone-fill {
+  fill: var(--audition-cover-tone, currentColor);
+}
+
+.audition-glyph-tone-stroke {
+  stroke: var(--audition-cover-tone, currentColor);
+}

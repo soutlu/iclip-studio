@@ -111,6 +111,7 @@ import {
 import type { LucideProps } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { ARTIFACT_GLYPHS } from './artifact-glyphs'
+import { AUDIO_COVER_GLYPHS } from './audio-cover-glyphs'
 import { FILE_GLYPHS } from './file-glyphs'
 import { FINAL_CUT_GLYPHS } from './final-cut-glyphs'
 import {
@@ -312,6 +313,7 @@ const ICONS = {
   ...FINAL_CUT_GLYPHS,
   ...FILE_GLYPHS,
   ...ARTIFACT_GLYPHS,
+  ...AUDIO_COVER_GLYPHS,
 } as const
 
 export type IconName = keyof typeof ICONS
