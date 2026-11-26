@@ -10,7 +10,9 @@ import httpx
 import pytest
 from fastapi import FastAPI
 
+from iclip.domains.generation import service as generation_service
 from iclip.domains.generation.api import create_generations_router
+from iclip.domains.generation.clip_models import ClipModel
 from iclip.domains.generation.models import (
     STATUS_COMPLETED,
     STATUS_FAILED,
@@ -27,9 +29,12 @@ from iclip.domains.generation.schemas import (
     MAX_COMPOSE_SEGMENTS,
     MAX_METADATA_CHARS,
     READ_BACK_CONTEXT,
+    ClipImageDurationOut,
+    VideoClipModelOut,
     VideoComposeRequest,
     VideoDraftCompletionRequest,
     VideoGenerationIn,
+    VideoTransitionRequest,
     request_to_payload,
 )
 from iclip.domains.generation.seedream import SEEDREAM_V5_PRO
@@ -37,6 +42,7 @@ from iclip.domains.generation.service import GenerationService
 from iclip.domains.identity.acting import ActAs, placeholder_email
 from iclip.domains.identity.models import Principal
 from iclip.domains.identity.rbac import ACT_AS_PERMISSION
+from iclip.platform.object_store.layout import MEDIA_PATHS
 from tests.helpers.app import app_with_principal
 from tests.helpers.generation import (
     LEGACY_SHOT_PROMPT,
@@ -59,7 +65,9 @@ from tests.helpers.generation import (
     make_edit,
     make_enhancement,
     make_job,
+    public_url,
     stored_request,
+    transition_request,
     trial_request,
     video_request,
     video_shot,
@@ -88,6 +96,15 @@ EDIT_BODY = {
 }
 
 IMAGE_CLIP = {"mode": "image", "seconds": 5}
+
+TRANSITION_BODY = {
+    "mode": "first_last_frame",
+    "model": "vendor-a-seedance-2-5",
+    "prompt": "人物从门口走到窗边",
+    "left_end_ms": 3000,
+    "right_start_ms": 1000,
+    "seconds": 5,
+}
 
 DURATIONS_MS = {
     "https://example.com/base.mp4": 6000,
@@ -166,7 +183,7 @@ def build_test_app(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=probe,
-        edit_reference_url=edit_reference_url,
+        public_url=public_url,
         references=FakeReferenceAssets(listed=listed),
         drafts=drafts,
         model_groups=default_only(video_models),
@@ -510,6 +527,14 @@ async def test_metadata_filters_reject_non_objects_and_oversized_values() -> Non
         ("/generations/video", VIDEO_BODY),
         ("/generations/image", IMAGE_BODY),
         ("/generations/video-edits", {**EDIT_BODY, "source_job_id": str(uuid.uuid4())}),
+        (
+            "/generations/video-transitions",
+            {
+                **TRANSITION_BODY,
+                "left_job_id": str(uuid.uuid4()),
+                "right_job_id": str(uuid.uuid4()),
+            },
+        ),
         (
             "/generations/video-composites",
             {
@@ -1741,11 +1766,21 @@ async def test_a_composite_with_malformed_segments_is_rejected(
     assert list(repo.jobs) == [take.id]
 
 
-@pytest.mark.parametrize("path", ["/generations/video-edits", "/generations/video-composites"])
+@pytest.mark.parametrize(
+    "path",
+    ["/generations/video-edits", "/generations/video-transitions", "/generations/video-composites"],
+)
 async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> None:
     def body_for(source: GenerationJob, user_name: str | None) -> dict[str, object]:
         if path.endswith("video-edits"):
             body: dict[str, object] = {**EDIT_BODY, "source_job_id": str(source.id)}
+            return body if user_name is None else {**body, "user_name": user_name}
+        if path.endswith("video-transitions"):
+            body = {
+                **TRANSITION_BODY,
+                "left_job_id": str(source.id),
+                "right_job_id": str(other.id),
+            }
             return body if user_name is None else {**body, "user_name": user_name}
         body = {
             "baseJobId": str(source.id),
@@ -1756,6 +1791,7 @@ async def test_edits_and_composites_settle_the_author_like_a_take(path: str) -> 
     repo = InMemoryGenerationRepository()
     owner = uuid.uuid4()
     source = seed_take(repo, owner=owner)
+    other = seed_take(repo, owner=owner)
     users = InMemoryUserRepository()
     sara = await users.ensure_by_name("Sara.Hong", email=placeholder_email("Sara.Hong"))
     seeded = set(repo.jobs)
@@ -2684,3 +2720,357 @@ async def test_draft_completion_needs_the_submit_permission() -> None:
 
     assert response.status_code == 403
     assert list(repo.jobs) == [draft.id]
+
+
+RIGHT_URL = "https://example.com/right.mp4"
+
+
+def seed_pair(
+    repo: InMemoryGenerationRepository,
+    *,
+    owner: uuid.UUID,
+    conversation: uuid.UUID | None = None,
+    duration_ms: int | None = 6000,
+) -> tuple[GenerationJob, GenerationJob]:
+    left = seed_take(
+        repo,
+        owner=owner,
+        conversation=conversation,
+        shot_index=3,
+        request=video_request(resolution="720p"),
+    )
+    right = seed_take(repo, owner=owner, conversation=conversation, shot_index=5)
+    left = replace(left, output=left.output.model_copy(update={"duration_ms": duration_ms}))
+    right = replace(
+        right,
+        output=GenerationOutput(url=RIGHT_URL, watermark_url=RIGHT_URL, duration_ms=duration_ms),
+    )
+    repo.jobs.update({left.id: left, right.id: right})
+    return left, right
+
+
+def transition_body(
+    left: GenerationJob, right: GenerationJob, **fields: object
+) -> dict[str, object]:
+    return {
+        **TRANSITION_BODY,
+        "left_job_id": str(left.id),
+        "right_job_id": str(right.id),
+        **fields,
+    }
+
+
+async def post_transition(
+    repo: InMemoryGenerationRepository,
+    body: dict[str, object],
+    *,
+    owner: uuid.UUID,
+    lineage: FixedLineage | None = None,
+    durations: Mapping[str, int] = DURATIONS_MS,
+) -> httpx.Response:
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", user_id=owner),
+        lineage=lineage,
+        durations=durations,
+    )
+    async with client(app) as http:
+        return await http.post("/generations/video-transitions", json=body)
+
+
+async def test_a_first_last_frame_transition_is_a_sourced_take_shaped_record_without_a_range() -> (
+    None
+):
+    repo = InMemoryGenerationRepository()
+    owner, conversation, task = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner, conversation=conversation)
+    seeded = set(repo.jobs)
+
+    response = await post_transition(
+        repo,
+        transition_body(
+            left,
+            right,
+            conversation_id=str(conversation),
+            task_id=str(task),
+            metadata={"seam": 1},
+        ),
+        owner=owner,
+    )
+
+    assert response.status_code == 202, response.text
+    stored = only_new(repo, seeded)
+    assert (stored.kind, stored.operation, stored.provider, stored.status) == (
+        "video",
+        "generate",
+        "video_api",
+        STATUS_PENDING,
+    )
+    assert (stored.source_job_id, stored.root_job_id, stored.shot_index) == (left.id, left.id, 3)
+    assert (stored.conversation_id, stored.task_id, stored.metadata) == (
+        conversation,
+        task,
+        {"seam": 1},
+    )
+    request = stored_request(stored)
+    assert isinstance(request, VideoTransitionRequest)
+    assert request.reference_image_urls == [
+        public_url(MEDIA_PATHS.transition_first_frame(job_id=stored.id)),
+        public_url(MEDIA_PATHS.transition_last_frame(job_id=stored.id)),
+    ], "受理时就把这条衔接段的首尾帧地址记进请求"
+    assert (request.reference_video_urls, request.seconds, request.provider_options) == (
+        [],
+        5,
+        None,
+    )
+    generation = response.json()["generation"]
+    assert (generation["sourceJobId"], generation["rangeStartMs"], generation["rangeEndMs"]) == (
+        str(left.id),
+        None,
+        None,
+    )
+    assert {
+        key: generation["request"][key]
+        for key in ("mode", "left_job_id", "left_end_ms", "right_job_id", "right_start_ms")
+    } == {
+        "mode": "first_last_frame",
+        "left_job_id": str(left.id),
+        "left_end_ms": 3000,
+        "right_job_id": str(right.id),
+        "right_start_ms": 1000,
+    }, "衔接方式与接点在对外的 request 里看得到"
+
+
+@pytest.mark.parametrize(
+    ("model", "options", "prompt"),
+    [
+        (
+            "vendor-a-seedance-2-5",
+            {"omni_reference_task_type": "edit"},
+            "人物从门口走到窗边",
+        ),
+        ("wan3.0-video", None, "编辑视频，人物从门口走到窗边"),
+    ],
+    ids=["seedance", "wan"],
+)
+async def test_a_video_edit_transition_records_its_reference_clip_in_the_models_edit_mode(
+    model: str, options: dict[str, str] | None, prompt: str
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner)
+    seeded = set(repo.jobs)
+    body = transition_body(
+        left, right, mode="video_edit", model=model, left_end_ms=2000, right_start_ms=1000
+    )
+    del body["seconds"]
+
+    response = await post_transition(repo, body, owner=owner)
+
+    assert response.status_code == 202, response.text
+    stored = only_new(repo, seeded)
+    request = stored_request(stored)
+    assert isinstance(request, VideoTransitionRequest)
+    assert request.reference_video_urls == [
+        public_url(MEDIA_PATHS.transition_clip(job_id=stored.id))
+    ]
+    assert (request.reference_image_urls, request.seconds) == ([], -1)
+    assert (request.provider_options, request.prompt) == (options, prompt)
+
+
+@pytest.mark.parametrize(
+    ("fields", "expected"),
+    [
+        ({}, ("720p", None, None)),
+        (
+            {"resolution": "1080p", "aspect_ratio": "adaptive", "generate_audio": False},
+            ("1080p", "adaptive", False),
+        ),
+    ],
+    ids=["不传时分辨率沿用 A 的原片", "传了原样记下"],
+)
+async def test_transition_output_settings_are_passed_through_or_follow_the_left_original(
+    fields: dict[str, object], expected: tuple[object, object, object]
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner)
+    seeded = set(repo.jobs)
+
+    response = await post_transition(repo, transition_body(left, right, **fields), owner=owner)
+
+    assert response.status_code == 202, response.text
+    request = stored_request(only_new(repo, seeded))
+    assert isinstance(request, VideoTransitionRequest)
+    assert (request.resolution, request.aspect_ratio, request.generate_audio) == expected
+
+
+def _without_edit(model: str) -> ClipModel:
+    return ClipModel(
+        VideoClipModelOut(
+            id=model,
+            max_reference_images=10,
+            image=ClipImageDurationOut(min_seconds=4, max_seconds=30, default_seconds=5),
+            edit=None,
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "flaw",
+    [
+        "同一条",
+        "A 在别的对话",
+        "B 是编辑段",
+        "A 是试生成",
+        "left_end_ms 超出 A",
+        "right_start_ms 超出 B",
+        "参考片段太短",
+        "参考片段太长",
+        "首尾帧缺时长",
+        "首尾帧时长超出范围",
+        "首尾帧自动时长",
+        "视频编辑带时长",
+        "模型不支持编辑",
+        "模型没接入片段生成",
+        "自带首尾帧地址",
+    ],
+)
+async def test_a_transition_that_does_not_hold_together_is_refused_before_anything_is_stored(
+    flaw: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner, conversation = uuid.uuid4(), uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner, conversation=conversation)
+    fields: dict[str, object] = {"conversation_id": str(conversation)}
+    video_edit = {"mode": "video_edit", "seconds": None}
+    match flaw:
+        case "同一条":
+            fields["right_job_id"] = str(left.id)
+        case "A 在别的对话":
+            elsewhere = seed_take(repo, owner=owner, conversation=uuid.uuid4())
+            fields["left_job_id"] = str(elsewhere.id)
+        case "B 是编辑段":
+            fields["right_job_id"] = str(seed_edit(repo, right).id)
+        case "A 是试生成":
+            trial = make_job(
+                trial_request(),
+                status=STATUS_COMPLETED,
+                owner_user_id=owner,
+                conversation_id=conversation,
+                output=GenerationOutput(url=BASE_URL, duration_ms=6000),
+            )
+            repo.jobs[trial.id] = trial
+            fields["left_job_id"] = str(trial.id)
+        case "left_end_ms 超出 A":
+            fields["left_end_ms"] = 6051
+        case "right_start_ms 超出 B":
+            fields["right_start_ms"] = 6051
+        case "参考片段太短":
+            fields |= {**video_edit, "left_end_ms": 5000, "right_start_ms": 2999}
+        case "参考片段太长":
+            long_left, long_right = seed_pair(
+                repo, owner=owner, conversation=conversation, duration_ms=20000
+            )
+            fields |= {
+                **video_edit,
+                "model": "wan3.0-video",
+                "left_job_id": str(long_left.id),
+                "right_job_id": str(long_right.id),
+                "left_end_ms": 4000,
+                "right_start_ms": 1,
+            }
+        case "首尾帧缺时长":
+            fields["seconds"] = None
+        case "首尾帧时长超出范围":
+            fields["seconds"] = 31
+        case "首尾帧自动时长":
+            fields["seconds"] = -1
+        case "视频编辑带时长":
+            fields |= {"mode": "video_edit", "seconds": 5}
+        case "模型不支持编辑":
+            monkeypatch.setattr(generation_service, "clip_model", _without_edit)
+            fields |= video_edit
+        case "模型没接入片段生成":
+            fields["model"] = "other-model"
+        case "自带首尾帧地址":
+            fields["reference_image_urls"] = ["https://cdn.test/first.png"]
+        case _:
+            raise AssertionError(f"没有这种缺陷：{flaw}")
+    body = {
+        key: value
+        for key, value in transition_body(left, right, **fields).items()
+        if value is not None
+    }
+    seeded = set(repo.jobs)
+    app = build_test_app(
+        repo,
+        granted=principal("generation:submit", user_id=owner),
+        video_models=(*VIDEO_MODELS, "other-model"),
+    )
+    async with client(app) as http:
+        response = await http.post("/generations/video-transitions", json=body)
+
+    assert response.status_code == 422, response.text
+    assert set(repo.jobs) == seeded, "拒绝发生在落库之前"
+
+
+@pytest.mark.parametrize(
+    ("left_end_ms", "right_start_ms"),
+    [(6000, 4000), (2000, 0), (6050, 4050)],
+    ids=["A 不留尾巴", "B 不留开头", "接点在容差内取到片尾"],
+)
+async def test_a_video_edit_reference_may_come_from_one_side_alone(
+    left_end_ms: int, right_start_ms: int
+) -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner)
+    body = transition_body(
+        left, right, mode="video_edit", left_end_ms=left_end_ms, right_start_ms=right_start_ms
+    )
+    del body["seconds"]
+
+    response = await post_transition(repo, body, owner=owner)
+
+    assert response.status_code == 202, response.text
+
+
+async def test_unmeasured_sides_are_probed_and_an_unreadable_one_is_refused() -> None:
+    repo = InMemoryGenerationRepository()
+    owner = uuid.uuid4()
+    left, right = seed_pair(repo, owner=owner, duration_ms=None)
+    seeded = set(repo.jobs)
+    measured = {BASE_URL: 6000, RIGHT_URL: 6000}
+
+    accepted = await post_transition(
+        repo, transition_body(left, right), owner=owner, durations=measured
+    )
+    refused = await post_transition(
+        repo, transition_body(left, right), owner=owner, durations={BASE_URL: 6000}
+    )
+
+    assert accepted.status_code == 202, accepted.text
+    assert refused.status_code == 422, refused.text
+    assert "右侧素材片" in refused.json()["detail"]
+    assert len(set(repo.jobs) - seeded) == 1
+
+
+@pytest.mark.parametrize("mode", ["first_last_frame", "video_edit"])
+async def test_a_transition_reads_back_with_its_stage_and_no_range(mode: str) -> None:
+    take = make_job(video_request(), status=STATUS_COMPLETED)
+    transition = replace(
+        make_job(
+            transition_request(mode=mode, left_job_id=take.id),
+            source_job_id=take.id,
+            root_job_id=take.id,
+            status=STATUS_SUBMITTING,
+        ),
+        provider_status="fetching",
+    )
+
+    body = await read_back(transition)
+
+    assert body["clipStage"] == "fetching", "准备素材期间照合成上报阶段"
+    assert (body["rangeStartMs"], body["rangeEndMs"]) == (None, None)
+    assert body["request"] == request_to_payload(stored_request(transition))

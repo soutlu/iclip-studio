@@ -15,6 +15,7 @@ from iclip.domains.generation.schemas import (
     DubbingRequest,
     VideoComposeRequest,
     VideoGenerationIn,
+    VideoTransitionRequest,
     request_to_payload,
 )
 from iclip.domains.generation.stored_requests import request_from_payload
@@ -24,6 +25,7 @@ from tests.helpers.generation import (
     compose_request,
     edit_request,
     image_request,
+    transition_request,
     video_request,
     video_shot,
 )
@@ -42,6 +44,20 @@ def test_a_take_snapshot_with_a_range_fails_loudly() -> None:
 
     with pytest.raises(ValidationFailed, match="形状不合法"):
         request_from_payload(KIND_VIDEO, OPERATION_GENERATE, payload, has_source=False)
+
+
+@pytest.mark.parametrize("mode", ["first_last_frame", "video_edit"])
+def test_a_transition_snapshot_reads_back_as_a_transition_though_it_has_a_source(
+    mode: str,
+) -> None:
+    stored = transition_request(mode=mode)
+
+    restored = request_from_payload(
+        KIND_VIDEO, OPERATION_GENERATE, request_to_payload(stored), has_source=True
+    )
+
+    assert isinstance(restored, VideoTransitionRequest)
+    assert restored == stored
 
 
 def test_a_composite_stored_before_user_names_reads_back_without_one() -> None:

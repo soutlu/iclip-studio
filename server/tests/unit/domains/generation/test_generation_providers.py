@@ -23,6 +23,7 @@ from iclip.domains.generation.processing import (
     EditReferenceCutter,
     FfmpegComposeProvider,
     LocalClipProcessor,
+    TransitionInputs,
 )
 from iclip.domains.generation.provider import GenerationProvider, ProviderError
 from iclip.domains.generation.schemas import (
@@ -123,11 +124,21 @@ def edit_references() -> EditReferenceCutter:
     )
 
 
+def transition_inputs() -> TransitionInputs:
+    return TransitionInputs(
+        local_processor(),
+        report_stage=_report_stage,
+        record_of=partial(InMemoryGenerationRepository().get, owner=None),
+        media_probe=FakeMediaProbe(),
+    )
+
+
 def video_provider(handler: Handler) -> HttpVideoProvider:
     return HttpVideoProvider(
         VIDEO_SETTINGS,
         model_groups=VIDEO_GROUPS,
         edit_references=edit_references(),
+        transition_inputs=transition_inputs(),
         transport=httpx.MockTransport(handler),
     )
 
@@ -692,6 +703,7 @@ def enhance_provider(
         settings,
         model_groups=VIDEO_GROUPS,
         edit_references=edit_references(),
+        transition_inputs=transition_inputs(),
         transport=httpx.MockTransport(handler),
     )
 
@@ -834,6 +846,7 @@ def grouped_provider(
         settings,
         model_groups=MKT_GROUPS,
         edit_references=edit_references(),
+        transition_inputs=transition_inputs(),
         transport=httpx.MockTransport(handler),
     )
 

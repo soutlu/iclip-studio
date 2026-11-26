@@ -22,6 +22,7 @@ from iclip.domains.generation.schemas import (
     OPERATION_RENDER,
     OPERATION_TRIAL,
     READ_BACK_CONTEXT,
+    TRANSITION_LEFT_FIELD,
     DubbingRequest,
     ImageGenerationIn,
     MusicRequest,
@@ -32,6 +33,7 @@ from iclip.domains.generation.schemas import (
     VideoEditRequest,
     VideoEnhanceRequest,
     VideoGenerationIn,
+    VideoTransitionRequest,
     VideoTrialRequest,
     WholeFilmRequest,
 )
@@ -40,6 +42,7 @@ GenerationRequest = (
     VideoGenerationIn
     | VideoTrialRequest
     | VideoEditRequest
+    | VideoTransitionRequest
     | VideoDraftCompletionRequest
     | ImageGenerationIn
     | VideoComposeRequest
@@ -65,6 +68,7 @@ _ADAPTERS: Final[Mapping[tuple[str, str], TypeAdapter[Any]]] = {
 }
 
 _EDIT: Final[TypeAdapter[Any]] = TypeAdapter(VideoEditRequest)
+_TRANSITION: Final[TypeAdapter[Any]] = TypeAdapter(VideoTransitionRequest)
 _DRAFT_COMPLETION: Final[TypeAdapter[Any]] = TypeAdapter(VideoDraftCompletionRequest)
 
 _WITHOUT_REQUEST: Final = frozenset({(KIND_IMAGE, OPERATION_CUT)})
@@ -78,7 +82,9 @@ def request_from_payload(
             raise ValidationFailed(f"{kind} / {operation} 不该带请求")
         return None
     video_generate = (kind, operation) == (KIND_VIDEO, OPERATION_GENERATE)
-    if video_generate and has_source:
+    if video_generate and payload is not None and TRANSITION_LEFT_FIELD in payload:
+        adapter = _TRANSITION
+    elif video_generate and has_source:
         adapter = _EDIT
     elif video_generate and payload is not None and DRAFT_JOB_FIELD in payload:
         adapter = _DRAFT_COMPLETION

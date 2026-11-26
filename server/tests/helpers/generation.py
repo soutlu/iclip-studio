@@ -65,6 +65,7 @@ from iclip.domains.generation.schemas import (
     VideoEnhanceRequest,
     VideoEnhanceResolution,
     VideoGenerationIn,
+    VideoTransitionRequest,
     VideoTrialRequest,
     WholeFilmRequest,
     WholeFilmVideoSource,
@@ -133,6 +134,26 @@ def edit_request(**overrides: Any) -> VideoEditRequest:
     }
     fields.update(overrides)
     return VideoEditRequest(**fields)
+
+
+def transition_request(**overrides: Any) -> VideoTransitionRequest:
+    fields: dict[str, Any] = {
+        "model": "vendor-a-seedance-2-5",
+        "prompt": "人物从门口走到窗边",
+        "user_name": "logan",
+        "seconds": 5,
+        "reference_image_urls": [
+            "https://cdn.test/iclip/agent/transition-inputs/t/first.jpg",
+            "https://cdn.test/iclip/agent/transition-inputs/t/last.jpg",
+        ],
+        "mode": "first_last_frame",
+        "left_job_id": uuid.uuid4(),
+        "left_end_ms": 3000,
+        "right_job_id": uuid.uuid4(),
+        "right_start_ms": 1000,
+    }
+    fields.update(overrides)
+    return VideoTransitionRequest(**fields)
 
 
 def compose_request(**overrides: Any) -> VideoComposeRequest:
@@ -876,10 +897,16 @@ class MemoryObjectStore:
         return f"{self.base}/{object_key}"
 
 
+def public_url(object_key: str) -> str:
+    """默认 ``MemoryObjectStore`` 桶里这个对象的公网地址。"""
+
+    return MemoryObjectStore().public_url(object_key)
+
+
 def edit_reference_url(job_id: uuid.UUID) -> str:
     """默认 ``MemoryObjectStore`` 桶里这条编辑段参考片段的公网地址。"""
 
-    return MemoryObjectStore().public_url(MEDIA_PATHS.edit_reference(job_id=job_id))
+    return public_url(MEDIA_PATHS.edit_reference(job_id=job_id))
 
 
 async def plant_old_job(engine: AsyncEngine, job: GenerationJob) -> uuid.UUID:
@@ -937,7 +964,9 @@ __all__ = [
     "make_music",
     "make_subtitle",
     "plant_old_job",
+    "public_url",
     "stored_request",
+    "transition_request",
     "trial_request",
     "video_request",
     "whole_film_request",

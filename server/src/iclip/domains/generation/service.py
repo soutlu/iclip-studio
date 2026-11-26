@@ -80,12 +80,15 @@ from iclip.domains.generation.schemas import (
     VideoEnhanceResolution,
     VideoGenerationIn,
     VideoModelsOut,
+    VideoTransitionIn,
+    VideoTransitionRequest,
     WholeFilmRequest,
 )
 from iclip.domains.generation.segment_end import check_segment_end, exceeds_source
 from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.identity.public import Principal, visible_owner_incl_act_as
 from iclip.platform.media.errors import MediaError
+from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.paging import check_limit
 
 _logger = structlog.stdlib.get_logger(__name__)
@@ -137,7 +140,7 @@ class GenerationService:
         clear_completion: ClearCompletion,
         lineage: ConversationLineage,
         media_probe: RemoteMediaProbe,
-        edit_reference_url: Callable[[uuid.UUID], str],
+        public_url: Callable[[str], str],
         references: ReferenceAssets,
         subtitles: ProviderTarget | None = None,
         dubbing_provider: str | None = None,
@@ -162,7 +165,7 @@ class GenerationService:
         self._clear_completion = clear_completion
         self._lineage = lineage
         self._media_probe = media_probe
-        self._edit_reference_url = edit_reference_url
+        self._public_url = public_url
         self._references = references
         self._subtitles = subtitles
         self._dubbing_provider = dubbing_provider
@@ -241,9 +244,7 @@ class GenerationService:
             aspect_ratio = await self._original_aspect_ratio(
                 principal, base, request.conversation_id
             )
-        base_ms = base.output.duration_ms
-        if base_ms is None:
-            base_ms = await self._probe_duration(base.output.url, what="基底", job_id=base.id)
+        base_ms = await self._duration_of(base, what="基底")
         _check_edit_range(request.range_start_ms, request.range_end_ms, base_ms)
         job_id = uuid.uuid4()
         reference_video_urls: list[str] = []
@@ -255,7 +256,7 @@ class GenerationService:
                     f"{edit_limits.min_seconds}–{edit_limits.max_seconds} 秒，"
                     f"当前所选为 {format_seconds(clip_ms / 1000)} 秒，请调整区间"
                 )
-            reference_video_urls = [self._edit_reference_url(job_id)]
+            reference_video_urls = [self._public_url(MEDIA_PATHS.edit_reference(job_id=job_id))]
         edit = VideoEditRequest(
             model=request.model,
             prompt=upstream.prompt(request.prompt),
@@ -287,6 +288,134 @@ class GenerationService:
             upstream_model=upstream_model,
             job_id=job_id,
         )
+
+    async def submit_video_transition(
+        self, principal: Principal, request: VideoTransitionIn
+    ) -> GenerationJob:
+        self._require_video_model(request.model)
+        clip_spec = clip_model(request.model)
+        if clip_spec is None:
+            raise ValidationFailed(f"{request.model} 尚未接入片段生成")
+        spec = clip_spec.spec
+        _require_user_name(request.user_name)
+        edit_limits = None
+        if request.mode == "video_edit":
+            edit_limits = spec.edit
+            if edit_limits is None:
+                raise ValidationFailed(f"{request.model} 不支持片段编辑")
+            if request.seconds is not None:
+                raise ValidationFailed("视频编辑模式的生成时长跟随参考片段，请去掉 seconds")
+            upstream = clip_spec.edit_mode
+            seconds = -1
+        else:
+            if spec.max_reference_images < _MAX_FIRST_FRAMES:
+                raise ValidationFailed(
+                    f"{request.model} 最多支持 {spec.max_reference_images} 张参考图片，"
+                    f"首尾帧需要 {_MAX_FIRST_FRAMES} 张"
+                )
+            if request.seconds is None:
+                raise ValidationFailed("首尾帧模式须用 seconds 指定生成时长")
+            if not spec.image.min_seconds <= request.seconds <= spec.image.max_seconds:
+                raise ValidationFailed(
+                    f"{request.model} 图生时长必须为 "
+                    f"{spec.image.min_seconds}–{spec.image.max_seconds} 秒的整数"
+                )
+            upstream = UpstreamMode()
+            seconds = request.seconds
+        options = upstream.options(request.provider_options)
+        if request.left_job_id == request.right_job_id:
+            raise ValidationFailed(
+                "left_job_id 与 right_job_id 须是两条不同的素材片；同一条视频换中间一段请用 video-edits"
+            )
+        left = await self._transition_side(
+            principal, request.left_job_id, request.conversation_id, field="left_job_id"
+        )
+        right = await self._transition_side(
+            principal, request.right_job_id, request.conversation_id, field="right_job_id"
+        )
+        left_ms = await self._duration_of(left, what="左侧素材片")
+        right_ms = await self._duration_of(right, what="右侧素材片")
+        for field, at_ms, video_ms, side in (
+            ("left_end_ms", request.left_end_ms, left_ms, "左侧"),
+            ("right_start_ms", request.right_start_ms, right_ms, "右侧"),
+        ):
+            if exceeds_source(at_ms, video_ms):
+                raise ValidationFailed(
+                    f"{field} {format_seconds(at_ms / 1000)} 秒超出了{side}素材片的时长 "
+                    f"{format_seconds(video_ms / 1000)} 秒"
+                )
+        job_id = uuid.uuid4()
+        reference_image_urls: list[str] = []
+        reference_video_urls: list[str] = []
+        if edit_limits is None:
+            reference_image_urls = [
+                self._public_url(MEDIA_PATHS.transition_first_frame(job_id=job_id)),
+                self._public_url(MEDIA_PATHS.transition_last_frame(job_id=job_id)),
+            ]
+        else:
+            clip_ms = (left_ms - min(request.left_end_ms, left_ms)) + min(
+                request.right_start_ms, right_ms
+            )
+            if not edit_limits.min_seconds * 1000 <= clip_ms <= edit_limits.max_seconds * 1000:
+                raise ValidationFailed(
+                    f"{request.model} 视频编辑模式的参考片段须为 "
+                    f"{edit_limits.min_seconds}–{edit_limits.max_seconds} 秒，"
+                    f"当前左侧剩余与右侧开头合计 {format_seconds(clip_ms / 1000)} 秒，"
+                    "请调整 left_end_ms 或 right_start_ms"
+                )
+            reference_video_urls = [self._public_url(MEDIA_PATHS.transition_clip(job_id=job_id))]
+        transition = VideoTransitionRequest(
+            model=request.model,
+            prompt=upstream.prompt(request.prompt),
+            user_name=request.user_name,
+            reference_image_urls=reference_image_urls,
+            reference_video_urls=reference_video_urls,
+            resolution=request.resolution or await self._original_resolution(left),
+            aspect_ratio=request.aspect_ratio,
+            generate_audio=request.generate_audio,
+            seconds=seconds,
+            provider_options=options,
+            mode=request.mode,
+            left_job_id=left.id,
+            left_end_ms=request.left_end_ms,
+            right_job_id=right.id,
+            right_start_ms=request.right_start_ms,
+        )
+        model_group, upstream_model = await self._model_groups.video_model_of(
+            principal.user_id, request.model
+        )
+        return await self._accept(
+            principal,
+            transition,
+            provider=self._video_provider_name,
+            conversation_id=request.conversation_id,
+            task_id=request.task_id,
+            metadata=request.metadata,
+            shot_index=left.shot_index,
+            root_job_id=left.root_job_id or left.id,
+            source_job_id=left.id,
+            model_group=model_group,
+            upstream_model=upstream_model,
+            job_id=job_id,
+        )
+
+    async def _transition_side(
+        self,
+        principal: Principal,
+        job_id: uuid.UUID,
+        conversation_id: uuid.UUID | None,
+        *,
+        field: str,
+    ) -> GenerationJob:
+        side = await self._check_source(principal, job_id, conversation_id)
+        if not is_base_master(side):
+            raise ValidationFailed(f"{field} 须是一条已完成的素材片（出片或合成）")
+        return side
+
+    async def _duration_of(self, video: GenerationJob, *, what: str) -> int:
+        if video.output.duration_ms is not None:
+            return video.output.duration_ms
+        return await self._probe_duration(video.output.url, what=what, job_id=video.id)
 
     async def submit_video_compose(
         self, principal: Principal, request: VideoComposeIn

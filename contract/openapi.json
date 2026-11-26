@@ -15387,6 +15387,173 @@
         "title": "VideoTaskResult",
         "type": "object"
       },
+      "VideoTransitionIn": {
+        "additionalProperties": false,
+        "description": "一次衔接段的受理输入：一次上游视频请求，外加左右两条素材片、各自的接点与衔接方式。\n\nA（``left_job_id``）保留到 ``left_end_ms``，B（``right_job_id``）从 ``right_start_ms`` 开始保留，\n都用各自的媒体时间（毫秒）。``mode`` 为 ``first_last_frame`` 时由服务端抽出 A 在\n``left_end_ms`` 之前的最后一帧作首帧、B 在 ``right_start_ms`` 处的那一帧作尾帧图生过渡，\n``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)`` 与 B 的\n``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /\n``aspect_ratio`` / ``generate_audio`` 传了就原样转给上游；``resolution`` 不传时沿用 A 原片\n最初出片的设置。受理后落库的是一条 ``VideoTransitionRequest``：衔接方式与接点记在请求里、\n不发上游，首尾帧或参考片段的地址记在 ``reference_image_urls`` / ``reference_video_urls``。",
+        "properties": {
+          "aspect_ratio": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aspect Ratio"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "generate_audio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generate Audio"
+          },
+          "left_end_ms": {
+            "minimum": 0.0,
+            "title": "Left End Ms",
+            "type": "integer"
+          },
+          "left_job_id": {
+            "format": "uuid",
+            "title": "Left Job Id",
+            "type": "string"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "mode": {
+            "enum": [
+              "first_last_frame",
+              "video_edit"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "prompt": {
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provider_options": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider Options"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution"
+          },
+          "right_job_id": {
+            "format": "uuid",
+            "title": "Right Job Id",
+            "type": "string"
+          },
+          "right_start_ms": {
+            "minimum": 0.0,
+            "title": "Right Start Ms",
+            "type": "integer"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "minimum": -1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seconds"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "user_name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Name"
+          }
+        },
+        "required": [
+          "left_job_id",
+          "left_end_ms",
+          "right_job_id",
+          "right_start_ms",
+          "mode",
+          "model",
+          "prompt"
+        ],
+        "title": "VideoTransitionIn",
+        "type": "object"
+      },
       "WholeFilmCardOut": {
         "additionalProperties": false,
         "description": "资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。",
@@ -21533,6 +21700,57 @@
           }
         ],
         "summary": "List Video Models"
+      }
+    },
+    "/generations/video-transitions": {
+      "post": {
+        "description": "生成一段把两条素材片顺滑接起来的衔接段。A 保留到 left_end_ms，B 从 right_start_ms\n开始保留，衔接段放在两者之间；拿到它之后用 video-composites 以 A 为基底、按\n[A 的 0 到 left_end_ms、衔接段、B 的 right_start_ms 到结尾] 拼成一条。\n\nmode 为 first_last_frame 时，服务端抽出 A 在 left_end_ms 之前的最后一帧作首帧、B 在\nright_start_ms 处的那一帧作尾帧图生过渡（时间点越过结尾取最后一帧），seconds 必填、须在模型\n图生时长之内；为 video_edit 时，服务端把 A 的 [left_end_ms, A 结尾) 与 B 的\n[0, right_start_ms) 按 A 的画幅帧率拼成参考视频，按模型的视频编辑模式重做接缝，不收\nseconds，两段合计时长须在模型编辑时长之内。帧和参考片段都长期保存，地址受理时就记进\nrequest.reference_image_urls / request.reference_video_urls；准备期间 clipStage 依次报\nfetching / processing / uploading，取不到素材片记 MEDIA_SOURCE_UNREACHABLE、加工失败记\nMEDIA_PROCESS_FAILED、存不进桶记 OUTPUT_STORE_FAILED，都不重试，此时不会交给上游。\n\nA、B 须为本对话自己的或继承来的两条不同的已完成素材片，left_end_ms / right_start_ms 不超出\n各自时长（容差 50 毫秒）。resolution / aspect_ratio / generate_audio 传了就原样转给上游，\nresolution 不传时沿用 A 原片最初出片的设置。记录为 video / generate，来源与原作、镜号随 A，\n没有替换区间；衔接方式与两个接点记在 request 里，不发上游。不合格 422、不入队。\nuser_name 的规则同出片。",
+        "operationId": "submit_video_transition_generations_video_transitions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoTransitionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "SessionCookie": [
+              "generation:submit"
+            ]
+          },
+          {
+            "BearerToken": [
+              "generation:submit"
+            ]
+          }
+        ],
+        "summary": "Submit Video Transition"
       }
     },
     "/generations/video/{task_id}": {

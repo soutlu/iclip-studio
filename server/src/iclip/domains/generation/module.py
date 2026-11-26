@@ -27,6 +27,7 @@ from iclip.domains.generation.processing import (
     FfmpegComposeProvider,
     LocalClipProcessor,
     ReportStage,
+    TransitionInputs,
 )
 from iclip.domains.generation.provider import GenerationProvider, ImageModelSpec
 from iclip.domains.generation.queue import (
@@ -55,7 +56,6 @@ from iclip.domains.generation.video import HttpVideoProvider, VideoProviderSetti
 from iclip.domains.identity.public import ActAs
 from iclip.platform.media.codec import MediaCodec
 from iclip.platform.media.probe import probe_remote_duration_ms
-from iclip.platform.object_store.layout import MEDIA_PATHS
 from iclip.platform.object_store.store import PublicObjectStore
 
 
@@ -150,6 +150,12 @@ def build_generation_module(
             record_of=record_of,
             media_probe=media_probe,
         ),
+        transition_inputs=TransitionInputs(
+            processor,
+            report_stage=report_stage,
+            record_of=record_of,
+            media_probe=media_probe,
+        ),
         transport=video_transport,
     )
     compose_provider = FfmpegComposeProvider(
@@ -239,7 +245,7 @@ def build_generation_module(
         clear_completion=clear_completion,
         lineage=lineage,
         media_probe=media_probe,
-        edit_reference_url=lambda job_id: public_url(MEDIA_PATHS.edit_reference(job_id=job_id)),
+        public_url=public_url,
         references=references,
         subtitles=subtitle_target,
         dubbing_provider=dubbing_target,

@@ -39,8 +39,8 @@ from tests.helpers.generation import (
     FixedLineage,
     InMemoryGenerationRepository,
     ScriptedProvider,
-    edit_reference_url,
     make_music,
+    public_url,
 )
 from tests.helpers.identity import InMemoryUserRepository
 from tests.helpers.model_groups import default_only
@@ -116,7 +116,7 @@ def build_world(
         clear_completion=cleared.record,
         lineage=lineage or FixedLineage(),
         media_probe=FakeMediaProbe(),
-        edit_reference_url=edit_reference_url,
+        public_url=public_url,
         references=FakeReferenceAssets(),
         subtitles=ProviderTarget(provider=FAKE_SUBTITLE_PROVIDER, model="qwen-audio-3.1-asr-flash"),
         music=music,

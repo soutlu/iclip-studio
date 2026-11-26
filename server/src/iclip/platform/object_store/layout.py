@@ -29,6 +29,15 @@ class MediaPaths:
     def edit_reference(self, *, job_id: uuid.UUID) -> str:
         return f"{OSS_ROOT}/edit-references/{job_id}.mp4"
 
+    def transition_first_frame(self, *, job_id: uuid.UUID) -> str:
+        return f"{OSS_ROOT}/transition-inputs/{job_id}/first.jpg"
+
+    def transition_last_frame(self, *, job_id: uuid.UUID) -> str:
+        return f"{OSS_ROOT}/transition-inputs/{job_id}/last.jpg"
+
+    def transition_clip(self, *, job_id: uuid.UUID) -> str:
+        return f"{OSS_ROOT}/transition-inputs/{job_id}/clip.mp4"
+
     def whole_film(self, *, job_id: uuid.UUID) -> str:
         return f"{OSS_ROOT}/whole-films/{job_id}.mp4"
 
