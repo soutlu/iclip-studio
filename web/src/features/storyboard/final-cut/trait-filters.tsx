@@ -4,7 +4,7 @@ import {
   type AudioTraitFilter,
 } from '@/shared/api/reference-audios'
 import { AUDIO_FILTER_LABELS, audioFilterOptions } from '@/shared/ui/audition'
-import { FilterBarRoot, MultiPickerFilter } from '@/shared/ui/filter-bar'
+import { FilterBarRoot, SelectFilter } from '@/shared/ui/filter-bar'
 
 type TraitFiltersProps = {
   /** 按先后列出的属性。 */
@@ -15,24 +15,24 @@ type TraitFiltersProps = {
   total: number | null | undefined
 }
 
-/** 侧栏里音频列表上方的一行属性筛选（素净的多选弹层，和资料库「音频库」同一种）加右边的条数。 */
+/** 侧栏里音频列表上方的一行属性筛选（素净的单选弹层，和资料库「音频库」同一种）加右边的条数。 */
 export function TraitFilters({ keys, value, onChange, total }: TraitFiltersProps) {
   return (
     <FilterBarRoot className="wf-trait-filters">
       {keys.map((key) => (
-        <MultiPickerFilter
+        <SelectFilter
           className="wf-trait-filter"
           id={key}
           key={key}
           noun={AUDIO_FILTER_LABELS[key].name}
-          onChange={(values) =>
+          onChange={(picked) =>
             onChange({
               ...value,
-              [key]: AUDIO_FILTER_VALUES[key].filter((each) => values.includes(each)),
+              [key]: AUDIO_FILTER_VALUES[key].find((each) => each === picked),
             })
           }
           options={audioFilterOptions(key)}
-          value={value[key] ?? []}
+          value={value[key]}
           width="w-44"
         />
       ))}

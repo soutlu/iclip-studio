@@ -103,30 +103,41 @@ describe('资料库 · 音频库', () => {
     expect(within(rowOf('温柔女声')).getByText('多语种')).toBeInTheDocument()
   })
 
-  it('属性筛选都能多选，筛完写着找到几条；切子类时属性筛选清掉', async () => {
+  it('属性筛选每项选一个：换一项替掉原来的，再点选中的清空；筛完写着找到几条；切子类时属性筛选清掉', async () => {
     const queries = recordListQueries()
     const scopes: ReferenceAudioScope[] = []
     const user = await open((scope) => scopes.push(scope))
+    /** 打开 `trigger` 的弹层点 `option`，等弹层关上。 */
+    const pick = async (trigger: string, popup: string, option: string | RegExp) => {
+      await user.click(screen.getByRole('button', { name: trigger }))
+      const dialog = await screen.findByRole('dialog', { name: popup })
+      await user.click(within(dialog).getByRole('radio', { name: option }))
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: popup })).toBeNull())
+    }
 
-    await user.click(screen.getByRole('button', { name: '语种：语种' }))
-    const locales = await screen.findByRole('dialog', { name: '选择语种' })
-    await user.click(within(locales).getByRole('checkbox', { name: 'English' }))
-    expect(scopes.at(-1)).toEqual({ kind: 'voice', q: '', traits: { locale: ['en'] } })
+    await pick('语种：语种', '选择语种', 'English')
+    expect(scopes.at(-1)).toEqual({ kind: 'voice', q: '', traits: { locale: 'en' } })
     await waitFor(() => expect(titles()).toEqual(['Emma']))
+    expect(queries.at(-1)?.getAll('locale')).toEqual(['en'])
     expect(screen.getByText('找到 1 个音色')).toBeVisible()
 
-    await user.click(within(locales).getByRole('checkbox', { name: '多语种' }))
-    await waitFor(() => expect(titles()).toEqual(['Emma', '温柔女声']))
-    expect(queries.at(-1)?.getAll('locale')).toEqual(['en', 'none'])
-    await user.keyboard('{Escape}')
-    expect(screen.getByRole('button', { name: '语种：English +1' })).toBeVisible()
+    await pick('语种：English', '选择语种', '多语种')
+    expect(scopes.at(-1)).toEqual({ kind: 'voice', q: '', traits: { locale: 'none' } })
+    await waitFor(() => expect(titles()).toEqual(['温柔女声']))
+    expect(queries.at(-1)?.getAll('locale')).toEqual(['none'])
 
+    await pick('语种：多语种', '选择语种', '多语种')
+    expect(scopes.at(-1)).toEqual({ kind: 'voice', q: '', traits: {} })
+    await waitFor(() => expect(titles()).toEqual(['Klaus', 'Emma', '温柔女声']))
+    // 不筛的那份已在缓存里，列表先照缓存出来；等后台重读的请求发出去
+    await waitFor(() => expect(queries.at(-1)?.getAll('locale')).toEqual([]))
+    expect(screen.getByRole('button', { name: '语种：语种' })).toBeVisible()
+
+    await pick('语种：语种', '选择语种', 'English')
     await user.click(kindTab('配乐'))
     expect(scopes.at(-1)).toEqual({ kind: 'bgm', q: '', traits: {} })
     await screen.findByRole('list', { name: '配乐' })
-    await user.click(screen.getByRole('button', { name: '节奏：节奏' }))
-    const tempos = await screen.findByRole('dialog', { name: '选择节奏' })
-    await user.click(within(tempos).getByRole('checkbox', { name: /快速/ }))
+    await pick('节奏：节奏', '选择节奏', /快速/)
     await waitFor(() => expect(titles('配乐')).toEqual(['城市夜景氛围']))
     expect(within(rowOf('城市夜景氛围', '配乐')).getByText('122 BPM')).toBeInTheDocument()
     expect(within(rowOf('城市夜景氛围', '配乐')).getByText('电子律动 · 松弛')).toBeInTheDocument()

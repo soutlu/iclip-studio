@@ -14,6 +14,7 @@ import {
   latestReferenceAudiosQuery,
   referenceAudioKeys,
   referenceAudiosQuery,
+  traitQuery,
   type AudioKind,
   type AudioTraitFilter,
   type ReferenceAudio,
@@ -31,13 +32,13 @@ export const DEFAULT_REFERENCE_AUDIO_SCOPE: ReferenceAudioScope = {
   traits: {},
 }
 
-/** 只留 `kind` 用得上的属性筛选，去掉空的；「全部」不按属性筛。 */
+/** 只留 `kind` 用得上的属性筛选，去掉没选的；「全部」不按属性筛。 */
 export const traitsFor = (kind: ReferenceAudioTab, traits: AudioTraitFilter): AudioTraitFilter => {
   if (kind === 'all') return {}
   const kept: AudioTraitFilter = {}
   for (const key of AUDIO_KIND_FILTERS[kind]) {
-    const values = traits[key]
-    if (values !== undefined && values.length > 0) Object.assign(kept, { [key]: values })
+    const value = traits[key]
+    if (value !== undefined) Object.assign(kept, { [key]: value })
   }
   return kept
 }
@@ -51,7 +52,11 @@ export type ReferenceAudioChange = z.input<typeof zReferenceAudioUpdateIn>
 /** 某个子类的列表，按关键词和属性筛，往下滚接着读。 */
 export const useReferenceAudios = (kind: AudioKind, q: string, traits: AudioTraitFilter) =>
   useInfiniteQuery({
-    ...referenceAudiosQuery({ audioKind: kind, q, ...traitsFor(kind, traits) }),
+    ...referenceAudiosQuery({
+      audioKind: kind,
+      q,
+      ...traitQuery(AUDIO_KIND_FILTERS[kind], traits),
+    }),
     gcTime: 30 * 60_000,
   })
 

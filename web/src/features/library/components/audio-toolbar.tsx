@@ -7,7 +7,7 @@ import {
 } from '@/shared/api/reference-audios'
 import { AUDIO_FILTER_LABELS, AUDIO_KIND_LABELS, audioFilterOptions } from '@/shared/ui/audition'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
-import { FilterBarRoot, MultiPickerFilter } from '@/shared/ui/filter-bar'
+import { FilterBarRoot, SelectFilter } from '@/shared/ui/filter-bar'
 import {
   useReferenceAudioFilters,
   type ReferenceAudioScope,
@@ -28,7 +28,7 @@ type AudioToolbarProps = {
   summary: ReactNode
 }
 
-/** 音频库的工具行：子类切换（带条数）、当前子类的属性筛选（都能多选）和右边的条数。 */
+/** 音频库的工具行：子类切换（带条数）、当前子类的属性筛选（每项选一个）和右边的条数。 */
 export function AudioToolbar({ scope, onScopeChange, summary }: AudioToolbarProps) {
   const filters = useReferenceAudioFilters()
   const countOf = (tab: ReferenceAudioTab) => {
@@ -67,22 +67,22 @@ export function AudioToolbar({ scope, onScopeChange, summary }: AudioToolbarProp
       </ChipGroup>
       {traitKeys.length === 0 ? null : <span aria-hidden className="mx-2 h-4 w-px bg-hairline" />}
       {traitKeys.map((key) => (
-        <MultiPickerFilter
+        <SelectFilter
           className="h-8 rounded-sm px-2.5"
           id={key}
           key={key}
           noun={AUDIO_FILTER_LABELS[key].name}
-          onChange={(values) =>
+          onChange={(picked) =>
             onScopeChange({
               ...scope,
               traits: {
                 ...scope.traits,
-                [key]: AUDIO_FILTER_VALUES[key].filter((value) => values.includes(value)),
+                [key]: AUDIO_FILTER_VALUES[key].find((value) => value === picked),
               },
             })
           }
           options={audioFilterOptions(key)}
-          value={scope.traits[key] ?? []}
+          value={scope.traits[key]}
           width="w-48"
         />
       ))}

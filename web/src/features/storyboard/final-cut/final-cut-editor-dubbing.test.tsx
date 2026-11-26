@@ -728,9 +728,9 @@ describe('final-cut 编辑器 · 配音', () => {
     await user.click(await screen.findByRole('menuitemradio', { name: '全部' }))
     await waitFor(() => expect(pickerVoices(title)).toEqual(['Hans', 'Emma', 'Klaus', '旁白']))
     await user.click(within(picker(title)).getByRole('button', { name: '性别：性别' }))
-    await user.click(await screen.findByRole('checkbox', { name: '男声' }))
+    await user.click(await screen.findByRole('radio', { name: '男声' }))
     await waitFor(() => expect(pickerVoices(title)).toEqual(['Hans', 'Klaus']))
-    await user.keyboard('{Escape}')
+    expect(within(picker(title)).getByRole('button', { name: '性别：男声' })).toHaveFocus()
     await user.type(within(picker(title)).getByRole('searchbox', { name: '搜索音色' }), '沉稳')
     await waitFor(() => expect(pickerVoices(title)).toEqual(['Klaus']))
 
