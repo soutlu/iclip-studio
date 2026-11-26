@@ -8,7 +8,7 @@
   margin-top: 28px;
 }
 .md-body > h5 {
-  margin-top: 21px;
+  margin-top: 20px;
 }
 .md-body > :first-child {
   margin-top: 0;
@@ -19,7 +19,7 @@
   padding-left: 28px;
 }
 .md-body li + li {
-  margin-top: 11px;
+  margin-top: 10px;
 }
 .md-body ul > li {
   list-style: none;
@@ -51,7 +51,7 @@
 
 .md-body blockquote {
   color: var(--color-chat-secondary-text);
-  padding-left: 21px;
+  padding-left: 20px;
   position: relative;
 }
 .md-body blockquote::before {

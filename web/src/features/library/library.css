@@ -3,7 +3,7 @@
 .library-card-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   height: var(--control-height-xs);
   padding: 0 8px;
   border-radius: var(--radius-full);
@@ -133,7 +133,7 @@
   display: flex;
   gap: 2px;
   min-width: 0;
-  padding: 3px;
+  padding: 2px;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
@@ -177,7 +177,7 @@
 }
 
 .library-viewer-segment-note {
-  margin-left: 3px;
+  margin-left: 2px;
   color: var(--color-on-surface-faint);
   font-weight: 400;
 }

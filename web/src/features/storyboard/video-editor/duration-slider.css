@@ -65,7 +65,7 @@
   flex: none;
   justify-content: flex-end;
   align-items: baseline;
-  gap: 3px;
+  gap: 2px;
   font-size: var(--text-label);
   font-weight: 500;
 }

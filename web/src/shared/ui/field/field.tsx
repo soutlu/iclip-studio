@@ -3,7 +3,7 @@ import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 
 const FIELD_SURFACE =
-  'ui-state w-full rounded-lg border border-input-border bg-input-bg px-[15px] focus-within:border-on-surface aria-invalid:border-error'
+  'ui-state w-full rounded-lg border border-input-border bg-input-bg px-3.5 focus-within:border-on-surface aria-invalid:border-error'
 const FIELD_TEXT = 'text-body text-on-surface placeholder:text-on-surface-faint'
 const NESTED_INPUT_CLASS =
   'field-nested-input h-full min-w-0 flex-1 bg-transparent disabled:cursor-not-allowed disabled:text-disabled-text'

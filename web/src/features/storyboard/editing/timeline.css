@@ -243,7 +243,7 @@
   height: 24px;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   border-radius: var(--radius-xs);
   background: var(--color-inverse-surface);
   box-shadow: var(--shadow-1);
@@ -351,9 +351,9 @@
   width: 158px;
   height: 52px;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   overflow: hidden;
-  padding: 7px;
+  padding: 6px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-container-lowest);
   box-shadow: var(--shadow-2);
@@ -390,7 +390,7 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   color: var(--color-on-surface);
   font-size: var(--text-label);
 }
@@ -468,7 +468,7 @@
   bottom: calc(100% + 2px);
   left: 8px;
   display: block;
-  padding: 2px 9px;
+  padding: 2px 8px;
   border-radius: var(--radius-xs);
   background: var(--color-inverse-surface);
   box-shadow: var(--shadow-1);

@@ -244,7 +244,7 @@ export function SidebarConversations({
       focusable: true,
       retain: dragging === conversation.id,
       render: (onInteractionChange) => (
-        <div className={collectionId === undefined ? undefined : 'relative pl-6.5'}>
+        <div className={collectionId === undefined ? undefined : 'relative pl-6'}>
           {collectionId !== undefined && (
             <span
               aria-hidden
@@ -338,7 +338,7 @@ export function SidebarConversations({
         section: COLLECTIONS_SECTION,
         height: 28,
         render: () => (
-          <div className="pl-6.5">
+          <div className="pl-6">
             <EmptyHint>{state === 'all' ? '该合集暂无任务' : emptyConversations(state)}</EmptyHint>
           </div>
         ),
@@ -351,7 +351,7 @@ export function SidebarConversations({
         height: 64,
         focusable: true,
         render: () => (
-          <div className="pl-6.5">
+          <div className="pl-6">
             <RetryRow
               error={query.error}
               loading={query.isFetching}
@@ -552,7 +552,7 @@ function SidebarHeading({ action, actionRef, title }: SidebarHeadingProps) {
       {action && (
         <div className="ml-auto flex shrink-0 items-center">
           <IconButton
-            className="-mr-1.25"
+            className="-mr-1"
             label={action.label}
             name={action.icon}
             onClick={action.onClick}
@@ -758,7 +758,7 @@ function CollectionHeader({
   const { isOver, setNodeRef } = useDroppable({ id: collection.id, disabled: !canWrite })
 
   return (
-    <div className="flex flex-col gap-px">
+    <div className="flex flex-col">
       {editing ? (
         <SidebarRowEditor
           failureMessage="重命名合集失败"

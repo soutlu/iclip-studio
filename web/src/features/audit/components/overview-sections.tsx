@@ -26,7 +26,7 @@ import { OverviewChart } from './overview-chart'
 type SectionProps = { id: string; overview: Overview }
 
 function Panel({ children }: { children: ReactNode }) {
-  return <Card className="@container px-5.5 py-5">{children}</Card>
+  return <Card className="@container px-5 py-5">{children}</Card>
 }
 
 function MiniHead({ title, info, end }: { title: string; info?: string; end?: ReactNode }) {
@@ -452,7 +452,7 @@ export function CostSection({ id, overview }: SectionProps) {
             info="缓存读取 ÷（输入 + 缓存读取 + 缓存写入），越高越节省成本"
             title="缓存命中率"
           />
-          <div className="mt-2 flex items-center gap-4.5">
+          <div className="mt-2 flex items-center gap-4">
             <CacheRing rate={current.usage.cacheHitRate} />
             <p className="text-label leading-5 text-on-surface-muted">
               缓存读取 {fmtTokens(current.usage.cacheReadTokens)}

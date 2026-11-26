@@ -290,7 +290,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
           >
             {session.isPending ? (
               <p
-                className="min-h-0 flex-1 px-4.5 pt-4 text-body-sm text-on-surface-faint"
+                className="min-h-0 flex-1 px-4 pt-4 text-body-sm text-on-surface-faint"
                 role="status"
               >
                 正在确认登录状态…
@@ -312,7 +312,7 @@ export function AppSidebar({ collapsed, compact = false, onCollapsedChange }: Ap
             ) : user ? (
               <SidebarConversations onStartInCollection={startNew} />
             ) : (
-              <div className="min-h-0 flex-1 px-4.5 pt-4">
+              <div className="min-h-0 flex-1 px-4 pt-4">
                 <p className="text-body-sm text-on-surface-faint">登录后可查看任务</p>
               </div>
             )}

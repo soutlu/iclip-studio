@@ -4,20 +4,20 @@ import type { TableSort } from '../details-model'
 import { Card } from './overview-bits'
 
 export const TH =
-  'sticky top-0 layer-local-1 h-11 bg-surface-container-low px-4 py-0 text-right text-label font-medium whitespace-nowrap text-on-surface-muted shadow-[var(--shadow-hairline-bottom)] first:pl-5.5 first:text-left last:pr-5.5'
+  'sticky top-0 layer-local-1 h-11 bg-surface-container-low px-4 py-0 text-right text-label font-medium whitespace-nowrap text-on-surface-muted shadow-[var(--shadow-hairline-bottom)] first:pl-5 first:text-left last:pr-5'
 
 export const TD =
-  'h-11 border-b border-hairline px-4 py-0 text-right whitespace-nowrap tabular-nums group-last/row:border-b-0 first:pl-5.5 first:text-left last:pr-5.5'
+  'h-11 border-b border-hairline px-4 py-0 text-right whitespace-nowrap tabular-nums group-last/row:border-b-0 first:pl-5 first:text-left last:pr-5'
 
 export const CLIP_TD = 'max-w-0 text-left whitespace-normal'
 
 export function TableCard({ children }: { children: ReactNode }) {
-  return <Card className="@container overflow-clip px-5.5 py-5">{children}</Card>
+  return <Card className="@container overflow-clip px-5 py-5">{children}</Card>
 }
 
 export function TableScroll({ children }: { children: ReactNode }) {
   return (
-    <div className="-mx-5.5 -mt-5 overflow-x-auto last:-mb-5 @6xl:overflow-visible">{children}</div>
+    <div className="-mx-5 -mt-5 overflow-x-auto last:-mb-5 @6xl:overflow-visible">{children}</div>
   )
 }
 
@@ -41,7 +41,7 @@ export function SortHeader<K extends string>({
     >
       <button
         className={cn(
-          '-mx-1 -my-0.5 inline-flex ui-state cursor-pointer items-center gap-0.75 rounded-sm px-1 py-0.5 whitespace-nowrap ui-focus hover:text-on-surface',
+          '-mx-1 -my-0.5 inline-flex ui-state cursor-pointer items-center gap-0.5 rounded-sm px-1 py-0.5 whitespace-nowrap ui-focus hover:text-on-surface',
           active && 'font-semibold text-on-surface',
         )}
         onClick={() => onSort(column)}

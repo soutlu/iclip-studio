@@ -337,7 +337,7 @@ function ViewerBody({
           </TabsContent>
         </TabsRoot>
 
-        <footer className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface-container-lowest px-6 pt-3.5 pb-4.5 max-md:sticky max-md:bottom-0 max-md:px-4 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
+        <footer className="flex shrink-0 items-center gap-2 border-t border-hairline bg-surface-container-lowest px-6 pt-3.5 pb-4 max-md:sticky max-md:bottom-0 max-md:px-4 max-md:pb-[calc(12px+env(safe-area-inset-bottom))]">
           <MakeSameButton canMakeSame={detail?.canMakeSame ?? null} cardId={video.id} />
           <Button
             aria-label={copied ? '已复制' : '复制提示词'}

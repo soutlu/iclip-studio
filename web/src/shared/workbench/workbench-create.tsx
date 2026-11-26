@@ -72,7 +72,7 @@ export function CreateMenu({ entries, creating, onCreate }: CreateMenuProps) {
             onSelect={() => onCreate(entry)}
             trailing={<span className="text-caption font-medium text-on-surface-faint">新建</span>}
           >
-            <span className="mr-2.25 inline-grid size-6.5 place-items-center rounded-sm bg-surface align-middle ring-1 ring-panel-line-strong ring-inset">
+            <span className="mr-2 inline-grid size-6.5 place-items-center rounded-sm bg-surface align-middle ring-1 ring-panel-line-strong ring-inset">
               <Icon className="text-tone-copper" decorative name={entry.icon} size="md" />
             </span>
             {entry.label}

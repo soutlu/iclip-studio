@@ -21,7 +21,7 @@
 }
 
 /* 参考图：一块只放芯片（缩略图加 @N），一行放不下在块里折行，第二行与第一枚芯片左对齐，不横向滚动。
-   芯片 22px 高，块上下各留 3px，与同一行里 28px 高的段名、字数、按钮居中对齐；芯片自带左右 2px 外距，列距再加 2px。
+   芯片 22px 高，每枚占一条 28px 高的行并在行内居中，与同一行里 28px 高的段名、字数、按钮居中对齐；芯片自带左右 2px 外距，列距再加 2px。
    芯片的按钮排成 flex，小件不按行内基线下沉，高度就是 22px。 */
 .film-frames {
   display: flex;
@@ -29,11 +29,12 @@
   flex: 1 1 0;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 2px;
-  padding: 3px 0;
+  gap: 0 2px;
 }
 .film-frames > .film-chip {
   display: flex;
+  height: 28px;
+  align-items: center;
 }
 /* 全局设定卡的标题行：段名、字数、参考图、右端按钮排一行，标题行本身不折行；段名、字数与按钮钉在第一行，
    各自 28px 高、内容居中，参考图占中间剩下的宽度。 */
@@ -183,7 +184,7 @@
 }
 .film-generate-hint > svg {
   flex: none;
-  margin-top: 3px;
+  margin-top: 2px;
 }
 .film-generate-foot {
   display: flex;

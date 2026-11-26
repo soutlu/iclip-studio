@@ -27,7 +27,7 @@ const listVariants = cva('flex min-w-0', {
       underline: 'items-stretch gap-1',
       // 页签不收缩，宽度不足时在凹槽内裁切溢出部分；深色模式下凹槽底色深于选中项，以保持浮起层次
       segmented:
-        'h-8 items-center gap-0.5 overflow-clip rounded-control bg-surface-container-high p-0.75 shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)] dark:bg-surface',
+        'h-8 items-center gap-0.5 overflow-clip rounded-control bg-surface-container-high p-0.5 shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)] dark:bg-surface',
     },
   },
 })
@@ -54,9 +54,9 @@ const triggerVariants = cva(
           'rounded-xs px-2 text-body text-on-surface-variant data-[state=active]:font-medium',
           'after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-on-surface after:opacity-0 after:transition-opacity after:duration-(--dur-s) data-[state=active]:after:opacity-100',
         ],
-        // 圆角取外槽圆角减去内边距 3px 以保持内外同心；外槽启用裁切，焦点环通过负偏移向内绘制
+        // 圆角取外槽圆角减去内边距 2px 以保持内外同心；外槽启用裁切，焦点环通过负偏移向内绘制
         segmented:
-          'h-6.5 shrink-0 rounded-[calc(var(--radius-control)-3px)] px-3 text-label font-medium text-on-surface-muted transition-[color,background-color,box-shadow] [--state-focus-offset:calc(var(--state-focus-ring)*-1)] data-[state=active]:bg-card data-[state=active]:font-semibold data-[state=active]:shadow-[var(--shadow-pill),var(--shadow-specular)] dark:data-[state=active]:bg-surface-container-high',
+          'h-7 shrink-0 rounded-[calc(var(--radius-control)-2px)] px-3 text-label font-medium text-on-surface-muted transition-[color,background-color,box-shadow] [--state-focus-offset:calc(var(--state-focus-ring)*-1)] data-[state=active]:bg-card data-[state=active]:font-semibold data-[state=active]:shadow-[var(--shadow-pill),var(--shadow-specular)] dark:data-[state=active]:bg-surface-container-high',
       },
     },
   },

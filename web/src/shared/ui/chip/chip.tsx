@@ -9,7 +9,7 @@ const groupVariants = cva('', {
     variant: {
       chip: 'flex flex-wrap items-center gap-2',
       segmented:
-        'grid h-8 shrink-0 auto-cols-fr grid-flow-col rounded-sm bg-surface-container p-0.75',
+        'grid h-8 shrink-0 auto-cols-fr grid-flow-col rounded-sm bg-surface-container p-0.5',
       option: 'flex flex-wrap items-center gap-1.5',
     },
   },
@@ -21,7 +21,7 @@ const itemVariants = cva(
   {
     variants: {
       variant: {
-        chip: 'h-(--control-height-sm) gap-[7px] rounded-full border border-chip-border bg-chip-bg px-[15px] font-medium data-[state=on]:border-transparent data-[state=on]:bg-state-active',
+        chip: 'h-(--control-height-sm) gap-1.5 rounded-full border border-chip-border bg-chip-bg px-3.5 font-medium data-[state=on]:border-transparent data-[state=on]:bg-state-active',
         segmented:
           'h-full min-w-0 justify-center gap-1 rounded-xs px-1 whitespace-nowrap data-[state=on]:bg-surface-container-lowest data-[state=on]:font-medium data-[state=on]:shadow-[var(--shadow-1)]',
         // 表单里的选项小块：没选浅灰底，选中 ink 底

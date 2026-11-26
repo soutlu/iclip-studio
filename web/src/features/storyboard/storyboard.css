@@ -441,7 +441,7 @@
 .storyboard-timeline {
   display: flex;
   height: 22px;
-  gap: 3px;
+  gap: 2px;
 }
 .storyboard-timeline-segment {
   position: relative;
@@ -603,7 +603,7 @@
   flex: none;
   flex-direction: column;
   align-items: flex-start;
-  gap: 1px;
+  gap: 0;
   padding: 12px 0 0 12px;
 }
 /* 短色签：以中线定位，选中时加粗加长不左右偏移。 */
@@ -627,7 +627,7 @@
   line-height: 22px;
 }
 .storyboard-rail-stamp {
-  padding: 1px 0;
+  padding: 0;
   color: var(--color-on-surface-faint);
   font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
@@ -665,8 +665,8 @@
   display: inline-flex;
   height: 20px;
   align-items: center;
-  gap: 3px;
-  padding: 0 7px 0 5px;
+  gap: 2px;
+  padding: 0 6px 0 4px;
   border-radius: var(--radius-full);
   background: var(--color-surface-container);
   color: var(--color-on-surface-variant);
@@ -747,13 +747,13 @@
   --storyboard-control-open-fill: var(--color-control-well);
   --storyboard-control-open-shadow: var(--shadow-control-well);
   --storyboard-control-text: var(--text-ui);
-  /* 分段格圆角：槽圆角减去 3px 槽内边距，保持四角同心 */
-  --storyboard-segment-radius: calc(var(--radius-control) - 3px);
+  /* 分段格圆角：槽圆角减去 2px 槽内边距，保持四角同心 */
+  --storyboard-segment-radius: calc(var(--radius-control) - 2px);
   display: flex;
   flex: none;
   flex-direction: column;
   gap: 8px;
-  padding: 8px 8px 8px 9px;
+  padding: 8px;
   /* 左右并排时禁止文本折行，溢出部分由出片栏裁切；上下堆叠时恢复状态行正常折行（见下方容器查询）。 */
   overflow: clip;
   white-space: nowrap;
@@ -871,10 +871,10 @@
   background-color: var(--color-control-well);
   box-shadow: var(--shadow-control-well);
 }
-/* 槽内边距 3px，格高 26px。 */
+/* 槽内边距 2px，格高 28px。 */
 .storyboard-bar-segments {
   gap: 2px;
-  padding: 3px;
+  padding: 2px;
 }
 /* 共享分段默认等宽（分辨率照此）；模型短名长短不一，按各自宽度排。 */
 .storyboard-bar-models {
@@ -913,7 +913,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 0 11px;
+  padding: 0 10px;
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -1140,8 +1140,8 @@
   display: inline-flex;
   height: 20px;
   align-items: center;
-  gap: 3px;
-  padding: 0 5px;
+  gap: 2px;
+  padding: 0 4px;
   border-radius: var(--radius-full);
   background: var(--storyboard-glass);
   backdrop-filter: blur(12px);
