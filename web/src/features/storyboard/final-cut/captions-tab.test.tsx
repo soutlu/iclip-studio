@@ -46,6 +46,7 @@ function Harness({ locales, scripts, onText }: HarnessProps) {
         addBlocked={undefined}
         captions={[FIRST, SECOND]}
         focus={captionsFocus(picked, new Set(hosts.map((each) => each.id)))}
+        library={{ voices: undefined, problem: undefined }}
         locale={SOURCE_SHOWN}
         locales={locales}
         narration={undefined}

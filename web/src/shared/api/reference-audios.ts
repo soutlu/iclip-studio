@@ -33,6 +33,13 @@ export const AUDIO_FILTER_VALUES = {
 export type AudioFilterKey = keyof typeof AUDIO_FILTER_VALUES
 export type AudioFilterValue<K extends AudioFilterKey> = (typeof AUDIO_FILTER_VALUES)[K][number]
 
+/** 各子类能按哪几项属性筛，按筛选行上的先后。 */
+export const AUDIO_KIND_FILTERS = {
+  voice: ['locale', 'scenario', 'gender', 'age'],
+  bgm: ['mood', 'genre', 'tempo'],
+  sfx: ['sfxCategory'],
+} as const satisfies Record<AudioKind, readonly AudioFilterKey[]>
+
 /** 各属性筛选选中的取值；没给或空数组是不按它筛。 */
 export type AudioTraitFilter = {
   [K in AudioFilterKey]?: readonly AudioFilterValue<K>[] | undefined

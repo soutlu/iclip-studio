@@ -10,10 +10,10 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { uploadMediaFile } from '@/shared/api/media-upload'
 import {
+  AUDIO_KIND_FILTERS,
   latestReferenceAudiosQuery,
   referenceAudioKeys,
   referenceAudiosQuery,
-  type AudioFilterKey,
   type AudioKind,
   type AudioTraitFilter,
   type ReferenceAudio,
@@ -30,13 +30,6 @@ export const DEFAULT_REFERENCE_AUDIO_SCOPE: ReferenceAudioScope = {
   q: '',
   traits: {},
 }
-
-/** 各子类能按哪几项属性筛，按工具行上的先后。 */
-export const AUDIO_KIND_FILTERS = {
-  voice: ['locale', 'scenario', 'gender', 'age'],
-  bgm: ['mood', 'genre', 'tempo'],
-  sfx: ['sfxCategory'],
-} as const satisfies Record<AudioKind, readonly AudioFilterKey[]>
 
 /** 只留 `kind` 用得上的属性筛选，去掉空的；「全部」不按属性筛。 */
 export const traitsFor = (kind: ReferenceAudioTab, traits: AudioTraitFilter): AudioTraitFilter => {

@@ -3,7 +3,7 @@
 /* 本模块专用变量，仅限本文件引用。声明于 :root 而非编辑器根节点，以便挂载在 body 下的浮层（菜单、「生成音乐」卡片、音频详情）共享。
    优先复用语义色角色，仅在无对应语义角色时直接引用基础色阶，且严格限定于此区块 */
 :root {
-  /* 中性控件：tick 为滑杆零点刻度；control-soft/ring 为中性实心控件（滑杆已选段、已选音色胶囊）的浅底与描边；knob 为滑杆拇指与开关圆钮 */
+  /* 中性控件：tick 为滑杆零点刻度；control-soft/ring 为中性实心控件（滑杆已选段、按下的胶囊按钮）的浅底与描边；knob 为滑杆拇指与开关圆钮 */
   --wf-tick: var(--n70);
   --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
@@ -814,7 +814,7 @@
 
 /* 分类小块：一排平铺，放不下时左右滑动；选中的那块浮起成白底。
    两个类压过 ChipGroup、FilterChip 自带的换行、边框、底色和高度 */
-:is(.wf-tab-head, .wf-audio) > .wf-filters {
+:is(.wf-tab-head, .wf-audio-top) > .wf-filters {
   flex-wrap: nowrap;
   gap: 4px;
   overflow-x: auto;
@@ -845,19 +845,16 @@
   font-weight: 600;
 }
 
-/* ---- 配乐栏：顶行左边「本对话 / 音频库」，右边生成、导入（音频库里是「配乐 / 音效」）；下面搜索、音频列表 ---- */
+/* ---- 配乐栏：顶行左边「本对话 / 音频库」，右边生成、导入（音频库里是「配乐 / 音效」）；下面搜索、
+   （音频库里的属性筛选）、音频列表，有试听时最下面贴一条试听条 ---- */
 
-/* AudioLibrary 画出来的几块直接排进这张网格，「配乐 / 音效」落在顶行右边 */
+/* AudioLibrary 画出来的几块直接排进这一列；列表占满剩下的高度、自己滚 */
 .wf-audio {
-  display: grid;
+  display: flex;
   min-height: 0;
   flex: 1;
-  grid-template-columns:
-    var(--wf-tab-inset) minmax(0, max-content) minmax(0, 1fr)
-    var(--wf-tab-inset);
-  grid-template-rows: auto auto minmax(0, 1fr);
-  align-items: center;
-  row-gap: 9px;
+  flex-direction: column;
+  gap: 9px;
   padding-top: 11px;
 }
 
@@ -865,37 +862,111 @@
   background: var(--color-state-hover);
 }
 
-.wf-audio-views {
-  grid-column: 2;
+.wf-audio-top {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 var(--wf-tab-inset);
 }
 
-.wf-audio-tools,
-.wf-audio-kinds {
+.wf-audio-tools {
   display: flex;
   min-width: 0;
   align-items: center;
-  justify-content: flex-end;
   gap: 4px;
-  grid-column: 3;
-  margin-left: 8px;
 }
 
-.wf-audio-search {
-  grid-column: 2 / 4;
-}
-
-/* 列表、说明占满最后一行；列表自己滚 */
-.wf-audio > :is(.wf-audio-list, .wf-empty, .wf-audio-alert) {
-  grid-column: 1 / -1;
-  align-self: start;
-}
-
-.wf-audio > .wf-audio-list {
-  align-self: stretch;
+.wf-editor .wf-audio-search {
+  margin: 0 var(--wf-tab-inset);
 }
 
 .wf-audio-alert {
   margin: 6px var(--wf-tab-inset) 0;
+}
+
+/* 列表上方一行属性筛选（素净的弹层触发器）和右边的条数；配乐栏的音频库、选音面板共用 */
+.wf-trait-filters {
+  flex: none;
+  gap: 2px;
+  margin: 0 var(--wf-tab-inset);
+}
+
+.wf-trait-filters .wf-trait-filter {
+  height: 26px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+}
+
+.wf-trait-count {
+  margin-left: auto;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 页签最下面贴着的试听条（样子见共用的 AuditionBar 紧凑样子）：占自己的一行，不盖住列表 */
+.wf-audition-dock {
+  flex: none;
+  margin-top: auto;
+}
+
+/* 音频卡片里的文字块（配乐栏的音频行、选音卡片、人声卡的当前音色行共用）：名字一行，下面波形、属性 */
+.wf-audio-text {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.wf-audio-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.wf-audio-title {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audio-meta {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-audio-meta.is-end {
+  margin-left: auto;
+}
+
+.wf-audio-traits {
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audio-wave {
+  height: 14px;
 }
 
 .wf-audio-import > svg {
@@ -1143,12 +1214,12 @@
   font-weight: 500;
 }
 
-/* 其它语言下每句右上的配音小块：保留原声时是淡色「原声」标签；AI 配音时出声的句子用强调色浅底，自己选过音色的
-   再加一圈描边，不配音的回到淡色。排在删除钮前面 */
+/* 其它语言下每句右上的配音标签：保留原声时是淡色底的「原声」；AI 配音时是一行字，跟随整体的「跟随 · 音色名」灰一点，
+   单独设过的「单句 · …」用正文色。排在删除钮前面 */
 .wf-line-voice {
   display: inline-flex;
   min-width: 0;
-  max-width: 120px;
+  max-width: 150px;
   flex: none;
   align-items: center;
   gap: 2px;
@@ -1163,28 +1234,15 @@
 }
 
 .wf-line-voice.is-voiced {
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
-  font-weight: 500;
+  background: transparent;
 }
 
 .wf-line-voice.is-own {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
-
-.wf-line-voice.is-unvoiced {
-  background: var(--color-surface-container-high);
-  box-shadow: none;
-  color: var(--color-on-surface-muted);
-}
-
-.wf-line-voice.is-unvoiced:hover {
   color: var(--color-on-surface);
+  font-weight: 500;
 }
 
 .wf-line-voice[aria-disabled='true'] {
-  background: var(--color-surface-container-high);
-  box-shadow: none;
   color: var(--color-disabled-text);
 }
 
@@ -1244,54 +1302,205 @@
   line-height: var(--text-caption--line-height);
 }
 
-/* 音色小块：放不下时换行；选中的那块是深色实心，试听钮的图标点一点暖色指示光 */
-.wf-voice-list {
+/* 当前音色行：浅灰底块，左边封面（原声是中性的圆形图标块）、中间名字和属性（见 wf-audio-text），右边「更换 ›」；
+   保留原声时封面和文字淡一点 */
+.wf-voice-current {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.wf-voice-chip {
-  display: inline-flex;
-  height: 28px;
-  max-width: 160px;
-  flex: none;
+  min-width: 0;
   align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 8px;
   border-radius: var(--radius-sm);
   background: var(--color-surface-container-low);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
-  font-weight: 500;
 }
 
-.wf-voice-chip.is-picked {
-  background: var(--color-on-surface);
-  color: var(--color-on-action-neutral);
+.wf-voice-current.is-muted > :not(.wf-voice-change) {
+  opacity: 0.55;
+}
+
+.wf-voice-original {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+}
+
+.wf-voice-change {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
   font-weight: 600;
 }
 
-.wf-voice-chip.is-picked .wf-voice-play > svg {
-  color: var(--wf-led);
+/* 常用音色：选项小块（共用 chip 的 option 样子），放不下时换行；外面那层只挂说明不能选的提示 */
+.wf-voice-common {
+  gap: 6px;
 }
 
-.wf-voice-chip .wf-voice-play {
-  flex: none;
-  margin-left: 2px;
-  color: inherit;
-}
-
-.wf-voice-pick {
-  overflow: hidden;
-  height: 100%;
+.wf-voice-common-item {
+  display: inline-flex;
   min-width: 0;
-  padding: 0 10px;
-  border-radius: inherit;
+}
+
+.wf-voice-common-item > button {
+  overflow: hidden;
+  max-width: 140px;
+  font-size: var(--text-label);
+  text-overflow: ellipsis;
+}
+
+.wf-voice-common-item > [aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+
+/* 选音面板：页签头下面整块换成它（首页藏起来，见 wf-captions-home）；顶行返回、标题、语种和「原声」，下面搜索、筛选、音色卡 */
+.wf-captions-home,
+.wf-voice-picker {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-voice-picker {
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.wf-voice-picker-head {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--wf-tab-inset);
+}
+
+.wf-voice-back > svg {
+  rotate: 180deg;
+}
+
+.wf-voice-picker-title {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wf-voice-play + .wf-voice-pick {
-  padding-left: 2px;
+.wf-voice-locale {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 9px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.wf-editor .wf-voice-search {
+  margin: 0 var(--wf-tab-inset);
+}
+
+.wf-voice-picker > .wf-trait-filters {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-panel-line);
+  margin: 0;
+  padding-inline: var(--wf-tab-inset);
+}
+
+.wf-voice-picker-alert {
+  margin: 6px var(--wf-tab-inset) 0;
+}
+
+.wf-voice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 一张音色卡：整张是试听键（封面、名字、属性），右边用着的 ✓ 或「选用」；用着的那张描一圈墨色 */
+.wf-voice-option {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px 9px 11px;
+  transition: box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-voice-option:hover {
+  box-shadow: var(--shadow-float);
+}
+
+.wf-voice-option.is-picked,
+.wf-voice-option.is-picked:hover {
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-on-surface),
+    var(--shadow-panel-card);
+}
+
+.wf-voice-option-play {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 11px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.wf-voice-option-progress {
+  margin-top: 3px;
+}
+
+.wf-voice-option-used {
+  display: inline-grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  color: var(--color-on-surface);
+}
+
+/* 「选用」：指针停在卡片上、焦点在卡片里或正在试听这张时才出来 */
+.wf-voice-option-use {
+  height: 24px;
+  flex: none;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-card);
+  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.wf-voice-option-use[aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+
+@media (pointer: fine) {
+  .wf-voice-option:not(:hover, :focus-within, .is-current) .wf-voice-option-use {
+    opacity: 0;
+  }
 }
 
 /* 两个类压过文字框自带的高度、内边距和字号（样子见 wf-field） */
@@ -1397,7 +1606,7 @@
   overflow-wrap: anywhere;
 }
 
-/* 一条音频：白色卡片，左边带试听键的色块，中间名字、迷你波形和时长，右边用着的勾或悬停出来的「+」。
+/* 一条音频：白色卡片，左边试听（色块上的试听键、封面或圆形试听键），中间文字块（见 wf-audio-text），右边用着的勾或悬停出来的「+」。
    悬停只加深阴影、不位移：「重新生成」的输入卡挂在行里，位移会让行变成它的定位参照、跟着跳 */
 .wf-song {
   position: relative;
@@ -1413,7 +1622,7 @@
   box-shadow: var(--shadow-float);
 }
 
-/* 正在试听的那条描一圈控件墨色，波形也深一档 */
+/* 当前试听的那条（在放或暂停着）描一圈控件墨色 */
 .wf-song.is-playing,
 .wf-song.is-playing:hover {
   box-shadow:
@@ -1450,7 +1659,6 @@
 }
 
 .wf-song-disc,
-.wf-song-text,
 .wf-song-actions,
 .wf-song-used,
 .wf-song-add {
@@ -1460,8 +1668,8 @@
 /* 左边的色块：配乐的色相由浅到深，白色图标；试听键、生成中和失败的状态都画在它上面 */
 .wf-song .wf-song-disc {
   display: inline-grid;
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   flex: none;
   place-items: center;
   border-radius: var(--radius-md);
@@ -1477,48 +1685,6 @@
 .wf-song .wf-song-disc svg {
   width: 14px;
   height: 14px;
-}
-
-.wf-song-text {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 4px;
-  pointer-events: none;
-}
-
-.wf-song-title {
-  overflow: hidden;
-  font-size: var(--text-label);
-  font-weight: 600;
-  line-height: var(--text-label--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-song-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--color-on-surface-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  font-variant-numeric: tabular-nums;
-}
-
-.wf-song-wave {
-  width: 96px;
-  height: 14px;
-  flex: none;
-  fill: currentColor;
-  opacity: 0.48;
-}
-
-.wf-song.is-playing .wf-song-wave {
-  color: var(--color-on-surface);
-  opacity: 0.88;
 }
 
 /* 用着的那一行行尾：主色浅底圆块里一个勾 */

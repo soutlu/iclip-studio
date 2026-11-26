@@ -5,19 +5,6 @@ import { audioClockText, useAuditionRatio, Waveform, type Audition } from '@/sha
 
 type RowProgressProps = { audio: ReferenceAudio; audition: Audition }
 
-/** 名称下面那条细进度线。 */
-export function RowProgress({ audio, audition }: RowProgressProps) {
-  const { ratio } = useAuditionRatio(audition, audio.durationMs)
-  return (
-    <span aria-hidden className="mt-1.5 block h-0.5 w-full max-w-75 rounded-full bg-hairline">
-      <span
-        className="block h-full rounded-full bg-on-surface"
-        style={{ width: `${String(ratio * 100)}%` }}
-      />
-    </span>
-  )
-}
-
 /** 时长那格：放着时换成当前播放到的时刻。 */
 export function RowClock({ audio, audition }: RowProgressProps) {
   const { timeMs } = useAuditionRatio(audition, audio.durationMs)

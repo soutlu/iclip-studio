@@ -1,22 +1,32 @@
-import { Fragment, useEffect, useId, useRef, useState, type ComponentProps, type Ref } from 'react'
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+  type Ref,
+} from 'react'
+import type { ReferenceAudio } from '@/shared/api/reference-audios'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import { useAudition } from '@/shared/ui/audition'
+import type { Audition } from '@/shared/ui/audition'
 import { IconButton } from '@/shared/ui/button'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
-import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
+import { TabAuditionBar } from './audio-card'
 import { captionClock, captionsInOrder, type CaptionsView } from './caption-edit'
 import type { ScriptNote } from './caption-script'
 import { ComponentTexts } from './component-texts'
 import { ownsStyle } from './composition/captions'
 import type { CaptionClip } from './composition/film'
-import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 import { NARRATION_TEXT_LIMIT } from './dubbing'
 import { LocaleBar, type LocaleControls } from './editor-toolbar'
 import { EmptyNote } from './empty-note'
+import { LineVoiceChip } from './line-voice'
 import {
   captionIn,
   phraseWith,
@@ -26,6 +36,16 @@ import {
   type ShownLocale,
 } from './locales'
 import { usePausedCommit } from './use-paused-commit'
+import { useTabAudition } from './use-tab-audition'
+import { CurrentVoice, VoiceCard } from './voice-card'
+import {
+  commonVoices,
+  ownLineVoice,
+  voiceNameOf,
+  type VoiceControl,
+  type VoiceLibrary,
+} from './voice-choices'
+import { TargetVoicePicker, type VoicePick } from './voice-picker'
 
 const ADD_LABEL = '在播放头处添加字幕'
 const RECOGNIZE_LABEL = '识别字幕'
@@ -45,51 +65,13 @@ type TranslateControl = {
   onTranslate: () => void
 }
 
-/** 参考音频库中的音色条目：标识、名称与试听音频地址。 */
-export type VoiceOption = { id: string; name: string; url: string }
-
-/** 音色列表加载失败原因及重试回调。 */
-type VoicesProblem = { message: string; onRetry: () => void }
-
 /**
- * 译文语言下的人声配置与控制：`mode` 为当前人声模式，`voice` 为该语言默认配音音色（`null` 表示沿用原声音色），
- * `voices` 与 `voicesProblem` 为资料库可用音色及其加载错误；`dubbed` 标识是否已有配音片段，
- * `generating` / `narrating` 分别记录在途的素材片配音数与旁白合成数（空闲时为 0）；
- * `generateBlocked` / `redoBlocked` 为换音色生成与重新生成的禁用原因；`lines` 与 `lineBlocked` 为单句级覆盖配置及禁用原因。
+ * 原文语言下的「旁白配音」面板控制：`open` 为展开状态，`generating` 标识正在合成旁白，`blocked` 为除文案与音色外的
+ * 外部阻断原因。
  */
-export type VoiceControl = {
-  mode: VoiceMode
-  voice: string | null
-  voices: readonly VoiceOption[]
-  voicesProblem: VoicesProblem | undefined
-  dubbed: boolean
-  generating: number
-  narrating: number
-  generateBlocked: string | undefined
-  redoBlocked: string | undefined
-  lines: LineVoices
-  lineBlocked: ReadonlyMap<string, string>
-  onMode: (mode: VoiceMode) => void
-  /** 切换当前语言默认音色（`null` 表示原声音色）并重配跟随默认音色的字幕句（已有配音时替换）。 */
-  onGenerate: (voice: string | null) => void
-  /** 按各句当前配置的音色重新生成全部待配音句子的配音。 */
-  onRedo: () => void
-  /**
-   * 修改单句配音配置（传 `null` 恢复跟随整体音色）：选定音色时仅重配该句（实际音色未变且已有配音时仅更新配置），
-   * 设为不配音时移除对应配音片段。
-   */
-  onLine: (caption: string, line: LineVoice | null) => void
-}
-
-/**
- * 原文语言下的「旁白配音」面板控制：`open` 为展开状态，`voices` 与 `voicesProblem` 为资料库音色列表及加载错误；
- * `generating` 标识正在合成旁白，`blocked` 为除文案与音色外的外部阻断原因。
- */
-export type NarrationControl = {
+type NarrationControl = {
   open: boolean
   onOpen: (open: boolean) => void
-  voices: readonly VoiceOption[] | undefined
-  voicesProblem: VoicesProblem | undefined
   generating: boolean
   blocked: string | undefined
   /** 使用资料库音色 `voice` 将 `text` 合成为旁白，完成后连同对应字幕一并插入时间线。 */
@@ -107,6 +89,8 @@ type CaptionsTabProps = {
   voice: VoiceControl | undefined
   /** 原文语言下的「旁白配音」控制；译文语言时为 `undefined`（不展示）。 */
   narration: NarrationControl | undefined
+  /** 资料库音色：人声卡、旁白和单句菜单从这里找名字、属性和常用音色。 */
+  library: VoiceLibrary
   captions: readonly CaptionClip[]
   /** 「组件文字」视图配置（与当前展示语言及选中片段共享状态）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
@@ -145,6 +129,8 @@ type CaptionsTabProps = {
  * 次行为操作栏：包含译文语言的「翻译」（统一翻译两视图未译项）、「字幕」视图的「识别字幕」、原文语言的「旁白配音」（展开见 `NarrationPanel`）
  * 及右侧在播放头处新增字幕的「+」。列表按起始时间排序，支持直接编辑、删除及点击时间定位；
  * 选中字幕或对应配音片段时高亮当前句，新增字幕自动聚焦输入框；译文语言下顶部额外展示人声配置卡（见 `VoiceCard`）。
+ * 人声卡、单句菜单和旁白的「更换」把页签头下面的内容换成选音面板（见 `TargetVoicePicker`），选用或返回后回到这里；
+ * 整个页签共用一个试听，有当前试听时底部贴一条试听条。
  *
  * 视图随选区变化自动跟随：选中字幕或配音时切至「字幕」，选中含文字贴片/场景时切至「组件文字」；
  * 用户手动切换视图后保持选择，直至下次选区发生变化。
@@ -155,6 +141,7 @@ export function CaptionsTab({
   translate,
   voice,
   narration,
+  library,
   captions,
   texts,
   locale,
@@ -192,6 +179,60 @@ export function CaptionsTab({
     { value: 'texts', label: '组件文字', count: texts.hosts.length },
   ] as const
   const onCaptions = view === 'captions'
+
+  const {
+    audition,
+    toggle,
+    shown: auditioning,
+  } = useTabAudition({ active, onError: () => onNotice(AUDITION_FAILED_TEXT) })
+  const onToggle = (audio: ReferenceAudio) =>
+    toggle({
+      id: audio.id,
+      url: audio.url,
+      title: audio.title,
+      peaks: audio.peaks,
+      durationMs: audio.durationMs,
+    })
+  // 旁白要用的音色：没换过时是资料库的第一个音色
+  const [narrationChoice, setNarrationChoice] = useState<string | null>(null)
+  const narrationVoice = narrationChoice ?? library.voices?.[0]?.id ?? null
+  // 选音面板给谁选：换了语言、收起旁白、切到「组件文字」时关掉
+  const [picking, setPicking] = useState<{ pick: VoicePick; locale: Language } | null>(null)
+  const pick =
+    onCaptions &&
+    picking !== null &&
+    picking.locale === locale.code &&
+    (picking.pick.target === 'narration' ? narration?.open === true : voice !== undefined)
+      ? picking.pick
+      : null
+  if (picking !== null && pick === null) setPicking(null)
+  // 关掉面板后焦点回到打开它的按钮上（它跟着首页藏起来过）
+  const openerRef = useRef<HTMLElement | null>(null)
+  const openPicker = (next: VoicePick) => {
+    openerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setPicking({ pick: next, locale: locale.code })
+  }
+  useEffect(() => {
+    if (pick !== null || openerRef.current === null) return
+    if (openerRef.current.isConnected) openerRef.current.focus()
+    openerRef.current = null
+  }, [pick])
+  const common =
+    voice === undefined || locale.code === SOURCE_LOCALE
+      ? []
+      : commonVoices(
+          [
+            voice.voice,
+            ...captionsInOrder(captions).map((caption) => {
+              const own = ownLineVoice(voice, caption.id)
+              return own !== undefined && 'voice' in own ? own.voice : null
+            }),
+          ],
+          library.voices ?? [],
+          locale.code,
+        )
+
   return (
     <div className="wf-captions">
       <div className="wf-tab-head wf-captions-head">
@@ -254,32 +295,75 @@ export function CaptionsTab({
           </div>
         )}
       </div>
-      {problem === undefined ? null : (
-        <InlineAlert className="wf-captions-alert" message={problem} />
-      )}
-      {onCaptions && voice !== undefined ? (
-        <VoiceCard active={active} onNotice={onNotice} voice={voice} />
-      ) : null}
-      {onCaptions ? (
-        <CaptionsView
-          active={active}
-          captions={captions}
-          focusing={focusing}
-          lines={focus.lines}
-          locale={locale}
-          narration={narration}
-          onFocused={() => setFocusing(null)}
-          onNotice={onNotice}
-          onPick={onPick}
-          onRemove={onRemove}
-          onText={onText}
-          recognizing={recognizing}
-          scripts={scripts}
+      {pick === null ? null : (
+        <TargetVoicePicker
+          audition={audition}
+          key={pick.target === 'line' ? `line:${pick.caption}` : pick.target}
+          locale={locale.code}
+          narrationVoice={narrationVoice}
+          onDone={() => setPicking(null)}
+          onNarrationVoice={setNarrationChoice}
+          onToggle={onToggle}
+          pick={pick}
           voice={voice}
         />
-      ) : (
-        <ComponentTexts {...texts} locale={locale} selected={selected} />
       )}
+      {/* 选音面板开着时首页只藏起来：旁白文案、没存下的字幕草稿和滚动位置都留着 */}
+      <div className="wf-captions-home" hidden={pick !== null}>
+        {problem === undefined ? null : (
+          <InlineAlert className="wf-captions-alert" message={problem} />
+        )}
+        {onCaptions && voice !== undefined ? (
+          <VoiceCard
+            audition={audition}
+            common={common}
+            library={library}
+            onChange={() => openPicker({ target: 'language' })}
+            onToggle={onToggle}
+            voice={voice}
+          />
+        ) : null}
+        {onCaptions ? (
+          <CaptionsView
+            captions={captions}
+            focusing={focusing}
+            lineChip={(caption) =>
+              voice === undefined ? null : (
+                <LineVoiceChip
+                  caption={caption}
+                  common={common}
+                  library={library.voices}
+                  onMore={() => openPicker({ target: 'line', caption })}
+                  voice={voice}
+                />
+              )
+            }
+            lines={focus.lines}
+            locale={locale}
+            narrationPanel={
+              narration?.open === true ? (
+                <NarrationPanel
+                  audition={audition}
+                  library={library}
+                  narration={narration}
+                  onChange={() => openPicker({ target: 'narration' })}
+                  onToggle={onToggle}
+                  voice={narrationVoice}
+                />
+              ) : null
+            }
+            onFocused={() => setFocusing(null)}
+            onPick={onPick}
+            onRemove={onRemove}
+            onText={onText}
+            recognizing={recognizing}
+            scripts={scripts}
+          />
+        ) : (
+          <ComponentTexts {...texts} locale={locale} selected={selected} />
+        )}
+      </div>
+      {auditioning === null ? null : <TabAuditionBar audition={audition} item={auditioning} />}
     </div>
   )
 }
@@ -371,256 +455,8 @@ function RecognizeButton({
   )
 }
 
-const GENERATING_TEXT = '正在生成配音，请等待生成完成'
-
-const ORIGINAL_VOICE = '原声'
-
-/** 存在在途配音生成任务（素材片或旁白）时返回阻断文案。 */
-const busyOf = ({ generating, narrating }: Pick<VoiceControl, 'generating' | 'narrating'>) =>
-  generating + narrating > 0 ? GENERATING_TEXT : undefined
-
-/**
- * 译文语言下的人声配置卡片：顶栏包含「人声」标题、「保留原声」及已有配音时的「重新生成」按钮；
- * 下方列出可选 AI 配音音色（「原声」居首，随后为支持试听的资料库音色）。「保留原声」与所选音色互斥高亮。
- * 选择某音色时：若当前语言已有该音色的既有配音则直接切入配音模式，否则将其设为当前语言默认音色并重配跟随默认音色的句子。
- */
-function VoiceCard({
-  voice,
-  active,
-  onNotice,
-}: {
-  voice: VoiceControl
-  active: boolean
-  onNotice: (message: string) => void
-}) {
-  const { mode, voice: current, voices, voicesProblem, dubbed, generating, narrating } = voice
-  const { generateBlocked, onMode, onGenerate, onRedo } = voice
-  const { playing, toggle } = useAudition({
-    active,
-    onError: () => onNotice(AUDITION_FAILED_TEXT),
-  })
-  const busy = busyOf(voice)
-  const redoBlocked = busy ?? voice.redoBlocked
-  const switchesOnly = (id: string | null) => dubbed && id === current
-  const chipOf = (id: string | null, name: string) => {
-    const blocked = switchesOnly(id) ? busy : (busy ?? generateBlocked)
-    return {
-      blocked,
-      name,
-      onPick: () => {
-        if (blocked !== undefined) return
-        if (switchesOnly(id)) onMode('dub')
-        else onGenerate(id)
-      },
-      picked: mode === 'dub' && current === id,
-    }
-  }
-  return (
-    <div aria-label="人声设置" className="wf-card wf-voice-card" role="group">
-      <div className="wf-voice-head">
-        <span className="wf-voice-title">
-          <Icon decorative name="final-cut-voice" size="sm" />
-          人声
-        </span>
-        <button
-          aria-pressed={mode === 'original'}
-          className="wf-chip-btn ui-state ui-focus"
-          onClick={() => onMode('original')}
-          type="button"
-        >
-          保留原声
-        </button>
-        {dubbed ? (
-          <BlockedReason reason={redoBlocked}>
-            <button
-              aria-disabled={redoBlocked === undefined ? undefined : true}
-              className="wf-chip-btn ui-state ui-focus"
-              onClick={() => {
-                if (redoBlocked === undefined) onRedo()
-              }}
-              type="button"
-            >
-              重新生成
-            </button>
-          </BlockedReason>
-        ) : null}
-      </div>
-      <div aria-label="AI 配音音色" className="wf-voice-list" role="group">
-        <VoiceChip {...chipOf(null, ORIGINAL_VOICE)} />
-        {voices.map((each) => (
-          <VoiceChip
-            key={each.id}
-            {...chipOf(each.id, each.name)}
-            audition={{
-              playing: playing === each.id,
-              onToggle: () => toggle(each.id, each.url),
-            }}
-          />
-        ))}
-      </div>
-      {voicesProblem === undefined ? null : (
-        <InlineAlert
-          action={{ label: '重试', onClick: voicesProblem.onRetry }}
-          message={voicesProblem.message}
-        />
-      )}
-      {generating + narrating > 0 ? (
-        <p className="wf-voice-note" role="status">
-          {`正在为 ${[
-            generating > 0 ? `${generating} 条素材片` : '',
-            narrating > 0 ? `${narrating} 句旁白` : '',
-          ]
-            .filter((part) => part !== '')
-            .join('、')}生成配音，可继续编辑`}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-type VoiceChipProps = {
-  name: string
-  picked: boolean
-  /** 不可选时的禁用原因；非空时置灰并在点击时提示。 */
-  blocked: string | undefined
-  onPick: () => void
-  /** 资料库音色的试听控制；「原声」不提供试听。 */
-  audition?: { playing: boolean; onToggle: () => void }
-}
-
-/** 单个音色胶囊：左侧为可选试听按钮，右侧为音色名称选择按钮。 */
-function VoiceChip({ name, picked, blocked, onPick, audition }: VoiceChipProps) {
-  return (
-    <span className={cn('wf-voice-chip', picked && 'is-picked')}>
-      {audition === undefined ? null : (
-        <IconButton
-          aria-pressed={audition.playing}
-          className="wf-voice-play"
-          label={audition.playing ? `暂停试听：${name}` : `试听：${name}`}
-          name={audition.playing ? 'final-cut-pause' : 'final-cut-play'}
-          onClick={audition.onToggle}
-          size="xs"
-        />
-      )}
-      <BlockedReason reason={blocked}>
-        <button
-          aria-disabled={blocked === undefined ? undefined : true}
-          aria-pressed={picked}
-          className="wf-voice-pick ui-state ui-focus"
-          onClick={onPick}
-          title={name}
-          type="button"
-        >
-          {name}
-        </button>
-      </BlockedReason>
-    </span>
-  )
-}
-
-const FOLLOW = 'follow'
-const ORIGINAL = 'original'
-const UNVOICED = 'unvoiced'
-const UNVOICED_NAME = '不配音'
-// 已选音色已从资料库移除或尚未加载时的兜底展示名
-const LIBRARY_VOICE_NAME = '资料库音色'
-
-/** 将菜单选项值转换为单句配音覆盖配置（`null` 表示跟随整体音色）。 */
-const lineVoiceOfValue = (value: string): LineVoice | null =>
-  value === FOLLOW
-    ? null
-    : value === UNVOICED
-      ? { dub: false }
-      : { voice: value === ORIGINAL ? null : value.slice('voice:'.length) }
-
-/** 将单句配音覆盖配置映射为菜单选中值。 */
-const valueOfLineVoice = (line: LineVoice | undefined): string =>
-  line === undefined
-    ? FOLLOW
-    : 'dub' in line
-      ? UNVOICED
-      : line.voice === null
-        ? ORIGINAL
-        : `voice:${line.voice}`
-
-/**
- * 译文语言下单句字幕的配音状态控件：保留原声时渲染只读「原声」标签；AI 配音模式下展示本句实际音色或「不配音」
- * （显式单独配置与跟随整体音色在视觉上区分），点击弹出单选菜单切换配置；不可配音或生成中置灰并说明原因。
- */
-function LineVoiceChip({ caption, voice }: { caption: string; voice: VoiceControl }) {
-  const [open, setOpen] = useState(false)
-  const [hint, setHint] = useState(false)
-  if (voice.mode === 'original') return <span className="wf-line-voice">{ORIGINAL_VOICE}</span>
-  const own = Object.hasOwn(voice.lines, caption) ? voice.lines[caption] : undefined
-  const chosen = own ?? { voice: voice.voice }
-  const unvoiced = 'dub' in chosen
-  const name =
-    'dub' in chosen
-      ? UNVOICED_NAME
-      : chosen.voice === null
-        ? ORIGINAL_VOICE
-        : (voice.voices.find((each) => each.id === chosen.voice)?.name ?? LIBRARY_VOICE_NAME)
-  const label = `本句配音：${name}${own === undefined ? '，跟随整体音色' : ''}`
-  const blocked = busyOf(voice) ?? voice.lineBlocked.get(caption)
-  const chip = (
-    <button
-      aria-disabled={blocked === undefined ? undefined : true}
-      aria-label={label}
-      className={cn(
-        'wf-line-voice is-voiced ui-state ui-focus',
-        own !== undefined && 'is-own',
-        unvoiced && 'is-unvoiced',
-      )}
-      type="button"
-    >
-      <span className="wf-line-voice-name">{name}</span>
-      <Icon decorative name="final-cut-expand" size="xs" />
-    </button>
-  )
-  if (blocked !== undefined) return <BlockedReason reason={blocked}>{chip}</BlockedReason>
-  const picked = valueOfLineVoice(own)
-  return (
-    <MenuRoot
-      onOpenChange={(next) => {
-        setOpen(next)
-        setHint(false)
-      }}
-      open={open}
-    >
-      {/* 菜单展开时抑制 Tooltip，避免与菜单重叠 */}
-      <TooltipRoot onOpenChange={setHint} open={hint && !open}>
-        <MenuTrigger asChild>
-          <TooltipTrigger asChild>{chip}</TooltipTrigger>
-        </MenuTrigger>
-        <TooltipContent className="wf-tip" side="top">
-          切换本句配音音色或不配音
-        </TooltipContent>
-      </TooltipRoot>
-      <MenuSurface align="end" className="wf-menu">
-        <MenuRadioGroup
-          onValueChange={(value) => {
-            if (value !== picked) voice.onLine(caption, lineVoiceOfValue(value))
-          }}
-          value={picked}
-        >
-          <MenuRadioItem value={FOLLOW}>跟随整体音色</MenuRadioItem>
-          <MenuRadioItem value={ORIGINAL}>{ORIGINAL_VOICE}</MenuRadioItem>
-          {voice.voices.map((each) => (
-            <MenuRadioItem key={each.id} value={`voice:${each.id}`}>
-              {each.name}
-            </MenuRadioItem>
-          ))}
-          <MenuRadioItem value={UNVOICED}>{UNVOICED_NAME}</MenuRadioItem>
-        </MenuRadioGroup>
-      </MenuSurface>
-    </MenuRoot>
-  )
-}
-
 /** 「字幕」子视图：包含原文下展开的「旁白配音」面板（见 `NarrationPanel`）、识别进度提示与字幕列表。 */
 function CaptionsView({
-  active,
-  onNotice,
   captions,
   locale,
   lines,
@@ -630,34 +466,26 @@ function CaptionsView({
   onText,
   onRemove,
   onPick,
-  voice,
-  narration,
+  lineChip,
+  narrationPanel,
   scripts,
 }: Pick<
   CaptionsTabProps,
-  | 'active'
-  | 'onNotice'
-  | 'captions'
-  | 'locale'
-  | 'recognizing'
-  | 'scripts'
-  | 'onText'
-  | 'onRemove'
-  | 'onPick'
-  | 'voice'
-  | 'narration'
+  'captions' | 'locale' | 'recognizing' | 'scripts' | 'onText' | 'onRemove' | 'onPick'
 > & {
   /** 当前高亮标注的字幕 ID 集合。 */
   lines: ReadonlySet<string>
   /** 待自动聚焦输入框的字幕 ID（用于新建后立即编辑）。 */
   focusing: string | null
   onFocused: () => void
+  /** 某句右上的单句配音标签（译文语言，见 `LineVoiceChip`）；原文语言时是 null。 */
+  lineChip: (caption: string) => ReactNode
+  /** 原文下展开着的「旁白配音」面板；没展开时是 null。 */
+  narrationPanel: ReactNode
 }) {
   return (
     <>
-      {narration?.open === true ? (
-        <NarrationPanel active={active} narration={narration} onNotice={onNotice} />
-      ) : null}
+      {narrationPanel}
       {recognizing > 0 ? (
         <p className="wf-captions-note" role="status">
           正在识别 {recognizing} 个视频片段的字幕，可继续编辑
@@ -683,7 +511,7 @@ function CaptionsView({
               onSeek={() => onPick(caption)}
               onText={onText}
               script={scripts.get(caption.id)}
-              voice={voice}
+              voiceChip={lineChip(caption.id)}
             />
           ))}
         </ol>
@@ -697,27 +525,31 @@ const NO_NARRATION_VOICE_TEXT = '暂无可用音色，无法插入旁白配音�
 const NO_NARRATION_TEXT = '旁白文案为空，无法插入旁白配音；请先输入文案'
 
 /**
- * 「旁白配音」展开面板：包含两行文案输入框、可试听的资料库音色列表（默认选中首个音色）以及底部所选音色与「插入配音与字幕」按钮
- * （合成期间显示「合成中…」）。文案为空、超出字数上限、无可用音色或存在 `blocked` 时置灰并在点击时说明原因。
+ * 「旁白配音」展开面板：两行文案输入框、当前音色行（默认资料库的第一个音色，「更换」打开选音面板，见 `CurrentVoice`）以及
+ * 底部所选音色与「插入配音与字幕」按钮（合成期间显示「合成中…」）。文案为空、超出字数上限、无可用音色或存在 `blocked` 时
+ * 置灰并在点击时说明原因。
  */
 function NarrationPanel({
   narration,
-  active,
-  onNotice,
+  library,
+  voice,
+  audition,
+  onToggle,
+  onChange,
 }: {
   narration: NarrationControl
-  active: boolean
-  onNotice: (message: string) => void
+  library: VoiceLibrary
+  /** 旁白要用的资料库音色；资料库里还没有（或还没读到）音色时是 null。 */
+  voice: string | null
+  audition: Audition
+  onToggle: (audio: ReferenceAudio) => void
+  onChange: () => void
 }) {
   const [text, setText] = useState('')
-  const [picked, setPicked] = useState<string | null>(null)
-  const { playing, toggle } = useAudition({ active, onError: () => onNotice(AUDITION_FAILED_TEXT) })
-  const voices = narration.voices ?? []
-  const voice = voices.find((each) => each.id === picked) ?? voices[0]
   const draft = text.trim()
   const blocked =
     narration.blocked ??
-    (voice === undefined
+    (voice === null
       ? NO_NARRATION_VOICE_TEXT
       : draft === ''
         ? NO_NARRATION_TEXT
@@ -734,41 +566,35 @@ function NarrationPanel({
         rows={2}
         value={text}
       />
-      {narration.voices === undefined || voices.length > 0 ? (
-        <div aria-label="旁白音色" className="wf-voice-list" role="group">
-          {voices.map((each) => (
-            <VoiceChip
-              audition={{
-                playing: playing === each.id,
-                onToggle: () => toggle(each.id, each.url),
-              }}
-              blocked={undefined}
-              key={each.id}
-              name={each.name}
-              onPick={() => setPicked(each.id)}
-              picked={each.id === voice?.id}
-            />
-          ))}
-        </div>
-      ) : (
+      {voice !== null ? (
+        <CurrentVoice
+          audition={audition}
+          id={voice}
+          library={library.voices}
+          onChange={onChange}
+          onToggle={onToggle}
+        />
+      ) : library.voices === undefined ? null : (
         <p className="wf-voice-note" role="status">
           {NO_VOICES_TEXT}
         </p>
       )}
-      {narration.voicesProblem === undefined ? null : (
+      {library.problem === undefined ? null : (
         <InlineAlert
-          action={{ label: '重试', onClick: narration.voicesProblem.onRetry }}
-          message={narration.voicesProblem.message}
+          action={{ label: '重试', onClick: library.problem.onRetry }}
+          message={library.problem.message}
         />
       )}
       <div className="wf-narration-foot">
-        <span className="wf-narration-voice">{voice?.name}</span>
+        <span className="wf-narration-voice">
+          {voice === null ? null : voiceNameOf(voice, library.voices)}
+        </span>
         <BlockedReason reason={blocked}>
           <button
             aria-disabled={blocked === undefined ? undefined : true}
             className="wf-chip-btn is-soft ui-state ui-focus"
             onClick={() => {
-              if (blocked === undefined && voice !== undefined) narration.onInsert(draft, voice.id)
+              if (blocked === undefined && voice !== null) narration.onInsert(draft, voice)
             }}
             type="button"
           >
@@ -790,8 +616,8 @@ type CaptionRowProps = {
   onText: CaptionTextChange
   onRemove: () => void
   onSeek: () => void
-  /** 译文语言下的人声配置（右上角附单句配音控件，见 `LineVoiceChip`）；原文语言为 `undefined`。 */
-  voice: VoiceControl | undefined
+  /** 右上角的单句配音标签（译文语言，见 `LineVoiceChip`）；原文语言为 null。 */
+  voiceChip: ReactNode
   /** 当前字幕与原始台词存在差异时的台词对照；无差异或无台词时为 `undefined`。 */
   script: ScriptNote | undefined
 }
@@ -809,7 +635,7 @@ function CaptionRow({
   onText,
   onRemove,
   onSeek,
-  voice,
+  voiceChip,
   script,
 }: CaptionRowProps) {
   const fieldRef = useRef<HTMLTextAreaElement | null>(null)
@@ -841,7 +667,7 @@ function CaptionRow({
             />
           ) : null}
         </span>
-        {voice === undefined ? null : <LineVoiceChip caption={caption.id} voice={voice} />}
+        {voiceChip}
         <IconButton
           className="wf-caption-remove"
           label={`删除 ${range} 的字幕`}

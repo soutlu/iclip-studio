@@ -5,7 +5,6 @@ import type { MediaUpload } from '@/shared/api/media-upload'
 import {
   audioPlayheadSpot,
   conversationAudio,
-  durationLabel,
   filterAudio,
   firstAudioClipOf,
   generatedAudio,
@@ -68,11 +67,6 @@ describe('音频的名字和筛选', () => {
     expect(filterAudio(items, '吉他').map((item) => item.title)).toEqual(['轻快吉他'])
     expect(filterAudio(items, '钢琴')).toEqual([])
     expect(filterAudio(items, '')).toEqual(items)
-  })
-
-  it('时长写成分:秒', () => {
-    expect(durationLabel(30_000)).toBe('00:30')
-    expect(durationLabel(168_400)).toBe('02:48')
   })
 })
 
