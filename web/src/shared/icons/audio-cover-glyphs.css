@@ -1,0 +1,16 @@
+/* 副结构整组 <g> 降不透明度，而不是逐个图形降：逐个降时笔画交界处会叠深 */
+.audition-glyph-sec {
+  opacity: 0.28;
+}
+
+.audition-glyph-sec-soft {
+  opacity: 0.16;
+}
+
+.audition-glyph-tone-fill {
+  fill: var(--icon-tone-color, currentColor);
+}
+
+.audition-glyph-tone-stroke {
+  stroke: var(--icon-tone-color, currentColor);
+}
