@@ -3,6 +3,8 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from fractions import Fraction
+from functools import partial
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -10,6 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
+from iclip.domains.generation.models import STATUS_COMPLETED, GenerationOutput
 from iclip.domains.generation.processing import FfmpegComposeProvider, LocalClipProcessor
 from iclip.domains.generation.provider import ProviderError
 from iclip.domains.generation.schemas import ClipStage
@@ -17,7 +20,13 @@ from iclip.platform.media.codec import SOFTWARE, MediaCodec
 from iclip.platform.media.probe import probe_video
 from iclip.platform.media.process import ffmpeg_available
 from tests.helpers.fetch_url import as_is, rewriting
-from tests.helpers.generation import MemoryObjectStore, compose_request, make_job
+from tests.helpers.generation import (
+    InMemoryGenerationRepository,
+    MemoryObjectStore,
+    compose_request,
+    make_job,
+    video_request,
+)
 from tests.helpers.media import (
     BROKEN_DECODE,
     CODECS,
@@ -27,6 +36,7 @@ from tests.helpers.media import (
     local_codec,
     synthesize_video,
 )
+from tests.helpers.media_server import serving
 
 pytestmark = [
     pytest.mark.anyio,
@@ -35,6 +45,7 @@ pytestmark = [
 
 BASE_URL = "https://example.test/base.mp4"
 EDITED_URL = "https://example.test/edited.mp4"
+OTHER_URL = "https://example.test/other.mp4"
 
 
 def _client(payloads: dict[str, bytes]) -> httpx.MockTransport:
@@ -79,25 +90,30 @@ def codec(request: pytest.FixtureRequest) -> MediaCodec:
 
 async def _compose(
     segments: list[dict[str, Any]],
-    sources: dict[str, bytes],
+    transport: httpx.AsyncBaseTransport | None,
     *,
+    base_url: str = BASE_URL,
     stages: _Stages | None = None,
     codec: MediaCodec = SOFTWARE,
     fetch_url: Callable[[str], str] = as_is,
 ) -> tuple[str, bytes]:
     store = MemoryObjectStore()
+    repo = InMemoryGenerationRepository()
+    base = make_job(video_request(), status=STATUS_COMPLETED, output=GenerationOutput(url=base_url))
+    repo.jobs[base.id] = base
     provider = FfmpegComposeProvider(
         LocalClipProcessor(
             object_store=store,
             codec=codec,
             fetch_url=fetch_url,
             concurrency=1,
-            transport=_client(sources),
+            transport=transport,
         ),
         report_stage=(stages or _Stages()).report,
+        record_of=partial(repo.get, owner=None),
     )
     submission = await provider.submit(
-        make_job(compose_request(segments=segments), provider="ffmpeg")
+        make_job(compose_request(segments=segments), provider="ffmpeg", source_job_id=base.id)
     )
 
     assert submission.output_url is not None, "本地加工一次出结果，没有轮询阶段"
@@ -106,15 +122,15 @@ async def _compose(
     return key, content
 
 
-async def _profile(content: bytes) -> tuple[int, int, bool]:
+async def _profile(content: bytes) -> tuple[int, int, Fraction, bool]:
     with TemporaryDirectory(prefix="clip-probe-") as tmp:
         path = Path(tmp) / "out.mp4"
         path.write_bytes(content)
         profile = await probe_video(path)
-    return profile.width, profile.height, profile.has_audio
+    return profile.width, profile.height, Fraction(profile.frame_rate), profile.has_audio
 
 
-async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
+async def test_a_composite_takes_the_base_profile_and_keeps_total_length(
     sources: dict[str, bytes],
 ) -> None:
     key, content = await _compose(
@@ -123,14 +139,84 @@ async def test_a_composite_aligns_to_the_original_and_keeps_total_length(
             {"url": EDITED_URL, "start": 0.3, "end": 1.7},
             {"url": BASE_URL, "start": 3, "end": 4},
         ],
-        sources,
+        _client(sources),
     )
 
     assert key.startswith("iclip/agent/video-masters/"), "合成长期保留，不进过期规则"
     assert 3100 <= await duration_ms_of(content) <= 3700, "总长是各段之和"
-    assert await _profile(content) == (320, 240, True), (
-        "对齐到原片；有一段带音轨就出音轨，没音轨的那段补静音"
+    assert await _profile(content) == (320, 240, 10, True), (
+        "宽高帧率随基底；有一段带音轨就出音轨，没音轨的那段补静音"
     )
+
+
+async def test_a_cross_source_composite_takes_the_base_profile_whoever_contributes_more() -> None:
+    with TemporaryDirectory(prefix="clip-fixture-") as tmp:
+        root = Path(tmp)
+        payloads = {
+            BASE_URL: synthesize_video(
+                root / "base.mp4", size="320x240", rate=10, seconds=2, audio=False
+            ),
+            OTHER_URL: synthesize_video(
+                root / "other.mp4", size="480x360", rate=25, seconds=4, audio=True
+            ),
+        }
+    _, content = await _compose(
+        [
+            {"url": BASE_URL, "start": 0, "end": 1},
+            {"url": OTHER_URL, "start": 0, "end": 3},
+            {"url": BASE_URL, "start": 1},
+        ],
+        _client(payloads),
+    )
+
+    assert 4800 <= await duration_ms_of(content) <= 5200, "1 秒 + 3 秒 + 1 秒"
+    assert await _profile(content) == (320, 240, 10, True), (
+        "另一条更长、贡献更多也按基底的宽高帧率出；基底没音轨，另一条有，就出音轨"
+    )
+
+
+async def test_a_base_left_out_of_the_segments_still_sets_the_profile() -> None:
+    public = "https://cdn.test"
+    with TemporaryDirectory(prefix="clip-fixture-") as tmp:
+        root = Path(tmp)
+        files = {
+            "base.mp4": synthesize_video(
+                root / "base.mp4", size="320x240", rate=10, seconds=2, audio=True
+            ),
+            "other.mp4": synthesize_video(
+                root / "other.mp4", size="480x360", rate=25, seconds=3, audio=False
+            ),
+        }
+    async with serving(files) as server:
+        _, content = await _compose(
+            [
+                {"url": f"{public}/other.mp4", "start": 0, "end": 1},
+                {"url": f"{public}/other.mp4", "start": 2},
+            ],
+            None,
+            base_url=f"{public}/base.mp4",
+            fetch_url=rewriting(public, server.base_url),
+        )
+
+    assert 1800 <= await duration_ms_of(content) <= 2200, "1 秒 + 1 秒"
+    assert await _profile(content) == (320, 240, 10, False), (
+        "基底不在片段里也按它的宽高帧率出；参与的片段都没音轨就不出音轨"
+    )
+
+
+async def test_a_base_outside_the_segments_that_cannot_be_probed_fails_without_retry() -> None:
+    with TemporaryDirectory(prefix="clip-fixture-") as tmp:
+        other = synthesize_video(Path(tmp) / "other.mp4", size="160x120", seconds=2, audio=False)
+    async with serving({"other.mp4": other}) as server:
+        with pytest.raises(ProviderError) as caught:
+            await _compose(
+                [{"url": server.url("other.mp4"), "start": 0}],
+                None,
+                base_url=server.url("base.mp4"),
+            )
+
+    assert caught.value.code == "MEDIA_SOURCE_UNREACHABLE"
+    assert not caught.value.retryable
 
 
 async def test_sources_are_downloaded_from_the_rewritten_addresses(
@@ -145,27 +231,11 @@ async def test_sources_are_downloaded_from_the_rewritten_addresses(
             {"url": EDITED_URL, "start": 0.3, "end": 1.7},
             {"url": BASE_URL, "start": 3, "end": 4},
         ],
-        internal_only,
+        _client(internal_only),
         fetch_url=to_internal,
     )
 
     assert 3100 <= await duration_ms_of(content) <= 3700
-
-
-async def test_a_composite_still_aligns_to_the_original_when_the_edit_covers_most_of_it(
-    sources: dict[str, bytes],
-) -> None:
-    _, content = await _compose(
-        [
-            {"url": BASE_URL, "start": 0, "end": 0.5},
-            {"url": EDITED_URL, "start": 0, "end": 2},
-            {"url": BASE_URL, "start": 3.5, "end": 4},
-        ],
-        sources,
-    )
-
-    width, height, _ = await _profile(content)
-    assert (width, height) == (320, 240), "按贡献时长认原片会认成 480×360 的编辑片段"
 
 
 async def test_open_ends_are_filled_from_the_downloaded_sources(
@@ -177,7 +247,7 @@ async def test_open_ends_are_filled_from_the_downloaded_sources(
             {"url": EDITED_URL, "start": 0},
             {"url": BASE_URL, "start": 3},
         ],
-        sources,
+        _client(sources),
     )
 
     assert 3800 <= await duration_ms_of(content) <= 4200, "1 秒前段 + 2 秒编辑段 + 1 秒后段"
@@ -193,7 +263,7 @@ async def test_a_tail_that_starts_at_the_end_of_the_base_is_skipped(
             {"url": EDITED_URL, "start": 0},
             {"url": BASE_URL, "start": base_ms / 1000},
         ],
-        sources,
+        _client(sources),
     )
 
     assert 3800 <= await duration_ms_of(content) <= 4200, "2 秒前段 + 2 秒编辑段"
@@ -236,7 +306,7 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
             {"url": EDITED_URL, "start": 0},
             {"url": BASE_URL, "start": 3},
         ],
-        sources,
+        _client(sources),
         codec=codec,
     )
 
@@ -244,7 +314,7 @@ async def test_keyframes_sit_only_at_segment_starts_and_where_the_sources_had_th
         await keyframes_of(content),
         [0, 0.6, 1.0, 2.6, 3.0, 3.4],
     )
-    assert (await _profile(content))[2], "静音段配了静音，合成照原片带音轨"
+    assert (await _profile(content))[3], "静音段配了静音，有一段带音轨合成就带音轨"
     await decode_all(content, codec)
 
 
@@ -261,7 +331,7 @@ async def test_a_long_stretch_without_source_keyframes_gets_none(codec: MediaCod
         }
     _, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 27}, {"url": EDITED_URL, "start": 0}],
-        sources,
+        _client(sources),
         codec=codec,
     )
 
@@ -272,7 +342,7 @@ async def test_the_decode_options_go_on_the_video_inputs(sources: dict[str, byte
     with pytest.raises(ProviderError) as caught:
         await _compose(
             [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
-            sources,
+            _client(sources),
             codec=BROKEN_DECODE,
         )
 
@@ -286,7 +356,7 @@ async def test_a_composite_reports_fetching_then_processing_then_uploading(
     stages = _Stages()
     await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
-        sources,
+        _client(sources),
         stages=stages,
     )
 
@@ -299,7 +369,7 @@ async def test_stops_reporting_once_the_job_has_a_conclusion_but_still_finishes(
     stages = _Stages(live=False)
     key, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
-        sources,
+        _client(sources),
         stages=stages,
     )
 
@@ -312,7 +382,7 @@ async def test_a_broken_stage_report_does_not_fail_the_job(sources: dict[str, by
     stages = _Stages(broken=True)
     _, content = await _compose(
         [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
-        sources,
+        _client(sources),
         stages=stages,
     )
 
@@ -321,25 +391,11 @@ async def test_a_broken_stage_report_does_not_fail_the_job(sources: dict[str, by
 
 
 async def test_a_source_that_cannot_be_fetched_fails_without_retry() -> None:
-    provider = FfmpegComposeProvider(
-        LocalClipProcessor(
-            object_store=MemoryObjectStore(),
-            codec=SOFTWARE,
-            fetch_url=as_is,
-            concurrency=1,
-            transport=_client({}),
-        ),
-        report_stage=_Stages().report,
-    )
-    job = make_job(
-        compose_request(
-            segments=[{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}]
-        ),
-        provider="ffmpeg",
-    )
-
     with pytest.raises(ProviderError) as caught:
-        await provider.submit(job)
+        await _compose(
+            [{"url": BASE_URL, "start": 0, "end": 1}, {"url": EDITED_URL, "start": 0}],
+            _client({}),
+        )
 
     assert caught.value.code == "MEDIA_SOURCE_UNREACHABLE"
     assert not caught.value.retryable, "取不到素材是这次请求的问题，重排也还是取不到"

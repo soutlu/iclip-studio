@@ -577,7 +577,11 @@ async def _report_stage(_job_id: uuid.UUID, _stage: ClipStage) -> bool:
             make_job(compose_request()),
         ),
         (
-            FfmpegComposeProvider(local_processor(), report_stage=_report_stage),
+            FfmpegComposeProvider(
+                local_processor(),
+                report_stage=_report_stage,
+                record_of=partial(InMemoryGenerationRepository().get, owner=None),
+            ),
             make_job(video_request()),
         ),
     ],

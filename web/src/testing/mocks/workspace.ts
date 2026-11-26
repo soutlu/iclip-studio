@@ -1137,14 +1137,16 @@ export const workspaceHandlers = [
     for (const segment of body.segments) {
       const source: MockRecord | undefined =
         segment.sourceJobId === base.id ? base : findJob(body.conversationId, segment.sourceJobId)
-      const fromBase =
-        source === base ||
-        (source?.operation === 'generate' &&
-          source.status === 'completed' &&
-          source.sourceJobId === base.id)
-      if (source === undefined || !fromBase || source.outputUrl === null) {
+      const usable =
+        source !== undefined &&
+        (isFinishedTake(source) ||
+          (source.kind === 'video' &&
+            source.operation === 'generate' &&
+            source.status === 'completed' &&
+            source.sourceJobId !== null))
+      if (source === undefined || !usable || source.outputUrl === null) {
         return HttpResponse.json(
-          { detail: '每段必须出自基底本身，或基于这个基底的一条已完成编辑段' },
+          { detail: '每段须出自本对话的素材片或已完成的编辑段' },
           { status: 422 },
         )
       }

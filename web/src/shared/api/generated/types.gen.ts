@@ -1083,8 +1083,8 @@ export type CollectionsPageOut = {
 /**
  * ComposeSegmentIn
  *
- * 合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录
- * 自己的媒体时间算；``end`` 为空就取到那条的结尾。
+ * 合成里的一段：从 ``sourceJobId`` 那条记录（本对话含继承的已完成素材片或已完成编辑段）的
+ * 产物上取 ``[start, end)``，单位秒，按那条记录自己的媒体时间算；``end`` 为空就取到那条的结尾。
  */
 export type ComposeSegmentIn = {
   /**
@@ -7634,7 +7634,8 @@ export type VideoClipModelOut = {
 /**
  * VideoComposeIn
  *
- * 一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。
+ * 一次合成的受理输入：基底加一串有序片段，服务端核对各段出处后换成地址再拼；产物的宽高与
+ * 帧率以基底为准，基底不必出现在片段里。
  */
 export type VideoComposeIn = {
   /**

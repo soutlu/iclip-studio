@@ -109,11 +109,12 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: VideoComposeIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """在基底那一版上按片段列表拼成一条新素材片，来源记基底，原作与镜号随基底。不经外部服务。
+        """按片段列表拼成一条新素材片，来源记基底，原作与镜号随基底。不经外部服务。
 
-        ``baseJobId`` 必须是这段对话自己的或继承来的一条已完成素材片；``segments`` 每段的
-        ``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录
-        自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进
+        ``baseJobId`` 必须是这段对话自己的或继承来的一条已完成素材片，产物的宽高与帧率以它为准
+        （基底不必出现在片段里）；有一段带音轨就出音轨。``segments`` 每段的 ``sourceJobId`` 是
+        这段对话（含继承）里任一条已完成素材片或已完成编辑段，``start`` / ``end`` 是那条记录自己
+        的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进
         ``request.segments``。``userName`` 的规则同出片。
         """
 

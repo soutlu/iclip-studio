@@ -298,10 +298,10 @@ class GenerationService:
         for source_id in dict.fromkeys(segment.source_job_id for segment in request.segments):
             if source_id in sources:
                 continue
-            edit = await self._check_source(principal, source_id, request.conversation_id)
-            if not is_finished_edit(edit) or edit.source_job_id != base.id:
-                raise ValidationFailed("每段须出自基底本身或基于该基底的已完成编辑段")
-            sources[source_id] = edit
+            source = await self._check_source(principal, source_id, request.conversation_id)
+            if not (is_base_master(source) or is_finished_edit(source)):
+                raise ValidationFailed("每段须出自本对话的素材片或已完成的编辑段")
+            sources[source_id] = source
         segments: list[ComposeSegment] = []
         for position, segment in enumerate(request.segments, start=1):
             source = sources[segment.source_job_id]

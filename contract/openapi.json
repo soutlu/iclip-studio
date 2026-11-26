@@ -1899,7 +1899,7 @@
       },
       "ComposeSegmentIn": {
         "additionalProperties": false,
-        "description": "合成里的一段：从 ``sourceJobId`` 那条记录的产物上取 ``[start, end)``，单位秒，按那条记录\n自己的媒体时间算；``end`` 为空就取到那条的结尾。",
+        "description": "合成里的一段：从 ``sourceJobId`` 那条记录（本对话含继承的已完成素材片或已完成编辑段）的\n产物上取 ``[start, end)``，单位秒，按那条记录自己的媒体时间算；``end`` 为空就取到那条的结尾。",
         "properties": {
           "end": {
             "anyOf": [
@@ -14542,7 +14542,7 @@
       },
       "VideoComposeIn": {
         "additionalProperties": false,
-        "description": "一次合成的受理输入：基底那一版加一串有序片段，服务端核对各段出处后换成地址再拼。",
+        "description": "一次合成的受理输入：基底加一串有序片段，服务端核对各段出处后换成地址再拼；产物的宽高与\n帧率以基底为准，基底不必出现在片段里。",
         "properties": {
           "baseJobId": {
             "format": "uuid",
@@ -21302,7 +21302,7 @@
     },
     "/generations/video-composites": {
       "post": {
-        "description": "在基底那一版上按片段列表拼成一条新素材片，来源记基底，原作与镜号随基底。不经外部服务。\n\n``baseJobId`` 必须是这段对话自己的或继承来的一条已完成素材片；``segments`` 每段的\n``sourceJobId`` 是基底本身或来源是基底的一条已完成编辑段，``start`` / ``end`` 是那条记录\n自己的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进\n``request.segments``。``userName`` 的规则同出片。",
+        "description": "按片段列表拼成一条新素材片，来源记基底，原作与镜号随基底。不经外部服务。\n\n``baseJobId`` 必须是这段对话自己的或继承来的一条已完成素材片，产物的宽高与帧率以它为准\n（基底不必出现在片段里）；有一段带音轨就出音轨。``segments`` 每段的 ``sourceJobId`` 是\n这段对话（含继承）里任一条已完成素材片或已完成编辑段，``start`` / ``end`` 是那条记录自己\n的媒体时间（秒），``end`` 省略即取到结尾。服务端把出处换成地址，记进\n``request.segments``。``userName`` 的规则同出片。",
         "operationId": "submit_video_composite_generations_video_composites_post",
         "requestBody": {
           "content": {
