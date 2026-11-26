@@ -48,7 +48,7 @@ export function AuditionBar({
   return (
     <section
       aria-label={`试听：${title}`}
-      className="flex w-full items-center gap-3 rounded-lg bg-surface-container-lowest py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4"
+      className="flex w-full items-center gap-3 rounded-lg bg-card py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4"
     >
       <AuditionButton ink label={playing ? '暂停' : '播放'} onToggle={onToggle} playing={playing}>
         <AuditionBuffering audition={audition} />

@@ -125,9 +125,7 @@ function AudioRow({ audio, actions }: { audio: ReferenceAudio; actions: AudioRow
       className={cn(
         'group/row relative rounded-md after:absolute after:right-3 after:bottom-0 after:h-px after:bg-hairline last:after:hidden',
         DIVIDER_FROM[audio.audioKind],
-        current
-          ? 'bg-surface-container-lowest shadow-card ring-1 ring-hairline after:hidden'
-          : 'hover:bg-state-hover',
+        current ? 'bg-card shadow-card ring-1 ring-hairline after:hidden' : 'hover:bg-state-hover',
       )}
     >
       <div className={cn(ROW_GRID, GRID[audio.audioKind], 'py-3')}>
