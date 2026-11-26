@@ -146,8 +146,8 @@ describe('音频栏 · 列表', () => {
     const user = userEvent.setup()
     await openTab([guitar, night])
     expect(within(list()).getAllByRole('listitem')).toHaveLength(2)
-    expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
-    expect(within(rowOf('城市夜景氛围')).getByText('02:48')).toBeInTheDocument()
+    expect(within(rowOf('轻快原声吉他')).getByText('0:30')).toBeInTheDocument()
+    expect(within(rowOf('城市夜景氛围')).getByText('2:48')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '试听：轻快原声吉他' })).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: '使用中' })).toBeNull()
 
@@ -225,7 +225,7 @@ describe('音频栏 · 列表', () => {
     const user = userEvent.setup()
     const { onAdd } = await openTab([], [], [uploadedMusic()])
     const [title] = within(list()).getAllByText(/^上传的音乐 · /)
-    expect(await within(list()).findByText('00:12')).toBeInTheDocument()
+    expect(await within(list()).findByText('0:12')).toBeInTheDocument()
     act(() => rowButton(title?.textContent ?? '').focus())
     await user.keyboard('{Enter}')
     expect(onAdd).toHaveBeenCalledWith({
@@ -298,7 +298,7 @@ describe('音频栏 · 使用中', () => {
     ]
     const { onReveal, onAdd } = await openTab([guitar, night], clips)
     expect(within(rowOf('轻快原声吉他')).getByRole('img', { name: '使用中' })).toBeInTheDocument()
-    expect(within(rowOf('轻快原声吉他')).getByText('00:30')).toBeInTheDocument()
+    expect(within(rowOf('轻快原声吉他')).getByText('0:30')).toBeInTheDocument()
     expect(
       within(rowOf('轻快原声吉他')).queryByRole('button', { name: /^放入配乐行：/ }),
     ).toBeNull()

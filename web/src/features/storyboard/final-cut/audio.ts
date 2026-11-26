@@ -48,8 +48,12 @@ export const uploadedAudio = (upload: MediaUpload): ConversationAudio => ({
   createdAt: upload.createdAt,
 })
 
-/** 「音频库」里的一条：参考音频库里的配乐或音效，总是已就绪、量过时长。 */
-export type LibraryAudio = ConversationAudio & { url: string; durationMs: number }
+/** 「音频库」里的一条：参考音频库里的配乐或音效，总是已就绪、量过时长；`reference` 是库里那条（子类、波形、属性）。 */
+export type LibraryAudio = ConversationAudio & {
+  url: string
+  durationMs: number
+  reference: ReferenceAudio
+}
 
 /** 参考音频库里的一条配乐或音效：名字用它的标题。 */
 export const libraryAudio = (audio: ReferenceAudio): LibraryAudio => ({
@@ -61,6 +65,7 @@ export const libraryAudio = (audio: ReferenceAudio): LibraryAudio => ({
   errorMessage: null,
   generated: false,
   createdAt: audio.createdAt,
+  reference: audio,
 })
 
 /** 生成的和上传的合成一张表，新的在前。 */
@@ -79,12 +84,6 @@ export const filterAudio = (
 ): ConversationAudio[] => {
   const keyword = query.trim().toLowerCase()
   return items.filter((item) => item.title.toLowerCase().includes(keyword))
-}
-
-/** 时长写成「分:秒」，秒四舍五入。 */
-export const durationLabel = (ms: number): string => {
-  const seconds = Math.round(ms / 1000)
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
 /** final-cut 里用着地址 `src`（音频记录的产物地址）的音频片段里开始得最早的那个；没用到时是 undefined。 */

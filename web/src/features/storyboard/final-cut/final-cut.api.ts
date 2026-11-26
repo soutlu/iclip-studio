@@ -25,7 +25,11 @@ import {
   zWholeFilmExportStartedOut,
 } from '@/shared/api/generated/zod.gen'
 import { readConversationUploads } from '@/shared/api/media-upload'
-import { referenceAudiosQuery, voicesQuery } from '@/shared/api/reference-audios'
+import {
+  referenceAudiosQuery,
+  voicesQuery,
+  type AudioTraitFilter,
+} from '@/shared/api/reference-audios'
 import {
   generationsRefetchInterval,
   readAllGenerations,
@@ -349,9 +353,12 @@ export const useConversationMusic = (conversationId: string) =>
 /** 查询参考音频库全部音色（按创建时间倒序，供「字幕」页签配音选择）；`enabled` 为假时不发起请求。 */
 export const useLibraryVoices = (enabled: boolean) => useQuery({ ...voicesQuery(), enabled })
 
-/** 分页查询参考音频库配乐或音效（按 `q` 匹配标题与备注，供「配乐」页签音频库使用）。 */
-export const useLibraryAudios = (audioKind: 'bgm' | 'sfx', q: string) =>
-  useInfiniteQuery(referenceAudiosQuery({ audioKind, q: q.trim() }))
+/**
+ * 分页查询参考音频库配乐或音效（按 `q` 匹配标题与备注、按 `traits` 筛属性，供「配乐」页签音频库使用）。
+ * `traits` 只放这个子类能筛的几项（见 `AUDIO_KIND_FILTERS`）。
+ */
+export const useLibraryAudios = (audioKind: 'bgm' | 'sfx', q: string, traits: AudioTraitFilter) =>
+  useInfiniteQuery(referenceAudiosQuery({ audioKind, q: q.trim(), ...traits }))
 
 export const useConversationTaskId = (conversationId: string) =>
   useQuery({

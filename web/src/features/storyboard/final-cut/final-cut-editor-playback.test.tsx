@@ -1046,6 +1046,54 @@ describe('final-cut 编辑器 · 配乐页签的音频库', () => {
     ).toBeVisible()
     expect(within(side()).queryByRole('button', { name: /^轻快原声吉他/ })).toBeNull()
   })
+
+  it('配乐按「情绪」筛：只列这种情绪的，右边条数跟着变；换到「音效」时筛选换成「分类」、清掉情绪', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(within(side()).getByRole('tab', { name: '配乐' }))
+    await user.click(within(side()).getByRole('radio', { name: '音频库' }))
+    // 换了筛选会重新读：每次都重新找列表
+    const library = () => within(side()).getByRole('list', { name: '音频库' })
+    await within(await within(side()).findByRole('list', { name: '音频库' })).findByRole('button', {
+      name: '轻快原声吉他',
+    })
+    expect(within(side()).getByText('2 条')).toBeVisible()
+
+    await user.click(within(side()).getByRole('button', { name: '情绪：情绪' }))
+    await user.click(await screen.findByRole('checkbox', { name: '松弛' }))
+    await waitFor(() => expect(within(side()).getByText('1 条')).toBeVisible())
+    expect(within(library()).getByRole('button', { name: '城市夜景氛围' })).toBeVisible()
+    expect(within(library()).queryByRole('button', { name: '轻快原声吉他' })).toBeNull()
+    expect(within(side()).getByRole('button', { name: '情绪：松弛' })).toBeVisible()
+
+    await user.keyboard('{Escape}')
+    await user.click(within(side()).getByRole('radio', { name: '音效' }))
+    expect(
+      await within(within(side()).getByRole('list', { name: '音频库' })).findByRole('button', {
+        name: '翻页声',
+      }),
+    ).toBeVisible()
+    expect(within(side()).getByRole('button', { name: '分类：分类' })).toBeVisible()
+    expect(within(side()).queryByRole('button', { name: /^情绪：/ })).toBeNull()
+  })
+
+  it('试听库里的一条：页签底部出现这条的试听条；切到「本对话」时停下、试听条收起', async () => {
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await user.click(within(side()).getByRole('tab', { name: '配乐' }))
+    await user.click(within(side()).getByRole('radio', { name: '音频库' }))
+    const library = await within(side()).findByRole('list', { name: '音频库' })
+    await user.click(await within(library).findByRole('button', { name: '试听：轻快原声吉他' }))
+
+    const bar = within(side()).getByRole('region', { name: '试听：轻快原声吉他' })
+    expect(within(bar).getByRole('button', { name: '暂停' })).toBeVisible()
+    await user.click(within(side()).getByRole('radio', { name: '本对话' }))
+    expect(within(side()).queryByRole('region', { name: /^试听：/ })).toBeNull()
+  })
 })
 
 describe('final-cut 编辑器 · 切走再切回', () => {

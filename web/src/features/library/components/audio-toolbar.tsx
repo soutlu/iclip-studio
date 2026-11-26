@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import {
   AUDIO_FILTER_VALUES,
+  AUDIO_KIND_FILTERS,
   AUDIO_KINDS,
   type AudioFilterKey,
 } from '@/shared/api/reference-audios'
@@ -8,7 +9,6 @@ import { AUDIO_FILTER_LABELS, AUDIO_KIND_LABELS, audioFilterOptions } from '@/sh
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { FilterBarRoot, MultiPickerFilter } from '@/shared/ui/filter-bar'
 import {
-  AUDIO_KIND_FILTERS,
   useReferenceAudioFilters,
   type ReferenceAudioScope,
   type ReferenceAudioTab,

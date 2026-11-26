@@ -773,9 +773,9 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
   const uploaded = list.getByRole('listitem').filter({ hasText: /^上传的音乐 · / })
-  await expect(guitar).toContainText('00:30')
+  await expect(guitar).toContainText('0:30')
   // 上传的音频记录上没有时长，读完文件才显示
-  await expect(uploaded).toContainText('00:30')
+  await expect(uploaded).toContainText('0:30')
 
   await guitar.getByRole('button', { name: /^试听：/ }).click()
   await expect(guitar.getByRole('button', { name: /^暂停试听：/ })).toBeVisible()
