@@ -21,5 +21,8 @@
   "bare-z-index-tsx": 0,
   "outline-none": 0,
   "primary-opacity-wash": 0,
+  "arbitrary-spacing": 9,
+  "off-grid-spacing-tsx": 50,
+  "off-grid-spacing-css": 134,
   "invalid-design-allow": 0
 }
