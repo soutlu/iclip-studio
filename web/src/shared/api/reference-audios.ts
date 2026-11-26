@@ -40,13 +40,31 @@ export const AUDIO_KIND_FILTERS = {
   sfx: ['sfxCategory'],
 } as const satisfies Record<AudioKind, readonly AudioFilterKey[]>
 
-/** 各属性筛选选中的取值；没给或空数组是不按它筛。 */
+/** 界面上各属性筛选选中的取值，每项最多一个；没给是不按它筛。 */
 export type AudioTraitFilter = {
+  [K in AudioFilterKey]?: AudioFilterValue<K> | undefined
+}
+
+/** 请求里的属性筛选：每项可给几个值；没给或空数组是不按它筛。 */
+type AudioTraitQuery = {
   [K in AudioFilterKey]?: readonly AudioFilterValue<K>[] | undefined
 }
 
 /** 列表的筛选：子类（null 是全部）、关键词（匹配标题、备注与台词）和属性。 */
-export type ReferenceAudioFilter = { audioKind: AudioKind | null; q: string } & AudioTraitFilter
+export type ReferenceAudioFilter = { audioKind: AudioKind | null; q: string } & AudioTraitQuery
+
+/** 把界面上选的属性转成请求参数：只带 `keys` 里选了的几项，每项一个值。 */
+export const traitQuery = (
+  keys: readonly AudioFilterKey[],
+  traits: AudioTraitFilter,
+): AudioTraitQuery => {
+  const query: AudioTraitQuery = {}
+  for (const key of keys) {
+    const value = traits[key]
+    if (value !== undefined) Object.assign(query, { [key]: [value] })
+  }
+  return query
+}
 
 const ROOT = 'reference-audios'
 

@@ -1061,13 +1061,12 @@ describe('final-cut 编辑器 · 配乐页签的音频库', () => {
     expect(within(side()).getByText('2 条')).toBeVisible()
 
     await user.click(within(side()).getByRole('button', { name: '情绪：情绪' }))
-    await user.click(await screen.findByRole('checkbox', { name: '松弛' }))
+    await user.click(await screen.findByRole('radio', { name: '松弛' }))
     await waitFor(() => expect(within(side()).getByText('1 条')).toBeVisible())
     expect(within(library()).getByRole('button', { name: '城市夜景氛围' })).toBeVisible()
     expect(within(library()).queryByRole('button', { name: '轻快原声吉他' })).toBeNull()
     expect(within(side()).getByRole('button', { name: '情绪：松弛' })).toBeVisible()
 
-    await user.keyboard('{Escape}')
     await user.click(within(side()).getByRole('radio', { name: '音效' }))
     expect(
       await within(within(side()).getByRole('list', { name: '音频库' })).findByRole('button', {

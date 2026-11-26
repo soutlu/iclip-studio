@@ -22,8 +22,7 @@ const totalText = (kind: ReferenceAudioTab, total: number, filtered: boolean) =>
   `${filtered ? '找到' : '共'} ${String(total)} ${TOTAL_UNITS[kind]}`
 
 const filteredOf = (q: string, traits: AudioTraitFilter) =>
-  q.trim() !== '' ||
-  Object.values(traits).some((values) => values !== undefined && values.length > 0)
+  q.trim() !== '' || Object.values(traits).some((value) => value !== undefined)
 
 type KindAudiosProps = {
   kind: AudioKind

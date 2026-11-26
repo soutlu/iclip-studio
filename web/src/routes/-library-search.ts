@@ -29,16 +29,16 @@ const zLibraryTab = z.enum(LIBRARY_TAB_VALUES)
 
 const audioQuery = zListReferenceAudiosReferencesAudiosGetQuery.shape
 
-/** 音频库的属性筛选：可重复的数组参数，取值同列表接口。 */
+/** 音频库的属性筛选：每项一个值，取值同列表接口；认不出的（含重复给了几个）当没筛。 */
 const audioTraitParams = {
-  locale: audioQuery.locale.unwrap().unwrap().optional().catch(undefined),
-  gender: audioQuery.gender.unwrap().unwrap().optional().catch(undefined),
-  age: audioQuery.age.unwrap().unwrap().optional().catch(undefined),
-  scenario: audioQuery.scenario.unwrap().unwrap().optional().catch(undefined),
-  mood: audioQuery.mood.unwrap().unwrap().optional().catch(undefined),
-  genre: audioQuery.genre.unwrap().unwrap().optional().catch(undefined),
-  tempo: audioQuery.tempo.unwrap().unwrap().optional().catch(undefined),
-  sfxCategory: audioQuery.sfxCategory.unwrap().unwrap().optional().catch(undefined),
+  locale: audioQuery.locale.unwrap().unwrap().element.optional().catch(undefined),
+  gender: audioQuery.gender.unwrap().unwrap().element.optional().catch(undefined),
+  age: audioQuery.age.unwrap().unwrap().element.optional().catch(undefined),
+  scenario: audioQuery.scenario.unwrap().unwrap().element.optional().catch(undefined),
+  mood: audioQuery.mood.unwrap().unwrap().element.optional().catch(undefined),
+  genre: audioQuery.genre.unwrap().unwrap().element.optional().catch(undefined),
+  tempo: audioQuery.tempo.unwrap().unwrap().element.optional().catch(undefined),
+  sfxCategory: audioQuery.sfxCategory.unwrap().unwrap().element.optional().catch(undefined),
 }
 
 export const librarySearchSchema = z.object({
@@ -119,24 +119,21 @@ export function referenceAudioScopeFromSearch(search: LibrarySearch): ReferenceA
   }
 }
 
-const listOrUndefined = <T>(values: readonly T[] | undefined) =>
-  values === undefined || values.length === 0 ? undefined : [...values]
-
 export function searchFromReferenceAudioScope(scope: ReferenceAudioScope): LibrarySearch {
   const q = scope.q.trim()
   const traits = traitsFor(scope.kind, scope.traits)
   return {
-    age: listOrUndefined(traits.age),
+    age: traits.age,
     audioKind: scope.kind === DEFAULT_REFERENCE_AUDIO_SCOPE.kind ? undefined : scope.kind,
-    gender: listOrUndefined(traits.gender),
-    genre: listOrUndefined(traits.genre),
-    locale: listOrUndefined(traits.locale),
-    mood: listOrUndefined(traits.mood),
+    gender: traits.gender,
+    genre: traits.genre,
+    locale: traits.locale,
+    mood: traits.mood,
     q: q === '' ? undefined : q,
-    scenario: listOrUndefined(traits.scenario),
-    sfxCategory: listOrUndefined(traits.sfxCategory),
+    scenario: traits.scenario,
+    sfxCategory: traits.sfxCategory,
     tab: 'audios',
-    tempo: listOrUndefined(traits.tempo),
+    tempo: traits.tempo,
   }
 }
 

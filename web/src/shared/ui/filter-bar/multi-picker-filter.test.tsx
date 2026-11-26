@@ -4,9 +4,10 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithProviders } from '@/testing/render'
 import { FilterBarRoot } from './filter-bar'
-import { MultiPickerFilter, type MultiPickerOption } from './multi-picker-filter'
+import type { FilterOption } from './filter-option'
+import { MultiPickerFilter } from './multi-picker-filter'
 
-const OPTIONS: MultiPickerOption[] = [
+const OPTIONS: FilterOption[] = [
   { count: 2, description: '主播在直播布景前讲', id: 'live', label: '直播切片' },
   { count: 9, description: '模特穿上产品', id: 'try_on', label: '上身展示' },
   { count: 5, id: 'lifestyle', label: '场景种草' },

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Icon, type IconName } from '@/shared/icons'
+import type { IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 import {
@@ -9,22 +9,13 @@ import {
   SearchListStatus,
 } from '@/shared/ui/search-list'
 import { FilterPopup } from './filter-bar'
-
-export type MultiPickerOption = {
-  id: string
-  label: string
-  description?: string | undefined
-  count?: number | undefined
-  depth?: number | undefined
-  group?: boolean | undefined
-}
+import { FILTER_ROW_CLASS, FilterOptionContent, type FilterOption } from './filter-option'
 
 type MultiPickerFilterProps = {
   id: string
-  /** 不给时触发器是素净的样子（见 `FilterPopup`）。 */
-  icon?: IconName | undefined
+  icon: IconName
   noun: string
-  options: readonly MultiPickerOption[]
+  options: readonly FilterOption[]
   value: readonly string[]
   onChange: (value: string[]) => void
   searchable?: boolean | undefined
@@ -34,9 +25,6 @@ type MultiPickerFilterProps = {
   width: string
   className?: string | undefined
 }
-
-const ROW_CLASS =
-  'flex w-full ui-state cursor-pointer items-start gap-2.5 rounded-sm px-2.5 py-2 text-left text-body-sm text-on-surface ui-focus'
 
 const triggerText = (noun: string, labels: readonly string[]): string => {
   const [first] = labels
@@ -58,7 +46,7 @@ export function MultiPickerFilter({
   width,
   className,
 }: MultiPickerFilterProps) {
-  const choices: readonly MultiPickerOption[] = [
+  const choices: readonly FilterOption[] = [
     ...value
       .filter((selected) => !options.some((option) => option.id === selected))
       .map((selected) => ({ id: selected, label: selected })),
@@ -99,7 +87,7 @@ export function MultiPickerFilter({
             className="max-h-[min(460px,50vh)]"
             label={noun}
             renderOption={(option, { selected }) => (
-              <OptionContent
+              <FilterOptionContent
                 option={choices.find((choice) => choice.id === option.id) ?? option}
                 selected={selected}
               />
@@ -122,37 +110,6 @@ export function MultiPickerFilter({
   )
 }
 
-function OptionContent({ option, selected }: { option: MultiPickerOption; selected: boolean }) {
-  return (
-    <>
-      <span
-        className={cn(
-          'grid size-(--icon-sm) shrink-0 place-items-center pt-0.5',
-          option.depth === 1 && 'ml-4',
-          option.depth === 2 && 'ml-8',
-        )}
-      >
-        {selected ? <Icon decorative name="check" size="sm" /> : null}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className={cn('block truncate', (selected || option.group) && 'font-medium')}>
-          {option.label}
-        </span>
-        {option.description === undefined ? null : (
-          <span className="mt-0.5 block text-caption text-on-surface-faint">
-            {option.description}
-          </span>
-        )}
-      </span>
-      {option.count === undefined ? null : (
-        <span className="shrink-0 pt-0.5 text-caption text-on-surface-faint tabular-nums">
-          {option.count}
-        </span>
-      )}
-    </>
-  )
-}
-
 function CheckList({
   options,
   value,
@@ -162,7 +119,7 @@ function CheckList({
   error,
   onRetry,
 }: {
-  options: readonly MultiPickerOption[]
+  options: readonly FilterOption[]
   value: readonly string[]
   onToggle: (id: string) => void
   noun: string
@@ -181,13 +138,13 @@ function CheckList({
         return (
           <button
             aria-checked={selected}
-            className={cn(ROW_CLASS, selected && 'bg-state-active')}
+            className={cn(FILTER_ROW_CLASS, selected && 'bg-state-active')}
             key={option.id}
             onClick={() => onToggle(option.id)}
             role="checkbox"
             type="button"
           >
-            <OptionContent option={option} selected={selected} />
+            <FilterOptionContent option={option} selected={selected} />
           </button>
         )
       })}

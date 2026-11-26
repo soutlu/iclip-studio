@@ -43,8 +43,7 @@ export function AudioLibrary({ scope, onTraits, query, search, renderRow }: Audi
   const items = library.data?.pages.flatMap((page) => page.items.map(libraryAudio)) ?? []
   const total = library.data?.pages[0]?.total ?? undefined
   const readFailed = library.isError && !library.isFetchNextPageError
-  const filtered =
-    keyword !== '' || Object.values(scope.traits).some((each) => (each?.length ?? 0) > 0)
+  const filtered = keyword !== '' || Object.values(scope.traits).some((each) => each !== undefined)
 
   return (
     <>

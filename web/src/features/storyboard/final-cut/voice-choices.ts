@@ -1,8 +1,9 @@
-import type {
-  AudioLocale,
-  AudioTraitFilter,
-  ReferenceAudio,
-  ReferenceAudioFilter,
+import {
+  traitQuery,
+  type AudioLocale,
+  type AudioTraitFilter,
+  type ReferenceAudio,
+  type ReferenceAudioFilter,
 } from '@/shared/api/reference-audios'
 import type { LineVoice, LineVoices, VoiceMode } from './composition/voices'
 
@@ -103,12 +104,12 @@ export const voicePickerFilter = ({
   q: string
   traits: AudioTraitFilter
 }): ReferenceAudioFilter => {
-  const filter: ReferenceAudioFilter = { audioKind: 'voice', q: q.trim() }
-  if (locale !== 'all') filter.locale = locale === 'none' ? ['none'] : [locale, 'none']
-  for (const key of PICKER_TRAITS) {
-    const values = traits[key]
-    if (values !== undefined && values.length > 0) Object.assign(filter, { [key]: values })
+  const filter: ReferenceAudioFilter = {
+    audioKind: 'voice',
+    q: q.trim(),
+    ...traitQuery(PICKER_TRAITS, traits),
   }
+  if (locale !== 'all') filter.locale = locale === 'none' ? ['none'] : [locale, 'none']
   return filter
 }
 

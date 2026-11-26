@@ -58,17 +58,17 @@ describe('选音面板的查询', () => {
     })
   })
 
-  it('带上场景、性别、年龄里选了的，空的不带', () => {
+  it('带上场景、性别、年龄里选了的那一个，没选的不带', () => {
     expect(
       voicePickerFilter({
         locale: 'all',
         q: '',
-        traits: { scenario: ['documentaries', 'trailers'], gender: ['male'], age: [] },
+        traits: { scenario: 'documentaries', gender: 'male', age: undefined },
       }),
-    ).toEqual({
+    ).toStrictEqual({
       audioKind: 'voice',
       q: '',
-      scenario: ['documentaries', 'trailers'],
+      scenario: ['documentaries'],
       gender: ['male'],
     })
   })

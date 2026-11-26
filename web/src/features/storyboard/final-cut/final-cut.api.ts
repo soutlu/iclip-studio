@@ -26,7 +26,9 @@ import {
 } from '@/shared/api/generated/zod.gen'
 import { readConversationUploads } from '@/shared/api/media-upload'
 import {
+  AUDIO_KIND_FILTERS,
   referenceAudiosQuery,
+  traitQuery,
   voicesQuery,
   type AudioTraitFilter,
   type ReferenceAudioFilter,
@@ -362,10 +364,16 @@ export const useVoiceOptions = (filter: ReferenceAudioFilter) =>
 
 /**
  * 分页查询参考音频库配乐或音效（按 `q` 匹配标题与备注、按 `traits` 筛属性，供「配乐」页签音频库使用）。
- * `traits` 只放这个子类能筛的几项（见 `AUDIO_KIND_FILTERS`）。
+ * `traits` 里只有这个子类能筛的几项（见 `AUDIO_KIND_FILTERS`）会带上。
  */
 export const useLibraryAudios = (audioKind: 'bgm' | 'sfx', q: string, traits: AudioTraitFilter) =>
-  useInfiniteQuery(referenceAudiosQuery({ audioKind, q: q.trim(), ...traits }))
+  useInfiniteQuery(
+    referenceAudiosQuery({
+      audioKind,
+      q: q.trim(),
+      ...traitQuery(AUDIO_KIND_FILTERS[audioKind], traits),
+    }),
+  )
 
 export const useConversationTaskId = (conversationId: string) =>
   useQuery({
