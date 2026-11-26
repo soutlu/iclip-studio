@@ -31,7 +31,7 @@ export function TrendCard({
     <Card
       aria-labelledby={titleId}
       className={cn(
-        'group/card relative flex min-h-85 flex-col gap-1.5 px-5 pt-4.5 pb-2.5 lg:min-h-0',
+        'group/card relative flex min-h-85 flex-col gap-1.5 px-5 pt-4 pb-2.5 lg:min-h-0',
         className,
       )}
       role="article"

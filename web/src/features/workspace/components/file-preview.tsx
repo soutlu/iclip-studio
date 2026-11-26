@@ -92,11 +92,11 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
             </span>
           )}
         </div>
-        <div className="flex shrink-0 items-center gap-1.25">
+        <div className="flex shrink-0 items-center gap-1">
           {owner === undefined ? null : (
             <button
               className={cn(
-                'inline-flex h-7 ui-state cursor-pointer items-center gap-1.25 rounded-sm bg-card pr-2.5 pl-2.25 text-label font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)] ui-focus active:scale-[0.97]',
+                'inline-flex h-7 ui-state cursor-pointer items-center gap-1 rounded-sm bg-card pr-2.5 pl-2 text-label font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)] ui-focus active:scale-[0.97]',
                 RAISED_CARD_HOVER_CLASS,
               )}
               onClick={() => void openArtifact(owner.artifactId)}
@@ -150,11 +150,11 @@ export function FilePreview({ conversationId, entry, onBack, owner, path }: File
         <div className="min-h-0 flex-1 [scrollbar-width:thin] overflow-y-auto p-3">
           <div className="overflow-hidden rounded-md bg-card shadow-[var(--shadow-panel-card),var(--shadow-specular)]">
             {kind === 'markdown' ? (
-              <article className="px-5.5 pt-4.5 pb-5">
+              <article className="px-5 pt-4 pb-5">
                 <Markdown text={file.data.file.content} />
               </article>
             ) : prose ? (
-              <p className="px-5.5 pt-4.5 pb-5 text-body leading-relaxed wrap-anywhere whitespace-pre-wrap text-on-surface select-text">
+              <p className="px-5 pt-4 pb-5 text-body leading-relaxed wrap-anywhere whitespace-pre-wrap text-on-surface select-text">
                 {file.data.file.content}
               </p>
             ) : (

@@ -28,7 +28,7 @@ export function WorkbenchRail({
 }: WorkbenchRailProps) {
   return (
     <>
-      <span aria-hidden className="my-0.75 h-px w-4.5 shrink-0 bg-panel-line-strong" />
+      <span aria-hidden className="my-0.5 h-px w-4.5 shrink-0 bg-panel-line-strong" />
       {items.map((item) => (
         <IconButton
           className={WORKBENCH_BUTTON_CLASS}

@@ -235,7 +235,7 @@ function OverviewSkeleton() {
         {CARDS.map((card) => (
           <Card
             className={cn(
-              'flex min-h-85 flex-col gap-3 px-5 py-4.5 lg:min-h-0',
+              'flex min-h-85 flex-col gap-3 px-5 py-4 lg:min-h-0',
               card.wide === true ? 'lg:col-span-3' : 'lg:col-span-2',
             )}
             key={card.key}

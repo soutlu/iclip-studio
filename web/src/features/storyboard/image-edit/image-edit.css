@@ -240,7 +240,7 @@
   height: 38px;
   align-items: center;
   gap: 4px;
-  padding: 0 5px 0 14px;
+  padding: 0 4px 0 14px;
   border-radius: var(--radius-full);
   background: var(--color-popup-bg);
   box-shadow:

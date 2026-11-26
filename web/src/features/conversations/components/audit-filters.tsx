@@ -27,10 +27,10 @@ const DELETED_LABELS = {
   all: '不限',
 } satisfies Record<AuditFilters['deleted'], string>
 
-const SEGMENT_GROUP_CLASS = 'flex-nowrap gap-0.5 rounded-full bg-surface-container-low p-0.75'
+const SEGMENT_GROUP_CLASS = 'flex-nowrap gap-0.5 rounded-full bg-surface-container-low p-0.5'
 
 const SEGMENT_CLASS =
-  'h-7.5 border-0 bg-transparent text-body font-normal text-on-surface-muted hover:text-on-surface data-[state=on]:bg-top-layer data-[state=on]:font-medium data-[state=on]:text-on-surface data-[state=on]:shadow-[var(--shadow-1)]'
+  'h-8 border-0 bg-transparent text-body font-normal text-on-surface-muted hover:text-on-surface data-[state=on]:bg-top-layer data-[state=on]:font-medium data-[state=on]:text-on-surface data-[state=on]:shadow-[var(--shadow-1)]'
 
 const TRIGGER_CLASS = 'h-9 gap-1.5 rounded-full border border-chip-border bg-chip-bg px-3'
 

@@ -3,7 +3,7 @@ import type { ComponentPropsWithRef } from 'react'
 import { cn } from '@/shared/lib/utils'
 
 const tagVariants = cva(
-  'inline-flex h-(--control-height-xs) items-center gap-1.5 rounded-xs px-[9px] text-label font-medium',
+  'inline-flex h-(--control-height-xs) items-center gap-1.5 rounded-xs px-2 text-label font-medium',
   {
     variants: {
       variant: {

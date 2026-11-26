@@ -93,7 +93,7 @@ export function TaskCardReferences({
             <button
               key={image.src}
               aria-label={`打开需求详情：${image.alt}`}
-              className="shrink-0 cursor-pointer overflow-hidden rounded-xs bg-on-scrim p-px shadow-1 ui-focus"
+              className="shrink-0 cursor-pointer overflow-hidden rounded-xs bg-on-scrim p-0.5 shadow-1 ui-focus"
               onClick={onOpen}
               type="button"
             >

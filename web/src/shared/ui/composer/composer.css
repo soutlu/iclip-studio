@@ -122,7 +122,7 @@
 }
 .composer-drop-overlay-card .composer-drop-card {
   gap: 10px;
-  padding: 10px 18px;
+  padding: 10px 16px;
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
 }

@@ -1,14 +1,13 @@
-/* 目录树层级缩进：每层递进 21px，并在父级图标中线位置（13px 处）绘制纵向参考线。
-   行间 1px 间距通过 padding-bottom 纳入行高内以保持参考线连续；层级深度由行内 --tree-depth 提供。 */
+/* 目录树层级缩进：每层递进 21px，并在父级图标中线位置（12px 处）绘制纵向参考线；层级深度由行内 --tree-depth 提供。 */
 .files-tree-row {
   --tree-indent: 21px;
-  padding-bottom: 1px;
+  padding-bottom: 0;
   padding-left: calc(var(--tree-depth) * var(--tree-indent));
   background: repeating-linear-gradient(
       to right,
-      transparent 0 13px,
-      var(--color-panel-line-strong) 13px 14px,
-      transparent 14px var(--tree-indent)
+      transparent 0 12px,
+      var(--color-panel-line-strong) 12px 13px,
+      transparent 13px var(--tree-indent)
     )
     0 0 / calc(var(--tree-depth) * var(--tree-indent)) 100% no-repeat;
 }

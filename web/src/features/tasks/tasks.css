@@ -18,8 +18,9 @@
   aspect-ratio: 196 / 180;
 }
 
+/* 26px 加按钮上下各 2px 白边，缩略图外框共 30px */
 .task-card-reference-image {
-  height: 28px;
+  height: 26px;
   width: auto;
   max-width: none;
 }

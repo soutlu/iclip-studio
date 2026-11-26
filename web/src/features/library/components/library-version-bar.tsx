@@ -4,7 +4,7 @@ import type { LibraryShotGroup } from '../library.api'
 import { groupNamesOf, type LibraryVersion } from '../library-media'
 
 const ROW_CLASS =
-  'flex shrink-0 flex-wrap items-center justify-center gap-x-6 gap-y-2.5 px-6 pt-1 pb-4.5 max-md:gap-x-4 max-md:px-4'
+  'flex shrink-0 flex-wrap items-center justify-center gap-x-6 gap-y-2.5 px-6 pt-1 pb-4 max-md:gap-x-4 max-md:px-4'
 
 type LibraryVersionBarProps = {
   groups: readonly LibraryShotGroup[]

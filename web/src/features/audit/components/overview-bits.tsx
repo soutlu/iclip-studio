@@ -80,7 +80,7 @@ export function DeltaText({
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.75 text-label whitespace-nowrap',
+        'inline-flex items-center gap-0.5 text-label whitespace-nowrap',
         TONE_CLASS[delta.tone],
         className,
       )}

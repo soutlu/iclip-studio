@@ -53,7 +53,7 @@ export function OverviewToolbar({ range, onChange, children }: OverviewToolbarPr
       <div className="flex flex-wrap items-center gap-2">
         <ChipGroup
           aria-label="时间范围"
-          className={cn('flex-nowrap gap-0.5 rounded-md p-0.75', RAISED)}
+          className={cn('flex-nowrap gap-0.5 rounded-md p-0.5', RAISED)}
           onValueChange={(value) => {
             const preset = QUICK_PRESETS.find((item) => item.preset === value)?.preset
             if (preset !== undefined) onChange({ preset })

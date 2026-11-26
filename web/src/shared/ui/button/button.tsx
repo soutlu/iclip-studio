@@ -16,7 +16,7 @@ const buttonVariants = cva(
         ghost: 'bg-transparent text-on-surface',
       },
       size: {
-        lg: 'h-(--control-height-lg) px-[22px] text-body',
+        lg: 'h-(--control-height-lg) px-5 text-body',
         md: 'h-(--control-height-md) px-4 text-body-sm',
       },
     },

@@ -11,4 +11,4 @@ export const SIDEBAR_ROW_ACTIVE = 'bg-state-active font-medium'
 export const SIDEBAR_ROW_MENU_OPEN = 'has-data-[state=open]:bg-state-hover'
 
 export const SIDEBAR_ROW_TRAILING_SHOWN =
-  'sr-only *:last:-mr-1.25 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex touch:not-sr-only touch:flex touch:*:text-on-surface-faint'
+  'sr-only *:last:-mr-1 group-hover:not-sr-only group-hover:flex group-has-focus-visible:not-sr-only group-has-focus-visible:flex group-has-data-[state=open]:not-sr-only group-has-data-[state=open]:flex touch:not-sr-only touch:flex touch:*:text-on-surface-faint'

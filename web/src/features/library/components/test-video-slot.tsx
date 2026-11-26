@@ -81,7 +81,7 @@ export function TestVideoCell({
           meta={TEST_MODEL_LABEL}
           note={
             testVideo.stale ? (
-              <p className="reference-compare-glass flex max-w-full items-start gap-1.5 rounded-sm px-2.5 py-1.25 text-caption">
+              <p className="reference-compare-glass flex max-w-full items-start gap-1.5 rounded-sm px-2.5 py-1 text-caption">
                 <Icon className="mt-0.5 shrink-0" decorative name="info" size="sm" />
                 <span>拆解已更新，该结果按更新前的拆解生成</span>
               </p>

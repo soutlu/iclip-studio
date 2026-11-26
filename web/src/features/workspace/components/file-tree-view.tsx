@@ -80,7 +80,7 @@ export function FileTreeView({
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 px-2.5 pt-2.5 pb-2">
-        <label className="flex h-7.75 items-center gap-1.5 rounded-control bg-surface-container-low px-2.25 text-on-surface-faint shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)] focus-within:shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-on-surface-variant)]">
+        <label className="flex h-7.75 items-center gap-1.5 rounded-control bg-surface-container-low px-2 text-on-surface-faint shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-panel-line)] focus-within:shadow-[var(--shadow-control-well),inset_0_0_0_1px_var(--color-on-surface-variant)]">
           <Icon decorative name="search" size="xs" />
           <input
             aria-label="筛选文件"
@@ -107,7 +107,7 @@ export function FileTreeView({
             return (
               <Fragment key={item.getKey()}>
                 {node.afterDirs ? (
-                  <div aria-hidden className="mx-2 my-1.25 h-px shrink-0 bg-panel-line" />
+                  <div aria-hidden className="mx-2 my-1 h-px shrink-0 bg-panel-line" />
                 ) : null}
                 <div className="files-tree-row shrink-0" style={depth}>
                   <button
@@ -117,8 +117,8 @@ export function FileTreeView({
                     className={cn(
                       'flex w-full ui-state cursor-pointer items-center rounded-sm text-left text-label ui-focus',
                       node.kind === 'dir'
-                        ? 'h-7.5 gap-1.5 px-1.75 font-semibold text-on-surface-variant hover:text-on-surface'
-                        : 'h-7.75 gap-1.75 px-2 text-on-surface-variant hover:text-on-surface',
+                        ? 'h-7.5 gap-1.5 px-1.5 font-semibold text-on-surface-variant hover:text-on-surface'
+                        : 'h-7.75 gap-1.5 px-2 text-on-surface-variant hover:text-on-surface',
                       current && [
                         'bg-card font-semibold text-on-surface shadow-[var(--shadow-pill),var(--shadow-specular)]',
                         NO_HOVER_WASH_CLASS,

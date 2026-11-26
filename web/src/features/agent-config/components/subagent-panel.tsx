@@ -164,9 +164,10 @@ function BindingFields({
   const timeoutValue = parseLimit(timeoutText, false)
   const callsValue = parseLimit(callsText, true)
   const baseId = useId()
+  // 宽版左缩进 = 卡片图标 size-11 + 图标与文字间距 gap-3.5，字段与卡片标题文字左对齐
   return (
     <div
-      className="grid basis-full grid-cols-2 gap-3 @min-[520px]:grid-cols-[8rem_8rem_minmax(0,1fr)] @min-[520px]:pl-14.5"
+      className="grid basis-full grid-cols-2 gap-3 @min-[520px]:grid-cols-[8rem_8rem_minmax(0,1fr)] @min-[520px]:pl-[calc(--spacing(11)+--spacing(3.5))]"
       id={id}
     >
       <LimitField

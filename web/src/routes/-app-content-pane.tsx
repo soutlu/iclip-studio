@@ -94,7 +94,7 @@ export function AppContentPane({
         // 并排布局时由调宽把手绘制两栏分隔线；非并排布局下无把手，由竖轨在内侧自行绘制分隔线。
         <div
           className={cn(
-            'flex h-full flex-col items-center gap-1.25 bg-surface py-2.5',
+            'flex h-full flex-col items-center gap-1 bg-surface py-2.5',
             !resizable && (alignEnd ? 'border-l border-panel-line' : 'border-r border-panel-line'),
           )}
           data-pane-drag-handle

@@ -300,7 +300,7 @@ export function WorkbenchHost({ conversationId }: WorkbenchHostProps) {
                   <TabsTrigger
                     aria-keyshortcuts={closable ? 'Delete' : undefined}
                     className={cn(
-                      'gap-1.25',
+                      'gap-1',
                       // 常驻页签按标题自然占位不收缩；可关闭页签（如委派任务）限宽 256px，空间不足时仅该页签收缩并省略标题
                       closable && 'max-w-64 shrink',
                       creation.arrived(artifact.id) &&

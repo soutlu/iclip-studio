@@ -15,7 +15,7 @@ const ROW_CLASS =
   'flex h-10.5 w-full items-center gap-2.5 rounded-md px-3 text-left text-ui font-medium ui-focus'
 
 const TAG_CLASS =
-  'ml-auto flex shrink-0 items-center gap-0.75 text-caption font-medium text-on-surface-faint'
+  'ml-auto flex shrink-0 items-center gap-0.5 text-caption font-medium text-on-surface-faint'
 
 type ChooserProps = {
   rows: readonly ChooserRow[]
@@ -33,9 +33,9 @@ export function Chooser({ rows, creatable, creating, onPick, onCreate }: Chooser
     <div className="grid min-h-0 flex-1 place-items-center overflow-y-auto px-6 pb-6">
       <nav
         aria-label="可打开的产物"
-        className="flex w-full max-w-86 flex-col gap-0.75 rounded-panel bg-surface p-1.75 shadow-[var(--shadow-panel),var(--shadow-specular)]"
+        className="flex w-full max-w-86 flex-col gap-0.5 rounded-panel bg-surface p-1.5 shadow-[var(--shadow-panel),var(--shadow-specular)]"
       >
-        <ul className="flex flex-col gap-0.75">
+        <ul className="flex flex-col gap-0.5">
           {rows.map((row) => {
             const enabled = row.artifactId !== undefined
             return (
@@ -73,7 +73,7 @@ export function Chooser({ rows, creatable, creating, onPick, onCreate }: Chooser
         {creatable.length === 0 ? null : (
           <>
             <div aria-hidden className="mx-2 my-1 h-px bg-panel-line" />
-            <ul className="flex flex-col gap-0.75">
+            <ul className="flex flex-col gap-0.5">
               {creatable.map((entry) => {
                 const busy = creating !== undefined
                 return (
