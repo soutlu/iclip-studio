@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { AuditionPlayer, type AuditionProgress } from './audition-player'
 
 type AuditionOptions = {
   /** 试听所在的地方是不是正显示着；被藏起来（没有卸掉）时停下。 */
@@ -8,45 +9,35 @@ type AuditionOptions = {
 }
 
 /**
- * 音频试听：同一时间只放一条，所有条目共用一个播放器。`playing` 是正在放的那一条的编号（没在放时是 null），
- * `toggle` 放这一条（正在放它时是停下），放完自动停。组件卸掉、`active` 变成假时都停下。
+ * 音频试听：同一时间只放一条，所有条目共用一个播放器。
+ * - `current`：当前这条的编号（在放或暂停着），`playing`：正在出声的那条（暂停、放完、放不出来时是 null）。
+ * - `toggle`：没放过的从头放，是当前这条就暂停或续放；`seek` 跳到总时长的某个比例处；`retry` 放不出来时重来；
+ *   `stop` 停下并清掉 `current`。
+ * - 组件卸掉、`active` 变成假时都停下。播放进度用 `useAuditionProgress` 单独订阅，不让整个列表跟着每帧重画。
  */
 export function useAudition({ active, onError }: AuditionOptions) {
-  const [playing, setPlaying] = useState<string | null>(null)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-  useEffect(
-    () => () => {
-      audioRef.current?.pause()
-    },
-    [],
-  )
-  const [wasActive, setWasActive] = useState(active)
-  if (wasActive !== active) {
-    setWasActive(active)
-    if (!active) setPlaying(null)
-  }
+  const [player] = useState(() => new AuditionPlayer())
+  const { current, paused } = useSyncExternalStore(player.subscribe, player.getState)
+  useEffect(() => () => player.stop(), [player])
   useEffect(() => {
-    if (!active) audioRef.current?.pause()
-  }, [active])
+    if (!active) player.stop()
+  }, [active, player])
 
-  const toggle = (id: string, url: string) => {
-    const audio = audioRef.current ?? new Audio()
-    if (audioRef.current === null) {
-      audio.addEventListener('ended', () => setPlaying(null))
-      audioRef.current = audio
-    }
-    if (playing === id) {
-      audio.pause()
-      setPlaying(null)
-      return
-    }
-    audio.setAttribute('src', url)
-    setPlaying(id)
-    audio.play().catch(() => {
-      setPlaying(null)
-      onError()
-    })
+  return {
+    current: current?.id ?? null,
+    playing: current !== null && !paused ? current.id : null,
+    toggle: (id: string, url: string) => player.toggle(id, url, onError),
+    seek: (ratio: number) => player.seek(ratio),
+    retry: () => player.retry(onError),
+    stop: () => player.stop(),
+    player,
   }
+}
 
-  return { playing, toggle }
+export type Audition = ReturnType<typeof useAudition>
+
+/** 订阅当前这条的播放进度（放着时每帧更新）：只在进度条、试听条和正在放的那一行里用。 */
+export function useAuditionProgress(audition: Audition): AuditionProgress {
+  const { player } = audition
+  return useSyncExternalStore(player.subscribe, player.getProgress)
 }

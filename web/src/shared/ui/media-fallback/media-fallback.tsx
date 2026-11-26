@@ -2,11 +2,12 @@ import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/button'
 
-type MediaFallbackKind = 'image' | 'video'
+type MediaFallbackKind = 'image' | 'video' | 'audio'
 
 const MAIN: Record<MediaFallbackKind, string> = {
   image: '图片加载失败',
   video: '视频加载失败',
+  audio: '音频加载失败',
 }
 
 type MediaFallbackProps = {

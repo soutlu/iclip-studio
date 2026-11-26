@@ -57,7 +57,8 @@ export function FilterBarRoot({
 
 type FilterPopupProps = {
   id: string
-  icon: IconName
+  /** 不给时是素净的样子：只有字和箭头，选中后照旧是正文色。 */
+  icon?: IconName | undefined
   label: string
   triggerLabel?: string | undefined
   popupLabel: string
@@ -94,7 +95,7 @@ export function FilterPopup({
           aria-label={triggerLabel ?? label}
           className={cn(
             'inline-flex min-w-0 ui-state cursor-pointer items-center gap-2 text-body text-on-surface ui-focus data-[state=open]:bg-state-active',
-            selected && 'text-primary',
+            icon === undefined ? 'gap-1 font-medium' : selected && 'text-primary',
             className,
           )}
           disabled={disabled}
@@ -102,7 +103,7 @@ export function FilterPopup({
           title={title ?? label}
           type="button"
         >
-          <Icon decorative name={icon} size="sm" />
+          {icon === undefined ? null : <Icon decorative name={icon} size="sm" />}
           <span className="max-w-44 truncate">{label}</span>
           <Icon className="text-on-surface-variant" decorative name="expand" size="xs" />
         </button>

@@ -21,7 +21,8 @@ export type MultiPickerOption = {
 
 type MultiPickerFilterProps = {
   id: string
-  icon: IconName
+  /** 不给时触发器是素净的样子（见 `FilterPopup`）。 */
+  icon?: IconName | undefined
   noun: string
   options: readonly MultiPickerOption[]
   value: readonly string[]
