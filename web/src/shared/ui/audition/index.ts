@@ -11,6 +11,7 @@ export {
   scenariosText,
   sfxCategoryText,
   voiceToneText,
+  voiceTraitsText,
 } from './audio-labels'
 export { AudioCover, AuditionButton } from './audio-cover'
 export {

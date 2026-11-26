@@ -54,13 +54,18 @@ describe('final-cut 编辑器 · 配音', () => {
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
   const voiceRow = () => within(panel()).getByRole('group', { name: '人声设置' })
-  /** 人声设置里的按钮：「保留原声」「重新生成」和音色小块（「原声」、资料库里的各个音色）。 */
-  const voiceButton = (name: string) => within(panel()).getByRole('button', { name })
-  /** 音色小块的名字，按先后（不算试听键）。 */
-  const voiceChips = () =>
-    within(within(panel()).getByRole('group', { name: 'AI 配音音色' }))
-      .getAllByRole('button', { name: /^(?!(暂停)?试听：)/ })
-      .map((button) => button.textContent)
+  /** 人声设置里的按钮：「保留原声」「重新生成」「更换音色」。 */
+  const voiceButton = (name: string) => within(voiceRow()).getByRole('button', { name })
+  /** 常用音色里的一块（「原声」或资料库里的音色）。 */
+  const commonVoice = (name: string) =>
+    within(within(voiceRow()).getByRole('radiogroup', { name: '常用音色' })).getByRole('radio', {
+      name,
+    })
+  /** 常用音色的名字，按先后。 */
+  const commonNames = () =>
+    within(within(voiceRow()).getByRole('radiogroup', { name: '常用音色' }))
+      .getAllByRole('radio')
+      .map((radio) => radio.textContent)
 
   /** 存下来的主文件里的配音片段：配的哪句、语言、起止、入点（秒）、速度、地址、截没截尾。 */
   const savedDubs = () =>
@@ -192,8 +197,8 @@ describe('final-cut 编辑器 · 配音', () => {
     const user = await open()
     const sent = serveDubbings()
     expect(voiceButton('保留原声')).toHaveAttribute('aria-pressed', 'true')
-    expect(voiceButton('原声')).toHaveAttribute('aria-pressed', 'false')
-    await user.click(voiceButton('原声'))
+    expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'false')
+    await user.click(commonVoice('原声'))
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(
       sent.toSorted((left, right) => left.sourceJobId.localeCompare(right.sourceJobId)),
@@ -229,7 +234,7 @@ describe('final-cut 编辑器 · 配音', () => {
   it('配好后每句一个配音片段：在配音行上和字幕对齐，从这句在素材片里的开始放、跟着视频片段的速度，占到下一句、不超出视频片段；截了尾的标出来；切到 AI 配音，一步撤销都回去', async () => {
     const user = await open()
     serveDubbings()
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitSaved(() =>
       expect(savedDubs()).toEqual([
         // 下一句在素材里从 2.5 秒开始，但前半段只到 2 秒
@@ -270,7 +275,7 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}')
     expect((await screen.findAllByText('已生成 3 句 English 配音')).length).toBeGreaterThan(0)
     expect((await screen.findAllByText(/2.*截短/)).length).toBeGreaterThan(0)
-    expect(voiceButton('原声')).toHaveAttribute('aria-pressed', 'true')
+    expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'true')
     const row = screen.getByRole('group', { name: '配音' })
     expect(within(row).getByRole('group', { name: /^配音 · A one，2\.0 秒，截短$/ })).toBeVisible()
     expect(within(row).getByRole('group', { name: /^配音 · B two，1\.5 秒$/ })).toBeVisible()
@@ -283,7 +288,7 @@ describe('final-cut 编辑器 · 配音', () => {
   it('保留原声、AI 配音来回切：写在主文件根上，各一步撤销；保留原声时时间线上不显示这种语言的配音片段；原文下看不到配音片段', async () => {
     const user = await open()
     const sent = serveDubbings()
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
     const dubClips = () => screen.queryAllByRole('group', { name: /^配音 · / })
     expect(dubClips()).toHaveLength(3)
@@ -294,7 +299,7 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(screen.queryByRole('group', { name: '配音' })).toBeNull()
     expect(savedDubs()).toHaveLength(3)
     // 有用「原声」配好的配音时再点它只是切回去，不再生成
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitSaved(() => expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}'))
     expect(savedDubs()).toHaveLength(3)
     expect(sent).toHaveLength(2)
@@ -314,7 +319,7 @@ describe('final-cut 编辑器 · 配音', () => {
     serveDubbings(() =>
       HttpResponse.json({ detail: '配音没有开通，暂时不能配音' }, { status: 422 }),
     )
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitFor(() =>
       expect(screen.getAllByText(/的配音生成失败：配音没有开通，暂时不能配音$/)).toHaveLength(2),
     )
@@ -326,21 +331,24 @@ describe('final-cut 编辑器 · 配音', () => {
   it('一句都没翻：音色「原声」置灰，点了说明先翻译，不发起', async () => {
     const user = await open({})
     const sent = serveDubbings()
-    expect(voiceButton('原声')).toHaveAttribute('aria-disabled', 'true')
-    await user.click(voiceButton('原声'))
+    expect(commonVoice('原声')).toHaveAttribute('aria-disabled', 'true')
+    await user.click(commonVoice('原声'))
     expect(await screen.findByRole('tooltip')).toHaveTextContent('English')
     expect(sent).toEqual([])
+    expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'false')
   })
 
-  it('资料库里的音色排在「原声」后面：只列语种是这种语言的和没设语种的', async () => {
+  it('常用音色：「原声」居首，还没用过音色时用这种语言的和没设语种的资料库音色补，新的在前，最多 3 个', async () => {
     resetMockReferenceAudios([
       { title: '旁白', locale: null },
       { title: 'Klaus', locale: 'de' },
       { title: 'Emma', locale: 'en' },
       { title: '吉他', audioKind: 'bgm' },
+      { title: 'Ava', locale: 'en' },
+      { title: 'Nova', locale: null },
     ])
     await open()
-    await waitFor(() => expect(voiceChips()).toEqual(['原声', 'Emma', '旁白']))
+    await waitFor(() => expect(commonNames()).toEqual(['原声', 'Nova', 'Ava', 'Emma']))
   })
 
   it('资料库里没有音色：只有「原声」一个小块', async () => {
@@ -352,7 +360,7 @@ describe('final-cut 编辑器 · 配音', () => {
     await open()
     // 音色读完以后也只有「原声」
     await waitFor(() => expect(voicesRead).toBe(true))
-    expect(voiceChips()).toEqual(['原声'])
+    expect(commonNames()).toEqual(['原声'])
   })
 
   it('点资料库里的音色生成：参考是这个音色，主文件记着它；保留原声后再点它只切回去、不再发起；换成「原声」重新生成并换掉', async () => {
@@ -360,7 +368,8 @@ describe('final-cut 编辑器 · 配音', () => {
     const emma = addMockReferenceAudio({ title: 'Emma', locale: 'en' })
     const user = await open()
     const sent = serveDubbings()
-    await user.click(await within(panel()).findByRole('button', { name: 'Emma' }))
+    await waitFor(() => expect(commonNames()).toEqual(['原声', 'Emma']))
+    await user.click(commonVoice('Emma'))
     await waitFor(() => expect(sent).toHaveLength(2))
     expect(sent.map((body) => body.reference)).toEqual([
       { kind: 'reference_audio', referenceId: emma },
@@ -369,17 +378,17 @@ describe('final-cut 编辑器 · 配音', () => {
     const dubbedWithEmma = `{"en":{"mode":"dub","voice":"${emma}"}}`
     await waitSaved(() => expect(savedModes()).toBe(dubbedWithEmma))
     expect(savedDubs()).toHaveLength(3)
-    expect(voiceButton('Emma')).toHaveAttribute('aria-pressed', 'true')
-    expect(voiceButton('原声')).toHaveAttribute('aria-pressed', 'false')
+    expect(commonVoice('Emma')).toHaveAttribute('aria-checked', 'true')
+    expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'false')
 
     await user.click(voiceButton('保留原声'))
     await waitSaved(() => expect(savedModes()).toBe(`{"en":{"mode":"original","voice":"${emma}"}}`))
-    await user.click(voiceButton('Emma'))
+    await user.click(commonVoice('Emma'))
     await waitSaved(() => expect(savedModes()).toBe(dubbedWithEmma))
     expect(sent).toHaveLength(2)
     expect(savedDubs()).toHaveLength(3)
 
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitFor(() => expect(sent).toHaveLength(4))
     expect(
       sent
@@ -410,11 +419,11 @@ describe('final-cut 编辑器 · 配音', () => {
   }
   /** 用「原声」配好 English：a1、b2、c3 各一个配音片段，等它存下来。 */
   const dubWithOriginal = async (user: User) => {
-    await user.click(voiceButton('原声'))
+    await user.click(commonVoice('原声'))
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
   }
 
-  it('各句的配音小块：保留原声时是不能点的「原声」；AI 配音时写着这句的音色，跟随的标出来；配不了的置灰、点了说明原因；菜单是跟随、原声、资料库的音色、不配音，现在的打勾', async () => {
+  it('各句的配音标签：保留原声时是不能点的「原声」；AI 配音时写着这句的音色，跟随的标出来；配不了的置灰、点了说明原因；菜单是跟随、原声、常用音色、不配音，现在的打勾，最后是「更多音色…」', async () => {
     resetMockReferenceAudios([])
     addMockReferenceAudio({ title: 'Emma', locale: 'en' })
     const user = await open()
@@ -424,6 +433,7 @@ describe('final-cut 编辑器 · 配音', () => {
 
     await dubWithOriginal(user)
     expect(lineChip(0)).toHaveAccessibleName('本句配音：原声，跟随整体音色')
+    expect(lineChip(0)).toHaveTextContent('跟随 · 原声')
     expect(lineChip(0)).not.toHaveAttribute('aria-disabled')
     // d4 还没翻，e5 是手动加的、不属于视频片段
     expect(lineChip(1)).toHaveAttribute('aria-disabled', 'true')
@@ -445,6 +455,7 @@ describe('final-cut 编辑器 · 配音', () => {
       'aria-checked',
       'true',
     )
+    expect(within(menu).getByRole('menuitem', { name: '更多音色…' })).toBeVisible()
   })
 
   it('给一句选资料库的音色：只发这一句（带上限和这个音色），配好后换掉这句的配音、别的句子不动，主文件记着这句的选择；一步撤销都回去', async () => {
@@ -472,6 +483,7 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(savedDubs().map((dub) => dub.caption)).toEqual(['cap-a1', 'cap-b2', 'cap-c3'])
     expect(sent).toHaveLength(3)
     expect(lineChip(0)).toHaveAccessibleName('本句配音：Emma')
+    expect(lineChip(0)).toHaveTextContent('单句 · Emma')
     expect(lineChip(2)).toHaveAccessibleName('本句配音：原声，跟随整体音色')
 
     await user.click(undoButton())
@@ -492,6 +504,7 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(savedModes()).toBe(unvoiced)
     expect(sent).toHaveLength(2)
     expect(lineChip(2)).toHaveAccessibleName('本句配音：不配音')
+    expect(lineChip(2)).toHaveTextContent('单句 · 不配音')
     await user.click(undoButton())
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
     expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}')
@@ -589,7 +602,8 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(sent).toHaveLength(2)
 
     // 只有 a1 跟着整种语言的音色；b2 不配音，a1 后面没有要配的句子，不写上限
-    await user.click(await within(panel()).findByRole('button', { name: 'Emma' }))
+    await waitFor(() => expect(commonNames()).toContain('Emma'))
+    await user.click(commonVoice('Emma'))
     await waitFor(() => expect(sent).toHaveLength(3))
     expect(sent[2]).toMatchObject({
       sourceJobId: TAKE_A,
@@ -637,7 +651,8 @@ describe('final-cut 编辑器 · 配音', () => {
     const emma = addMockReferenceAudio({ title: 'Emma', locale: 'en' })
     const user = await open()
     const sent = serveDubbings()
-    await user.click(await within(panel()).findByRole('button', { name: 'Emma' }))
+    await waitFor(() => expect(commonNames()).toContain('Emma'))
+    await user.click(commonVoice('Emma'))
     const following = `{"en":{"mode":"dub","voice":"${emma}"}}`
     await waitSaved(() => expect(savedModes()).toBe(following))
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
@@ -681,6 +696,85 @@ describe('final-cut 编辑器 · 配音', () => {
     release()
     await waitFor(() => expect(lineChip(0)).not.toHaveAttribute('aria-disabled'))
     expect(savedDubs()).toHaveLength(3)
+  })
+
+  /** 字幕页签里换上来的选音面板。 */
+  const picker = (title: string) => within(panel()).getByRole('region', { name: title })
+  /** 选音面板里列出的音色名，按先后。 */
+  const pickerVoices = (title: string) =>
+    within(within(picker(title)).getByRole('list', { name: '音色' }))
+      .getAllByRole('button', { name: /^试听：/ })
+      .map((button) => button.getAttribute('aria-label')?.slice('试听：'.length))
+
+  it('「更换音色」打开选音面板：默认查这种语言和多语种的音色，能换语种、按性别筛、搜关键词；选用后用它重配、回到首页', async () => {
+    resetMockReferenceAudios([])
+    addMockReferenceAudio({ title: '旁白', gender: 'female' })
+    const klaus = addMockReferenceAudio({
+      title: 'Klaus',
+      locale: 'de',
+      gender: 'male',
+      description: '沉稳的德语男声',
+    })
+    addMockReferenceAudio({ title: 'Emma', locale: 'en', gender: 'female' })
+    addMockReferenceAudio({ title: 'Hans', locale: 'de', gender: 'male' })
+    const user = await open()
+    const sent = serveDubbings()
+    const title = '选择音色'
+
+    await user.click(voiceButton('更换音色'))
+    expect(within(panel()).queryByRole('group', { name: '人声设置' })).toBeNull()
+    await waitFor(() => expect(pickerVoices(title)).toEqual(['Emma', '旁白']))
+    await user.click(within(picker(title)).getByRole('button', { name: '语种：English' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '全部' }))
+    await waitFor(() => expect(pickerVoices(title)).toEqual(['Hans', 'Emma', 'Klaus', '旁白']))
+    await user.click(within(picker(title)).getByRole('button', { name: '性别：性别' }))
+    await user.click(await screen.findByRole('checkbox', { name: '男声' }))
+    await waitFor(() => expect(pickerVoices(title)).toEqual(['Hans', 'Klaus']))
+    await user.keyboard('{Escape}')
+    await user.type(within(picker(title)).getByRole('searchbox', { name: '搜索音色' }), '沉稳')
+    await waitFor(() => expect(pickerVoices(title)).toEqual(['Klaus']))
+
+    await user.click(within(picker(title)).getByRole('button', { name: '选用：Klaus' }))
+    await waitFor(() => expect(sent).toHaveLength(2))
+    expect(sent.map((body) => body.reference)).toEqual([
+      { kind: 'reference_audio', referenceId: klaus },
+      { kind: 'reference_audio', referenceId: klaus },
+    ])
+    expect(within(panel()).queryByRole('region', { name: title })).toBeNull()
+    expect(voiceRow()).toBeVisible()
+    await waitSaved(() => expect(savedModes()).toBe(`{"en":{"mode":"dub","voice":"${klaus}"}}`))
+    // 用过的音色进了常用音色，不管它是哪种语言
+    expect(commonVoice('Klaus')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('单句菜单「更多音色…」打开「选择本句音色」：选用后只重配这一句、回到首页', async () => {
+    resetMockReferenceAudios([])
+    const klaus = addMockReferenceAudio({ title: 'Klaus', locale: 'de' })
+    const user = await open()
+    const sent = serveDubbings()
+    await dubWithOriginal(user)
+    const title = '选择本句音色'
+
+    await user.click(lineChip(0))
+    await user.click(await screen.findByRole('menuitem', { name: '更多音色…' }))
+    await user.click(within(picker(title)).getByRole('button', { name: '语种：English' }))
+    await user.click(await screen.findByRole('menuitemradio', { name: '全部' }))
+    await user.click(await within(picker(title)).findByRole('button', { name: '选用：Klaus' }))
+
+    await waitFor(() => expect(sent).toHaveLength(3))
+    expect(sent[2]).toMatchObject({
+      sourceJobId: TAKE_A,
+      lines: [{ startMs: 0, endMs: 1_000, text: 'A one', slotEndMs: 2_500 }],
+      reference: { kind: 'reference_audio', referenceId: klaus },
+    })
+    expect(within(panel()).queryByRole('region', { name: title })).toBeNull()
+    await waitSaved(() =>
+      expect(savedModes()).toBe(
+        `{"en":{"mode":"dub","voice":null,"lines":{"cap-a1":{"voice":"${klaus}"}}}}`,
+      ),
+    )
+    expect(lineChip(0)).toHaveTextContent('单句 · Klaus')
+    expect(lineChip(2)).toHaveTextContent('跟随 · 原声')
   })
 })
 
@@ -782,7 +876,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     return user
   }
 
-  it('原文下输入文案、选音色插入：时间线上多一句字幕和一个对齐的旁白片段（播放头处有字幕时往后放），一步撤销', async () => {
+  it('原文下输入文案、用默认的第一个音色插入：时间线上多一句字幕和一个对齐的旁白片段（播放头处有字幕时往后放），一步撤销', async () => {
     resetMockReferenceAudios([])
     const emma = addMockReferenceAudio({ title: 'Emma' })
     const user = await open()
@@ -790,7 +884,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
 
     await user.click(within(panel()).getByRole('button', { name: '旁白配音' }))
     await user.type(within(panel()).getByRole('textbox', { name: '旁白文案' }), '欢迎光临')
-    await user.click(await within(panel()).findByRole('button', { name: 'Emma' }))
+    expect(await within(panel()).findByRole('button', { name: '试听：Emma' })).toBeVisible()
     await user.click(within(panel()).getByRole('button', { name: '插入配音与字幕' }))
 
     await waitSaved(() =>
@@ -826,6 +920,33 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     await user.click(undoButton())
     await waitSaved(() => expect(savedDubs()).toEqual([]))
     expect(savedSceneLines()).toEqual([['字幕 a1', 0, 1, 'clip-1']])
+  })
+
+  it('旁白换音色：「更换音色」打开「选择旁白音色」（没有「原声」，语种默认全部），选用后回到首页、旁白面板和文案都在，插入时用新音色', async () => {
+    resetMockReferenceAudios([])
+    const klaus = addMockReferenceAudio({ title: 'Klaus', locale: 'de' })
+    addMockReferenceAudio({ title: 'Emma', locale: 'en' })
+    const user = await open()
+    const sent = serveSpeeches()
+    const card = () => within(panel()).getByRole('group', { name: '旁白配音' })
+
+    await user.click(within(panel()).getByRole('button', { name: '旁白配音' }))
+    await user.type(within(card()).getByRole('textbox', { name: '旁白文案' }), '欢迎光临')
+    // 默认是资料库的第一个音色（新的在前）
+    expect(await within(card()).findByRole('button', { name: '试听：Emma' })).toBeVisible()
+    await user.click(within(card()).getByRole('button', { name: '更换音色' }))
+    const picker = within(panel()).getByRole('region', { name: '选择旁白音色' })
+    expect(within(picker).queryByRole('button', { name: '原声' })).toBeNull()
+    expect(within(picker).getByRole('button', { name: '语种：全部' })).toBeVisible()
+    await user.click(await within(picker).findByRole('button', { name: '选用：Klaus' }))
+
+    expect(within(panel()).queryByRole('region', { name: '选择旁白音色' })).toBeNull()
+    expect(within(card()).getByRole('textbox', { name: '旁白文案' })).toHaveValue('欢迎光临')
+    expect(within(card()).getByRole('button', { name: '试听：Klaus' })).toBeVisible()
+    await user.click(within(card()).getByRole('button', { name: '插入配音与字幕' }))
+    await waitFor(() => expect(sent).toHaveLength(1))
+    expect(sent[0]).toMatchObject({ reference: { kind: 'reference_audio', referenceId: klaus } })
+    await waitSaved(() => expect(savedDubs()).toHaveLength(1))
   })
 
   it('切到 AI 配音的语言：时间线上不显示原文的旁白，显示这种语言给它配的音', async () => {

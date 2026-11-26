@@ -1340,19 +1340,13 @@ function EditorBody({
         onRetry: () => void libraryVoices.refetch(),
       }
     : undefined
-  // 原文下的「旁白配音」：资料库里的音色都能选（原文不声明语言）；合成走配音的同一条路，和配音共用「正在生成」
+  // 原文下的「旁白配音」：合成走配音的同一条路，和配音共用「正在生成」
   const narration =
     target !== undefined
       ? undefined
       : {
           open: narrationOpen,
           onOpen: setNarrationOpen,
-          voices: libraryVoices.data?.map((each) => ({
-            id: each.id,
-            name: each.title,
-            url: each.url,
-          })),
-          voicesProblem,
           generating: dubbingBusy,
           blocked: dubbingBusy ? DUBBING_BUSY_TEXT : undefined,
           onInsert: (text: string, voice: string) =>
@@ -1362,19 +1356,12 @@ function EditorBody({
               (setting) => setting,
             ),
         }
-  // 资料库里的音色：语种对上这种语言的，或者没设语种的
   const voice =
     film === null || target === undefined
       ? undefined
       : {
           mode: film.voiceMode,
           voice: film.dubVoice,
-          voices: (libraryVoices.data ?? []).flatMap((each) =>
-            each.locale === null || each.locale === target.code
-              ? [{ id: each.id, name: each.title, url: each.url }]
-              : [],
-          ),
-          voicesProblem,
           // 保留原声时这种语言的配音片段藏着，也算有配音：再点配它的音色只是切回去，不重新生成
           dubbed: allClips.some((clip) => isDubClip(clip) && clip.dub.locale === target.code),
           generating: dubbing.generating,
@@ -1813,6 +1800,7 @@ function EditorBody({
                 locales={localeControls}
                 focus={captionsFocus(selectedClips, new Set(hostsWithText.map((host) => host.id)))}
                 narration={narration}
+                library={{ voices: libraryVoices.data, problem: voicesProblem }}
                 onAdd={addCaption}
                 onPick={(caption) => {
                   seek(firstFrameMs(caption.start))
