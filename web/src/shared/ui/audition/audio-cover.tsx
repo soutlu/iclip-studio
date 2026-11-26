@@ -23,29 +23,28 @@ type AudioCoverProps = {
   title: string
   /** 当前这条：在放（`playing`）或暂停着（`paused`）。 */
   state: 'idle' | 'paused' | 'playing'
-  onToggle: () => void
+  /** 不给时封面只是个样子（整张卡片才是试听键），不能单独点。 */
+  onToggle?: (() => void) | undefined
+  /** `md` 44px（资料库），`sm` 36px（窄的侧栏）。 */
+  size?: 'md' | 'sm'
   /** 盖在封面上的东西，如等数据的提示。 */
   children?: ReactNode
 }
 
 /**
- * 音频条目的封面，本身就是试听键：44px 圆角方块，悬停露出播放键；正在放时变深色底、几根小音柱在跳。
+ * 音频条目的封面，本身就是试听键：圆角方块，悬停露出播放键；正在放时变深色底、几根小音柱在跳。
  */
-export function AudioCover({ id, title, state, onToggle, children }: AudioCoverProps) {
+export function AudioCover({ id, title, state, onToggle, size = 'md', children }: AudioCoverProps) {
   const playing = state === 'playing'
-  return (
-    <button
-      aria-label={playing ? `暂停试听：${title}` : `试听：${title}`}
-      aria-pressed={playing}
-      className={cn(
-        'group/cover relative grid size-11 shrink-0 cursor-pointer place-items-center rounded-md shadow-[var(--shadow-xs)] ui-focus',
-        playing
-          ? 'bg-inverse-surface text-inverse-on-surface'
-          : cn('bg-radial-[at_30%_25%]', toneClassOf(id)),
-      )}
-      onClick={onToggle}
-      type="button"
-    >
+  const className = cn(
+    'group/cover relative grid shrink-0 place-items-center rounded-md shadow-[var(--shadow-xs)]',
+    size === 'md' ? 'size-11' : 'size-9',
+    playing
+      ? 'bg-inverse-surface text-inverse-on-surface'
+      : cn('bg-radial-[at_30%_25%]', toneClassOf(id)),
+  )
+  const face = (
+    <>
       {playing ? (
         <span aria-hidden className="audition-eq">
           <i />
@@ -63,6 +62,23 @@ export function AudioCover({ id, title, state, onToggle, children }: AudioCoverP
         </span>
       )}
       {children}
+    </>
+  )
+  if (onToggle === undefined)
+    return (
+      <span aria-hidden className={className}>
+        {face}
+      </span>
+    )
+  return (
+    <button
+      aria-label={playing ? `暂停试听：${title}` : `试听：${title}`}
+      aria-pressed={playing}
+      className={cn(className, 'cursor-pointer ui-focus')}
+      onClick={onToggle}
+      type="button"
+    >
+      {face}
     </button>
   )
 }

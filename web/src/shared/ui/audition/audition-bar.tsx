@@ -1,3 +1,4 @@
+import { cn } from '@/shared/lib/utils'
 import { IconButton } from '@/shared/ui/button'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { MediaFallback } from '@/shared/ui/media-fallback'
@@ -19,15 +20,38 @@ export function useAuditionRatio(audition: Audition, durationMs: number) {
   return { ratio: total > 0 ? Math.min(1, timeMs / total) : 0, timeMs, totalMs: total }
 }
 
+/** 名称下面那条细进度线：只挂在当前这条（在放或暂停着）上，它订阅每帧的进度。 */
+export function AuditionProgressLine({
+  audition,
+  durationMs,
+  className,
+}: {
+  audition: Audition
+  durationMs: number
+  className?: string | undefined
+}) {
+  const { ratio } = useAuditionRatio(audition, durationMs)
+  return (
+    <span aria-hidden className={cn('block h-0.5 w-full rounded-full bg-hairline', className)}>
+      <span
+        className="block h-full rounded-full bg-on-surface"
+        style={{ width: `${String(ratio * 100)}%` }}
+      />
+    </span>
+  )
+}
+
 type AuditionBarProps = {
   audition: Audition
   title: string
-  /** 标题下那一行灰字，如属性摘要。 */
-  detail: string
+  /** 标题下那一行灰字，如属性摘要；紧凑样子不显示。 */
+  detail?: string
   peaks: readonly number[] | null
   durationMs: number
   /** 暂停或续放当前这条。 */
   onToggle: () => void
+  /** 紧凑样子：单行、贴着所在面板的底边（上面一条细线），给窄的侧栏用。 */
+  compact?: boolean
 }
 
 /**
@@ -37,10 +61,11 @@ type AuditionBarProps = {
 export function AuditionBar({
   audition,
   title,
-  detail,
+  detail = '',
   peaks,
   durationMs,
   onToggle,
+  compact = false,
 }: AuditionBarProps) {
   const { failed } = useAuditionProgress(audition)
   const { ratio, timeMs, totalMs } = useAuditionRatio(audition, durationMs)
@@ -48,14 +73,33 @@ export function AuditionBar({
   return (
     <section
       aria-label={`试听：${title}`}
-      className="flex w-full items-center gap-3 rounded-lg bg-card py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4"
+      className={cn(
+        'flex w-full items-center',
+        compact
+          ? 'gap-2.5 border-t border-hairline bg-card py-1.5 pr-1.5 pl-3'
+          : 'gap-3 rounded-lg bg-card py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4',
+      )}
     >
-      <AuditionButton ink label={playing ? '暂停' : '播放'} onToggle={onToggle} playing={playing}>
+      <AuditionButton
+        className={compact ? 'size-7' : undefined}
+        ink
+        label={playing ? '暂停' : '播放'}
+        onToggle={onToggle}
+        playing={playing}
+      >
         <AuditionBuffering audition={audition} />
       </AuditionButton>
-      <div className="w-28 min-w-0 shrink-0 sm:w-44">
-        <p className="truncate text-body-sm font-medium text-on-surface">{title}</p>
-        {detail === '' ? null : (
+      <div className={cn('min-w-0', compact ? 'max-w-32 shrink' : 'w-28 shrink-0 sm:w-44')}>
+        <p
+          className={cn(
+            'truncate font-medium text-on-surface',
+            compact ? 'text-label' : 'text-body-sm',
+          )}
+          title={compact ? title : undefined}
+        >
+          {title}
+        </p>
+        {compact || detail === '' ? null : (
           <p className="truncate text-caption text-on-surface-faint">{detail}</p>
         )}
       </div>

@@ -5,6 +5,7 @@ import {
   AudioCover,
   AuditionBuffering,
   AuditionButton,
+  AuditionProgressLine,
   audioDurationText,
   bgmStyleText,
   bpmText,
@@ -15,7 +16,7 @@ import {
   type Audition,
 } from '@/shared/ui/audition'
 import { IconButton } from '@/shared/ui/button'
-import { RowClock, RowProgress, RowWaveform } from './audio-row-progress'
+import { RowClock, RowWaveform } from './audio-row-progress'
 
 /** 每行能做的：试听（同一时间只放一条）、改、移除。 */
 export type AudioRowActions = {
@@ -156,7 +157,13 @@ function AudioRow({ audio, actions }: { audio: ReferenceAudio; actions: AudioRow
               {audio.description}
             </p>
           )}
-          {current ? <RowProgress audio={audio} audition={audition} /> : null}
+          {current ? (
+            <AuditionProgressLine
+              audition={audition}
+              className="mt-1.5 max-w-75"
+              durationMs={audio.durationMs}
+            />
+          ) : null}
         </div>
         <TraitCells audio={audio} audition={audition} current={current} />
         <span
