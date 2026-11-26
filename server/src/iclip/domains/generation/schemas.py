@@ -369,9 +369,9 @@ class VideoTransitionIn(SnakeModel):
 
     A（``left_job_id``）保留到 ``left_end_ms``，B（``right_job_id``）从 ``right_start_ms`` 开始保留，
     都用各自的媒体时间（毫秒）。``mode`` 为 ``first_last_frame`` 时由服务端抽出 A 在
-    ``left_end_ms`` 之前的最后一帧作首帧、B 在 ``right_start_ms`` 处的那一帧作尾帧图生过渡，
-    ``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)`` 与 B 的
-    ``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /
+    ``left_end_ms`` 之前的最后一帧作首帧、B 保留部分的第一帧（不早于 ``right_start_ms`` 的第一帧）
+    作尾帧图生过渡，``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)``
+    与 B 的 ``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /
     ``aspect_ratio`` / ``generate_audio`` 传了就原样转给上游；``resolution`` 不传时沿用 A 原片
     最初出片的设置。受理后落库的是一条 ``VideoTransitionRequest``：衔接方式与接点记在请求里、
     不发上游，首尾帧或参考片段的地址记在 ``reference_image_urls`` / ``reference_video_urls``。"""

@@ -114,8 +114,8 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         开始保留，衔接段放在两者之间；拿到它之后用 video-composites 以 A 为基底、按
         [A 的 0 到 left_end_ms、衔接段、B 的 right_start_ms 到结尾] 拼成一条。
 
-        mode 为 first_last_frame 时，服务端抽出 A 在 left_end_ms 之前的最后一帧作首帧、B 在
-        right_start_ms 处的那一帧作尾帧图生过渡（时间点越过结尾取最后一帧），seconds 必填、须在模型
+        mode 为 first_last_frame 时，服务端抽出 A 在 left_end_ms 之前的最后一帧作首帧、B 保留部分
+        的第一帧（不早于 right_start_ms 的第一帧）作尾帧图生过渡（时间点越过结尾取最后一帧），seconds 必填、须在模型
         图生时长之内；为 video_edit 时，服务端把 A 的 [left_end_ms, A 结尾) 与 B 的
         [0, right_start_ms) 按 A 的画幅帧率拼成参考视频，按模型的视频编辑模式重做接缝，不收
         seconds，两段合计时长须在模型编辑时长之内。帧和参考片段都长期保存，地址受理时就记进

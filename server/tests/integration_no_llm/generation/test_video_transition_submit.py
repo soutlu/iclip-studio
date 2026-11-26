@@ -278,7 +278,14 @@ async def test_output_settings_given_by_the_caller_reach_the_upstream() -> None:
     )
 
 
-async def test_a_video_edit_reference_joins_the_tail_of_a_and_the_head_of_b_in_as_format() -> None:
+@pytest.mark.parametrize(
+    ("left_end_ms", "right_start_ms", "clip_ms"),
+    [(4000, 2500, 4500), (6000, 4000, 4000), (1000, 0, 5000)],
+    ids=["A 的尾巴加 B 的开头", "A 不留尾巴只取 B", "B 不留开头只取 A"],
+)
+async def test_a_video_edit_reference_joins_the_tail_of_a_and_the_head_of_b_in_as_format(
+    left_end_ms: int, right_start_ms: int, clip_ms: int
+) -> None:
     repo = InMemoryGenerationRepository()
     store = MemoryObjectStore()
     sent: list[dict[str, Any]] = []
@@ -292,7 +299,13 @@ async def test_a_video_edit_reference_joins_the_tail_of_a_and_the_head_of_b_in_a
         right = _plant_take(repo, server.url("b.mp4"))
         job = await module.service.submit_video_transition(
             PRINCIPAL,
-            _transition_in(left, right, mode="video_edit", left_end_ms=4000, right_start_ms=2500),
+            _transition_in(
+                left,
+                right,
+                mode="video_edit",
+                left_end_ms=left_end_ms,
+                right_start_ms=right_start_ms,
+            ),
         )
         clip_key = MEDIA_PATHS.transition_clip(job_id=job.id)
         clip_url = store.public_url(clip_key)
@@ -305,9 +318,9 @@ async def test_a_video_edit_reference_joins_the_tail_of_a_and_the_head_of_b_in_a
         assert transition.status == STATUS_SUBMITTED, transition.error_message
         content, content_type = store.objects[clip_key]
         assert content_type == "video/mp4"
-        assert abs(await duration_ms_of(content) - 4500) <= FRAME_MS, "A 剩下 2 秒加 B 开头 2.5 秒"
+        assert abs(await duration_ms_of(content) - clip_ms) <= FRAME_MS, "A 剩下的加 B 开头的"
         profile = await _profile_of(content)
-        assert (profile.width, profile.height) == (320, 240), "规格以 A 为准"
+        assert (profile.width, profile.height) == (320, 240), "规格以 A 为准，A 不出片段时也是"
         (body,) = sent
         assert body["reference_video_urls"] == [clip_url], "上游拿到的就是拼好的片段"
         assert (body["seconds"], body["provider_options"]) == (
@@ -326,9 +339,9 @@ async def test_a_video_edit_reference_joins_the_tail_of_a_and_the_head_of_b_in_a
             VideoComposeIn(
                 base_job_id=left.id,
                 segments=[
-                    ComposeSegmentIn(source_job_id=left.id, start=0, end=4),
+                    ComposeSegmentIn(source_job_id=left.id, start=0, end=left_end_ms / 1000),
                     ComposeSegmentIn(source_job_id=job.id, start=0),
-                    ComposeSegmentIn(source_job_id=right.id, start=2.5),
+                    ComposeSegmentIn(source_job_id=right.id, start=right_start_ms / 1000),
                 ],
                 user_name="tester",
             ),

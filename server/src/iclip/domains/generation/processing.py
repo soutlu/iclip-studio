@@ -297,7 +297,7 @@ class EditReferenceCutter:
 class TransitionInputs:
     """衔接段交上游之前，按记录里的左右两条素材片准备素材，存到这条衔接段固定的地址。
 
-    ``first_last_frame`` 抽 A 在 ``left_end_ms`` 之前的最后一帧与 B 在 ``right_start_ms`` 处的那一帧；
+    ``first_last_frame`` 抽 A 在 ``left_end_ms`` 之前的最后一帧与 B 不早于 ``right_start_ms`` 的第一帧；
     ``video_edit`` 把 A 的 ``[left_end_ms, 结尾)`` 与 B 的 ``[0, right_start_ms)`` 按 A 的画幅帧率拼成
     参考片段，长度为 0 的那段跳过。
     """

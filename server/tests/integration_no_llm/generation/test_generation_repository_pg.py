@@ -25,7 +25,7 @@ from iclip.domains.generation.models import (
     GenerationKind,
     GenerationOutput,
 )
-from iclip.domains.generation.schemas import SubtitleSentence
+from iclip.domains.generation.schemas import SubtitleSentence, VideoTransitionRequest
 from iclip.domains.generation.stored_requests import GenerationRequest
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.public import Principal
@@ -48,6 +48,7 @@ from tests.helpers.generation import (
     make_edit,
     make_job,
     make_subtitle,
+    transition_request,
     trial_request,
     video_request,
 )
@@ -755,6 +756,23 @@ async def test_a_trial_is_stored_as_its_own_operation_and_read_back_like_a_take(
     assert read.request == trial_request()
     assert [job.id for job in takes] == [take.id], "按 generate 筛不含试生成"
     assert [job.id for job in trials] == [trial.id]
+
+
+async def test_a_transition_reads_back_as_a_transition_not_an_edit(engine: AsyncEngine) -> None:
+    repo = SqlGenerationRepository(engine)
+    owner = await make_user(engine)
+    left = await repo.create(make_job(video_request(), owner_user_id=owner))
+    right = await repo.create(make_job(video_request(), owner_user_id=owner))
+    stored = transition_request(left_job_id=left.id, right_job_id=right.id)
+    transition = await repo.create(
+        make_job(stored, owner_user_id=owner, source_job_id=left.id, root_job_id=left.id)
+    )
+
+    read = await repo.get(transition.id, owner=owner)
+
+    assert (read.kind, read.operation, read.source_job_id) == ("video", "generate", left.id)
+    assert isinstance(read.request, VideoTransitionRequest)
+    assert read.request == stored
 
 
 async def test_a_record_is_found_by_its_address_within_the_conversation_and_what_it_inherits(
