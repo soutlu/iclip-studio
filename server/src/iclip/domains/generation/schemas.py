@@ -91,8 +91,14 @@ RECORD_ONLY_FIELDS: Final = frozenset(
     {"source_url", "range_start_ms", "range_end_ms", DRAFT_TASK_FIELD}
 )
 
+TRANSITION_LEFT_FIELD: Final = "left_job_id"
+
+TRANSITION_FIELDS: Final = frozenset(
+    {"mode", TRANSITION_LEFT_FIELD, "left_end_ms", "right_job_id", "right_start_ms"}
+)
+
 NOT_FORWARDED_FIELDS: Final = (
-    COLUMN_FIELDS | RECORD_ONLY_FIELDS | frozenset({"shot", "reference_ids"})
+    COLUMN_FIELDS | RECORD_ONLY_FIELDS | TRANSITION_FIELDS | frozenset({"shot", "reference_ids"})
 )
 
 READ_BACK_CONTEXT: Final = "read_back"
@@ -285,6 +291,19 @@ class VideoEditRequest(VideoGenerationIn):
     range_end_ms: int
 
 
+TransitionMode = Literal["first_last_frame", "video_edit"]
+
+
+class VideoTransitionRequest(VideoGenerationIn):
+    """落库的衔接段：一次上游视频请求，外加只记账、不发上游的衔接方式与左右两条素材片的接点。"""
+
+    mode: TransitionMode
+    left_job_id: uuid.UUID
+    left_end_ms: Annotated[int, Field(ge=0)]
+    right_job_id: uuid.UUID
+    right_start_ms: Annotated[int, Field(ge=0)]
+
+
 class VideoDraftCompletionRequest(VideoGenerationIn):
     draft_job_id: uuid.UUID
     draft_task_id: Annotated[str, Field(min_length=1, max_length=200)]
@@ -343,6 +362,37 @@ class VideoEditIn(SnakeModel):
         if self.range_end_ms <= self.range_start_ms:
             raise ValueError("range_end_ms 必须大于 range_start_ms")
         return self
+
+
+class VideoTransitionIn(SnakeModel):
+    """一次衔接段的受理输入：一次上游视频请求，外加左右两条素材片、各自的接点与衔接方式。
+
+    A（``left_job_id``）保留到 ``left_end_ms``，B（``right_job_id``）从 ``right_start_ms`` 开始保留，
+    都用各自的媒体时间（毫秒）。``mode`` 为 ``first_last_frame`` 时由服务端抽出 A 在
+    ``left_end_ms`` 之前的最后一帧作首帧、B 保留部分的第一帧（不早于 ``right_start_ms`` 的第一帧）
+    作尾帧图生过渡，``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)``
+    与 B 的 ``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /
+    ``aspect_ratio`` / ``generate_audio`` 传了就原样转给上游；``resolution`` 不传时沿用 A 原片
+    最初出片的设置。受理后落库的是一条 ``VideoTransitionRequest``：衔接方式与接点记在请求里、
+    不发上游，首尾帧或参考片段的地址记在 ``reference_image_urls`` / ``reference_video_urls``。"""
+
+    left_job_id: uuid.UUID
+    left_end_ms: Annotated[int, Field(ge=0)]
+    right_job_id: uuid.UUID
+    right_start_ms: Annotated[int, Field(ge=0)]
+    mode: TransitionMode
+    model: ModelName
+    prompt: Prompt
+    user_name: UserName | None = None
+    seconds: Annotated[int, Field(ge=-1, strict=True)] | None = None
+    resolution: Annotated[str, Field(min_length=1, max_length=50)] | None = None
+    aspect_ratio: Annotated[str, Field(min_length=1, max_length=20)] | None = None
+    generate_audio: bool | None = None
+    provider_options: dict[str, Any] | None = None
+
+    conversation_id: uuid.UUID | None = None
+    task_id: uuid.UUID | None = None
+    metadata: Metadata | None = None
 
 
 class ComposeSegmentIn(CamelModel):
@@ -839,9 +889,13 @@ def generation_out(job: GenerationJob, *, source_address: str | None) -> Generat
 def _clip_stage(job: GenerationJob) -> ClipStage | None:
     if job.status != STATUS_SUBMITTING:
         return None
-    if job.operation != OPERATION_COMPOSE and not (
-        isinstance(job.request, VideoEditRequest) and job.request.reference_video_urls
-    ):
+    request = job.request
+    prepared_locally = (
+        job.operation == OPERATION_COMPOSE
+        or isinstance(request, VideoTransitionRequest)
+        or (isinstance(request, VideoEditRequest) and bool(request.reference_video_urls))
+    )
+    if not prepared_locally:
         return None
     return next((stage for stage in CLIP_STAGES if stage == job.provider_status), None)
 
@@ -1015,6 +1069,8 @@ __all__ = [
     "STATUS_PENDING",
     "STATUS_SUBMITTED",
     "STATUS_SUBMITTING",
+    "TRANSITION_FIELDS",
+    "TRANSITION_LEFT_FIELD",
     "CamelModel",
     "ClipEditDurationOut",
     "ClipImageDurationOut",
@@ -1053,6 +1109,7 @@ __all__ = [
     "SubtitleRequest",
     "SubtitleSentence",
     "SubtitleWord",
+    "TransitionMode",
     "UserName",
     "VideoClipModelOut",
     "VideoComposeIn",
@@ -1075,6 +1132,8 @@ __all__ = [
     "VideoTaskOut",
     "VideoTaskResult",
     "VideoTaskStatus",
+    "VideoTransitionIn",
+    "VideoTransitionRequest",
     "VideoTrialRequest",
     "WholeFilmAudioSource",
     "WholeFilmAudioSourceKind",

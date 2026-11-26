@@ -144,7 +144,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
   - `GET /conversations` 一次性返回用户最近创建的最多 100 个合集（含各合集第一页对话）以及未分组的第一页对话，并附带真实的未分组总数 `ungroupedCount` 和各合集内对话总数 `conversationCount`（查看 100 个之外的更早合集调用 `GET /collections`）。
   - 支持按 `state` 筛选：`all`（全部，默认）、`open`（未标记收尾）、`done`（已标记收尾，即 `completedAt` 非空）、`running`（当前有对话轮次正在运行）。
   - `GET /conversations/by-collection/{id}` 是只看自己对话的工作台接口，对「合集不存在、合集属于他人、合集为空」三种情况统一返回空列表。
-- **查询对话下的视频生成进度 `GET /conversations/video-progress`**：返回所有当前仍有视频（出片、局部编辑段、合成视频）排队或生成中的对话状态映射：`{ "conversations": { "<对话ID>": "queued" | "running" } }`。
+- **查询对话下的视频生成进度 `GET /conversations/video-progress`**：返回所有当前仍有视频（出片、局部编辑段、衔接段、合成视频）排队或生成中的对话状态映射：`{ "conversations": { "<对话ID>": "queued" | "running" } }`。
 - **自动生成标题**：后台配置了默认 `llm` 模型（§18）且用户未手动改过标题时，每轮对话开始时服务端在后台自动生成标题，成功后通过 `session.meta.updated` 帧推送。
 - **保存工作区文件 `PUT /conversations/{id}/workspace/file`**：
   - 仅对话创建者本人可写入（治理者调用返回 `403`）。请求体须携带读取时的版本号 `expectedVersion`，版本不一致或文件不存在返回 `409`；保存成功后版本号加 1。
@@ -270,14 +270,15 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ## 11. 媒体生成 (Generations)
 
-系统提供 10 个异步生成提交接口（受理成功均返回 `202`，状态变更推送 `event.generation.changed` 帧）。12 种生成记录全景见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#生成任务generation-job)；参考视频试生成（`video` / `trial`）由 §14 `POST /references/videos/{id}/test-generations` 提交。
+系统提供 11 个异步生成提交接口（受理成功均返回 `202`，状态变更推送 `event.generation.changed` 帧）。13 种生成记录全景见 [CONTEXT.md「生成任务」](../docs/CONTEXT.md#生成任务generation-job)；参考视频试生成（`video` / `trial`）由 §14 `POST /references/videos/{id}/test-generations` 提交。
 
 | 提交接口 | 记录类型 (`kind` / `operation`) | 核心参数、校验规则与产物说明 |
 |---|---|---|
-| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。传入 `provider_options.draft: true` 即生成样片（原样转发上游，支持样片的模型见 `GET /generations/video-models` 的 `draftModels`）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成与编辑段 |
+| `POST /generations/video` | `video` / `generate`（出片） | 字段与上游异步接口一致（`snake_case`），支持附加 `conversation_id`、`task_id`、`shot_index`、`metadata`、可选 `reference_ids`（须均为未移除的在库参考资产，否则 `422`；仅落库归因、不发上游），以及二选一的 `prompt` 或结构化 `shot`（服务端拼装为 ≤ 4000 字提示词，参考图/视频/音频各 ≤ 30 个）。传入 `provider_options.draft: true` 即生成样片（原样转发上游，支持样片的模型见 `GET /generations/video-models` 的 `draftModels`）。`GET /generations/video/{task_id}` 支持按上游格式轮询出片、试生成、编辑段与衔接段 |
 | `POST /generations/video-draft-completions` | `video` / `generate`（样片转出的 1080p） | 传入 `{ draftJobId, conversationId?, userName? }`。样片须为本对话自有或继承的已完成出片，携带 `provider_options.draft: true` 且具备上游任务号，否则返回 `422`；未开通样片功能（未配置 `media_generation.video.draft_complete_url`）返回 `422`。新记录不设来源与原作，沿用样片的镜号、需求单与 `metadata`，对话取 `conversationId`；请求快照在样片请求基础上将 `resolution` 改为 `"1080p"`、移除 `provider_options`，并通过 `draft_job_id` 记录样片 ID。发给上游的 `user_name` 固定沿用样片记录中的取值（上游要求与样片一致），配置组与上游 `model_id` 同样沿用样片。同一样片在同一对话下已有未失败转出记录时幂等返回该记录，不新建任务 |
 | `POST /generations/video-edits` | `video` / `generate`（局部编辑段） | 基于已完成素材片（`sourceJobId`）替换 `[rangeStartMs, rangeEndMs]` 区间（结束时间允许超出原片最多 50 ms），`mode` 区分两种模式（只在入参上，不落库、不发上游）。`image` 为**图生模式**（1 张首帧、2 张首尾帧、≥3 张参考图，`seconds` 必填）；`edit` 为**视频编辑模式**（不收 `seconds`，按 [clip_models.py](../server/src/iclip/domains/generation/clip_models.py) 拼装模型参数）：区间长度（终点超出原片时算到原片结尾）须在模型的编辑时长范围内，受理时就把该编辑段长期保存的参考片段地址记进 `request.reference_video_urls`，交上游前由服务端从基底精确切出该区间（与合成共用本机重编码并发上限），期间通过 `clipStage` 反馈阶段；取不到基底、切段失败或存不进桶分别以 `MEDIA_SOURCE_UNREACHABLE` / `MEDIA_PROCESS_FAILED` / `OUTPUT_STORE_FAILED` 失败（不重试，不交上游）。入参不接收 `reference_video_urls`。不接收分辨率参数，两种模式均沿用最初出片请求的 `resolution`（未传时同样不传） |
-| `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 与 1～100 段 `segments: [{ sourceJobId, start, end? }]`（每段须取自本对话或分叉继承来的已完成素材片或已完成编辑段，可跨镜头组，不收试生成、高清版、上传与资料库视频），本地 ffmpeg 重编码拼接：宽高与帧率一律以基底为准（基底不必出现在片段里），有一段带音轨就出音轨；期间通过 `clipStage`（`fetching | processing | uploading`）反馈阶段 |
+| `POST /generations/video-composites` | `video` / `compose`（视频合成） | 传入基底素材片 `baseJobId` 与 1～100 段 `segments: [{ sourceJobId, start, end? }]`（每段须取自本对话或分叉继承来的已完成素材片或已完成编辑段（含衔接段），可跨镜头组，不收试生成、高清版、上传与资料库视频），本地 ffmpeg 重编码拼接：宽高与帧率一律以基底为准（基底不必出现在片段里），有一段带音轨就出音轨；期间通过 `clipStage`（`fetching | processing | uploading`）反馈阶段 |
+| `POST /generations/video-transitions` | `video` / `generate`（衔接段） | 把两条不同素材片 A、B 顺滑接起来：传入 `left_job_id` / `left_end_ms`（A 保留到哪，毫秒）、`right_job_id` / `right_start_ms`（B 从哪开始保留）与 `mode`，其余 `model`、`prompt`、`user_name`、`provider_options`、`conversation_id`、`task_id`、`metadata` 同编辑段（`snake_case`，多余字段 `422`）。`first_last_frame` 由服务端抽 A 在 `left_end_ms` 之前的最后一帧作首帧、B 保留部分的第一帧（不早于 `right_start_ms` 的第一帧）作尾帧图生过渡（时间点越过结尾取最后一帧；不收调用方给的帧地址），`seconds` 必填且须在模型图生时长内；`video_edit` 由服务端把 A 的 `[left_end_ms, A 结尾)` 与 B 的 `[0, right_start_ms)` 按 A 的画幅帧率拼成参考视频（长度为 0 的那段跳过），按模型的视频编辑模式重做接缝，不收 `seconds`，两段合计时长须在模型编辑时长内。`resolution` / `aspect_ratio` / `generate_audio` 传了原样透传上游，`resolution` 不传时沿用 A 原片最初出片的设置。受理时核对：模型已接入片段生成（`video_edit` 还要支持编辑）；A、B 须为本对话（含分叉继承）两条不同的已完成素材片（同一条视频换中间一段请用 `video-edits`）；两个时间点各自不超出所在素材片时长（容差 50 ms），不合格 `422`、不入队。记录的来源为 A、原作与镜号随 A，配置组受理时锁定，没有替换区间（`rangeStartMs` / `rangeEndMs` 为空）；衔接方式与两个接点记在 `request` 里、不发上游，首尾帧或参考片段在受理时就定好长期保存的地址并记进 `request.reference_image_urls` / `request.reference_video_urls`，交上游前在本机准备（与合成共用本机加工并发上限），期间 `clipStage` 反馈阶段，失败码同编辑段（不重试，不交上游）。完成后按已完成编辑段对待：不进资料库、不计审计，可直接作合成的片段。调用方两步：先提交衔接段 T，完成后 `POST /generations/video-composites` 以 `baseJobId: A`、`segments: [{A, 0, left_end}, {T, 0}, {B, right_start}]` 拼成一条。已知限制：按网关文档，Seedance 2.5 只有在 `aspect_ratio` 不传或为 `adaptive` 时才按首尾帧生成，`first_last_frame` 下传具体画幅会按参考图生成 |
 | `POST /generations/image` | `image` / `generate`（生图 / 帧图编辑） | 模型、画幅、分辨率与可选 `channel` 须在 `GET /generations/image-models` 声明范围内。帧图编辑传入 `sourceUrl` 时，在本对话及继承生成图片中匹配关联 `sourceJobId`，未命中（含上传图片）记为外部底图地址 |
 | `POST /generations/subtitles` | `subtitle` / `generate`（字幕识别） | 按需识别指定素材片（`sourceJobId`）口播字幕，结果存于 `sentences: [{ startMs, endMs, text, speaker, words }]`；无音轨或无人说话同样正常完成（`sentences` 为 `[]`） |
 | `POST /generations/dubbings` | `dubbing` / `generate`（配音） | 为指定素材片（`sourceJobId`）合成指定外语（`locale`）配音并拼成与原片等长的 m4a 音轨（`outputUrl`），单句处理结果存于 `dubbedLines: [{ index, speed, trimmed }]`（参考源与时长规则见下；未开通语音合成返回 `422`） |
@@ -294,7 +295,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 
 ## 12. 审计报表 (Audit)
 
-供治理者查看团队产能、一次通过率、耗时与 Token 消耗的三个只读报表接口（统计口径见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#审计口径audit-metrics)，**分叉副本、局部编辑段、合成视频一律不计入**）：
+供治理者查看团队产能、一次通过率、耗时与 Token 消耗的三个只读报表接口（统计口径见 [CONTEXT.md「审计口径」](../docs/CONTEXT.md#审计口径audit-metrics)，**分叉副本、局部编辑段、衔接段、合成视频一律不计入**）：
 - **时间范围与统计锚点**：三个接口均必传起点 `since`，时间窗为左闭右开 `[since, until)`（`since >= until` 返回 `422`）。各项指标按各自事件发生时刻落入窗口（出片数与片长按视频完成时刻，镜数与一次通过按该镜首条视频成功时刻，运行次数按发起时刻，交付周期按末条视频完成时刻，任务执行列表按对话创建时刻）。
 - **团队总览 `GET /audit/overview?since&until&timezone`**：
   - 时间跨度 `n`（所选时区本地日历天数，上限 366 天）：`n ≤ 2` 按小时（`hour`）、`n ≤ 120` 按天（`day`）、超过 120 天按周（`week`）聚合，并自动附带往前平移 `n` 天的上一周期环比数据。

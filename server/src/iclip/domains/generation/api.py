@@ -32,6 +32,7 @@ from iclip.domains.generation.schemas import (
     VideoModelsOut,
     VideoSubmitOut,
     VideoTaskOut,
+    VideoTransitionIn,
     generation_out,
     video_task_out,
 )
@@ -100,6 +101,38 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         user_name = resolve_user_name(principal, body.user_name)
         principal = await act_as(principal, user_name)
         job = await service.submit_video_edit(
+            principal, body.model_copy(update={"user_name": user_name})
+        )
+        return await envelope(job)
+
+    @router.post("/video-transitions", response_model=GenerationEnvelope, status_code=202)
+    async def submit_video_transition(
+        body: VideoTransitionIn,
+        principal: Annotated[Principal, require_permission("generation:submit")],
+    ) -> GenerationEnvelope:
+        """生成一段把两条素材片顺滑接起来的衔接段。A 保留到 left_end_ms，B 从 right_start_ms
+        开始保留，衔接段放在两者之间；拿到它之后用 video-composites 以 A 为基底、按
+        [A 的 0 到 left_end_ms、衔接段、B 的 right_start_ms 到结尾] 拼成一条。
+
+        mode 为 first_last_frame 时，服务端抽出 A 在 left_end_ms 之前的最后一帧作首帧、B 保留部分
+        的第一帧（不早于 right_start_ms 的第一帧）作尾帧图生过渡（时间点越过结尾取最后一帧），seconds 必填、须在模型
+        图生时长之内；为 video_edit 时，服务端把 A 的 [left_end_ms, A 结尾) 与 B 的
+        [0, right_start_ms) 按 A 的画幅帧率拼成参考视频，按模型的视频编辑模式重做接缝，不收
+        seconds，两段合计时长须在模型编辑时长之内。帧和参考片段都长期保存，地址受理时就记进
+        request.reference_image_urls / request.reference_video_urls；准备期间 clipStage 依次报
+        fetching / processing / uploading，取不到素材片记 MEDIA_SOURCE_UNREACHABLE、加工失败记
+        MEDIA_PROCESS_FAILED、存不进桶记 OUTPUT_STORE_FAILED，都不重试，此时不会交给上游。
+
+        A、B 须为本对话自己的或继承来的两条不同的已完成素材片，left_end_ms / right_start_ms 不超出
+        各自时长（容差 50 毫秒）。resolution / aspect_ratio / generate_audio 传了就原样转给上游，
+        resolution 不传时沿用 A 原片最初出片的设置。记录为 video / generate，来源与原作、镜号随 A，
+        没有替换区间；衔接方式与两个接点记在 request 里，不发上游。不合格 422、不入队。
+        user_name 的规则同出片。
+        """
+
+        user_name = resolve_user_name(principal, body.user_name)
+        principal = await act_as(principal, user_name)
+        job = await service.submit_video_transition(
             principal, body.model_copy(update={"user_name": user_name})
         )
         return await envelope(job)

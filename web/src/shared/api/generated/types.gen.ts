@@ -8069,6 +8069,91 @@ export type VideoTaskResult = {
 }
 
 /**
+ * VideoTransitionIn
+ *
+ * 一次衔接段的受理输入：一次上游视频请求，外加左右两条素材片、各自的接点与衔接方式。
+ *
+ * A（``left_job_id``）保留到 ``left_end_ms``，B（``right_job_id``）从 ``right_start_ms`` 开始保留，
+ * 都用各自的媒体时间（毫秒）。``mode`` 为 ``first_last_frame`` 时由服务端抽出 A 在
+ * ``left_end_ms`` 之前的最后一帧作首帧、B 保留部分的第一帧（不早于 ``right_start_ms`` 的第一帧）
+ * 作尾帧图生过渡，``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)``
+ * 与 B 的 ``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /
+ * ``aspect_ratio`` / ``generate_audio`` 传了就原样转给上游；``resolution`` 不传时沿用 A 原片
+ * 最初出片的设置。受理后落库的是一条 ``VideoTransitionRequest``：衔接方式与接点记在请求里、
+ * 不发上游，首尾帧或参考片段的地址记在 ``reference_image_urls`` / ``reference_video_urls``。
+ */
+export type VideoTransitionIn = {
+  /**
+   * Aspect Ratio
+   */
+  aspect_ratio?: string | null
+  /**
+   * Conversation Id
+   */
+  conversation_id?: string | null
+  /**
+   * Generate Audio
+   */
+  generate_audio?: boolean | null
+  /**
+   * Left End Ms
+   */
+  left_end_ms: number
+  /**
+   * Left Job Id
+   */
+  left_job_id: string
+  /**
+   * Metadata
+   */
+  metadata?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Mode
+   */
+  mode: 'first_last_frame' | 'video_edit'
+  /**
+   * Model
+   */
+  model: string
+  /**
+   * Prompt
+   */
+  prompt: string
+  /**
+   * Provider Options
+   */
+  provider_options?: {
+    [key: string]: unknown
+  } | null
+  /**
+   * Resolution
+   */
+  resolution?: string | null
+  /**
+   * Right Job Id
+   */
+  right_job_id: string
+  /**
+   * Right Start Ms
+   */
+  right_start_ms: number
+  /**
+   * Seconds
+   */
+  seconds?: number | null
+  /**
+   * Task Id
+   */
+  task_id?: string | null
+  /**
+   * User Name
+   */
+  user_name?: string | null
+}
+
+/**
  * WholeFilmCardOut
  *
  * 资料库「成片」的一张卡：一段对话自己的全部导出，不含继承来的。成片没有脚本，不能做同款。
@@ -11178,6 +11263,33 @@ export type ListVideoModelsGenerationsVideoModelsGetResponses = {
 
 export type ListVideoModelsGenerationsVideoModelsGetResponse =
   ListVideoModelsGenerationsVideoModelsGetResponses[keyof ListVideoModelsGenerationsVideoModelsGetResponses]
+
+export type SubmitVideoTransitionGenerationsVideoTransitionsPostData = {
+  body: VideoTransitionIn
+  path?: never
+  query?: never
+  url: '/generations/video-transitions'
+}
+
+export type SubmitVideoTransitionGenerationsVideoTransitionsPostErrors = {
+  /**
+   * Validation Error
+   */
+  422: HttpValidationError
+}
+
+export type SubmitVideoTransitionGenerationsVideoTransitionsPostError =
+  SubmitVideoTransitionGenerationsVideoTransitionsPostErrors[keyof SubmitVideoTransitionGenerationsVideoTransitionsPostErrors]
+
+export type SubmitVideoTransitionGenerationsVideoTransitionsPostResponses = {
+  /**
+   * Successful Response
+   */
+  202: GenerationEnvelope
+}
+
+export type SubmitVideoTransitionGenerationsVideoTransitionsPostResponse =
+  SubmitVideoTransitionGenerationsVideoTransitionsPostResponses[keyof SubmitVideoTransitionGenerationsVideoTransitionsPostResponses]
 
 export type GetVideoTaskGenerationsVideoTaskIdGetData = {
   body?: never

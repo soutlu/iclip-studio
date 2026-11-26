@@ -4031,6 +4031,39 @@ export const zVideoTaskOut = z.object({
 })
 
 /**
+ * VideoTransitionIn
+ *
+ * 一次衔接段的受理输入：一次上游视频请求，外加左右两条素材片、各自的接点与衔接方式。
+ *
+ * A（``left_job_id``）保留到 ``left_end_ms``，B（``right_job_id``）从 ``right_start_ms`` 开始保留，
+ * 都用各自的媒体时间（毫秒）。``mode`` 为 ``first_last_frame`` 时由服务端抽出 A 在
+ * ``left_end_ms`` 之前的最后一帧作首帧、B 保留部分的第一帧（不早于 ``right_start_ms`` 的第一帧）
+ * 作尾帧图生过渡，``seconds`` 必填；为 ``video_edit`` 时由服务端把 A 的 ``[left_end_ms, A 结尾)``
+ * 与 B 的 ``[0, right_start_ms)`` 拼成参考视频重做接缝，不收 ``seconds``。``resolution`` /
+ * ``aspect_ratio`` / ``generate_audio`` 传了就原样转给上游；``resolution`` 不传时沿用 A 原片
+ * 最初出片的设置。受理后落库的是一条 ``VideoTransitionRequest``：衔接方式与接点记在请求里、
+ * 不发上游，首尾帧或参考片段的地址记在 ``reference_image_urls`` / ``reference_video_urls``。
+ */
+export const zVideoTransitionIn = z.object({
+  aspect_ratio: z.string().min(1).max(20).nullish(),
+  conversation_id: z.uuid().nullish(),
+  generate_audio: z.boolean().nullish(),
+  left_end_ms: z.int().gte(0),
+  left_job_id: z.uuid(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
+  mode: z.enum(['first_last_frame', 'video_edit']),
+  model: z.string().min(1).max(200),
+  prompt: z.string().min(1).max(4000),
+  provider_options: z.record(z.string(), z.unknown()).nullish(),
+  resolution: z.string().min(1).max(50).nullish(),
+  right_job_id: z.uuid(),
+  right_start_ms: z.int().gte(0),
+  seconds: z.int().gte(-1).nullish(),
+  task_id: z.uuid().nullish(),
+  user_name: z.string().min(1).max(200).nullish(),
+})
+
+/**
  * WholeFilmExportErrorOut
  */
 export const zWholeFilmExportErrorOut = z.object({
@@ -5034,6 +5067,13 @@ export const zSubmitVideoEnhancementGenerationsVideoEnhancementsPostResponse = z
  * Successful Response
  */
 export const zListVideoModelsGenerationsVideoModelsGetResponse = zVideoModelsOut
+
+export const zSubmitVideoTransitionGenerationsVideoTransitionsPostBody = zVideoTransitionIn
+
+/**
+ * Successful Response
+ */
+export const zSubmitVideoTransitionGenerationsVideoTransitionsPostResponse = zGenerationEnvelope
 
 export const zGetVideoTaskGenerationsVideoTaskIdGetPath = z.object({
   task_id: z.uuid(),
