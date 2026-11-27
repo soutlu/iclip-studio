@@ -71,7 +71,7 @@ describe('画面上的层', () => {
     ])
   })
 
-  it('组件、块挂载的文件里的元素不是层（贴片、场景整个是一层），文件打开着也不列', () => {
+  it('组件、块挂载的文件里的元素不是层（元素、模板片段整个是一层），文件打开着也不列', () => {
     expect(layers.filter((layer) => layer.file === CARD)).toEqual([])
     expect(under('clip-h')).toEqual([])
   })

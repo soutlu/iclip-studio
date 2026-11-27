@@ -815,8 +815,8 @@ describe('final-cut 编辑器 · 时间线', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
-    const side = screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-    await user.click(within(side).getByRole('tab', { name: '字幕' }))
+    const side = screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+    await user.click(within(side).getByRole('tab', { name: /^字幕/ }))
     await user.dblClick(clip(/2\.0 秒$/))
     expect(clip(/2\.0 秒$/)).toHaveAttribute('aria-pressed', 'true')
     expect(within(side).getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
@@ -1547,7 +1547,7 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
 })
 
 describe('final-cut 编辑器 · 切开', () => {
-  // 画面 1：A 镜头 1 在 0–2 秒、B 镜头 1 在 2–3.5 秒；画面 2：贴片在 0–3 秒
+  // 画面 1：A 镜头 1 在 0–2 秒、B 镜头 1 在 2–3.5 秒；画面 2：元素片段在 0–3 秒
   const film = () =>
     mainFile(
       [

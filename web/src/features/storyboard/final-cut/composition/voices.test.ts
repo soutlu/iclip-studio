@@ -40,7 +40,7 @@ describe('localizedVoices', () => {
     ])
   })
 
-  it('AI 配音：只留这种语言的配音，视频关掉原声，分离出来的原声去掉；配乐、贴片不动', () => {
+  it('AI 配音：只留这种语言的配音，视频关掉原声，分离出来的原声去掉；配乐、元素片段不动', () => {
     expect(localizedVoices(ELEMENTS, { en: DUB }, 'en')).toEqual([
       { index: 0, remove: false, attributes: MUTED },
       { index: 1, remove: true },

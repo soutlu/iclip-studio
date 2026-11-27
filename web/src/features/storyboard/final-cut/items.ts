@@ -1,5 +1,5 @@
 import type { CatalogItem, ComponentCatalog } from './composition/catalog'
-import type { FilmClip } from './composition/film'
+import { itemNamed, type FilmClip, type HostClip } from './composition/film'
 import { rowBusy, rowsOf, type RowTarget } from './placement'
 
 export type ItemKind = CatalogItem['kind']
@@ -8,7 +8,11 @@ export type ItemKind = CatalogItem['kind']
 export const ITEM_KINDS: readonly ItemKind[] = ['component', 'block']
 
 /** 两种条目在界面上的叫法。 */
-export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '贴片', block: '场景' }
+export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '元素', block: '模板' }
+
+/** 宿主片段的条目在组件库目录里是哪种；目录里查不到时是 undefined。 */
+export const hostKindOf = (clip: HostClip, catalog: ComponentCatalog): ItemKind | undefined =>
+  itemNamed(catalog, clip.item)?.kind
 
 /** 条目页签的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
 export type ItemChip = {

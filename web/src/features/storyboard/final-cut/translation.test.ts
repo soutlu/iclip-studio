@@ -11,7 +11,7 @@ import {
 
 const LIMITS = { entries: 3, text: 10, total: 12 }
 
-/** 两句字幕、一个贴片（文字随语言）、一个贴片（文字固定）。 */
+/** 两句字幕、一个元素片段（文字随语言）、一个元素片段（文字固定）。 */
 const clips = [
   video(),
   host({ id: 'zh', values: { text: '新品上市' } }),

@@ -71,7 +71,7 @@ type Shown = { at: number; layer: CanvasLayer; measure: LayerMeasure }
  * - `press`：等待预览页返回按下处的命中图层栈（`last` 记录最新指针坐标）；
  * - `move`：拖拽移动选中图层（`blocked` 表示已被可编辑性规则拦截并提示原因）；
  * - `resize` / `rotate`：拖拽单选图层的四角缩放或旋转控制柄；普通图层缩放松手后（`released`）需等待末次中心回位偏移返回后再提交，
- *   贴片/场景宿主缩放时 `scale` 保存其当前行内 `scale`（普通图层为 `null`）。
+ *   元素/模板宿主缩放时 `scale` 保存其当前行内 `scale`（普通图层为 `null`）。
  */
 type Gesture =
   | {
@@ -172,7 +172,7 @@ const det = ({ a, b, c, d }: LayerMeasure['parent']) => a * d - b * c
 
 /**
  * 覆盖在预览画面上方的交互编辑叠层：
- * - 点选与循环换层：视频片段、单句字幕各自为一层，贴片与场景整体映射为其主文件宿主（仅命中内部可视内容时触发，透明空白区透传至下方）；
+ * - 点选与循环换层：视频片段、单句字幕各自为一层，元素与模板片段整体映射为其主文件宿主（仅命中内部可视内容时触发，透明空白区透传至下方）；
  *   点击即与时间线同步选中状态，同位置快速连点切换下层，Shift 点击加选。
  * - 拖拽、缩放、旋转与微调：支持拖拽移动（带对齐吸附与参考线）、四角中心等比缩放、旋转（Shift 按 15° 吸附）及画布焦点下方向键 1px / 10px 微调；
  *   拖拽期间实时驱动预览草稿，松手按 layer-edits.ts 规则一次提交并记为单步撤销；锁定或动画脚本驱动的属性在操作时给出提示。
@@ -239,7 +239,7 @@ export function CanvasOverlay({
     )
   }
 
-  /** 查找选中片段在图层表中的下标：视频/单句字幕取自身元素，贴片/场景取其宿主。 */
+  /** 查找选中片段在图层表中的下标：视频/单句字幕取自身元素，元素/模板取其宿主。 */
   const watchedOf = (clipId: string): number | undefined => {
     const own = layers.findIndex(
       (layer) => layer.clip === clipId && (layer.host || layer.element.hfId === clipId),
@@ -307,7 +307,7 @@ export function CanvasOverlay({
   /** 判断是否为单句字幕自身图层（位于最上层时单击直接优先选中，见 `clicked`）。 */
   const isCaption = (layer: CanvasLayer) =>
     clipOf.get(layer.clip)?.kind === 'caption' && layer.element.hfId === layer.clip
-  /** 判断当前位置是否支持原地改字：单句字幕，或贴片/场景内绑定了文字可填项（`field`）的元素。 */
+  /** 判断当前位置是否支持原地改字：单句字幕，或元素/模板内绑定了文字可填项（`field`）的元素。 */
   const isText = (layer: CanvasLayer, field: string | null) => {
     if (isCaption(layer)) return true
     const clip = clipOf.get(layer.clip)
@@ -591,7 +591,7 @@ export function CanvasOverlay({
     }
     const { at, measure } = gesture.target
     if (gesture.kind === 'resize' && gesture.scale !== null) {
-      // 贴片/场景宿主直接写 `scale` 围绕中心等比缩放，无需额外补偿中心偏移
+      // 元素/模板宿主直接写 `scale` 围绕中心等比缩放，无需额外补偿中心偏移
       if (gesture.released) return
       const ratio = resizeRatio(measure.frame, gesture.size, gesture.start, point)
       const styles = scaledStyles(gesture.scale, ratio)
@@ -774,7 +774,7 @@ export function CanvasOverlay({
         controlRef.current?.editText(clip.id, point, [clip.variable])
         return
       }
-      // 贴片、场景：在宿主里找指针下的文字字段
+      // 元素、模板片段：在宿主里找指针下的文字字段
       if (clip?.kind !== 'host' || !layer.host) return
       const item = itemNamed(catalog, clip.item)
       const fields = item === undefined ? [] : textFields(item)
@@ -951,7 +951,7 @@ type TextEdit = {
 }
 
 /**
- * 构建原地改字编辑模型：贴片/场景文字字段与「属性」面板共用同一保存通道，字幕与「字幕」页签共用同一保存通道；
+ * 构建原地改字编辑模型：元素/模板文字字段与「属性」面板共用同一保存通道，字幕与「字幕」页签共用同一保存通道；
  * 均作用于当前展示语言（未翻译项初始值回退为原文），目标片段或字段不存在时返回 `undefined`。
  */
 function textEditOf(

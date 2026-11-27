@@ -96,7 +96,7 @@ const semanticGroups = [
           ["Slate · 镜头/原声", "tone-slate", "on-tone"],
           ["Teal · 配乐/字幕", "tone-teal", "on-tone"],
           ["Umber · 人声/稿件", "tone-umber", "on-tone"],
-          ["Copper · 贴片/指向", "tone-copper", "on-tone"],
+          ["Copper · 元素/指向", "tone-copper", "on-tone"],
           ["Ochre · 场景/包络", "tone-ochre", "on-tone"],
         ],
       },

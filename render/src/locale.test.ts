@@ -26,7 +26,7 @@ const DECLARATIONS = [
   },
 ]
 
-/** 一份主文件：随语言的贴片 t1、没有随语言字段的贴片 t2、字幕宿主；属性写法照编辑器写出的样子。 */
+/** 一份主文件：随语言的元素片段 t1、没有随语言字段的元素片段 t2、字幕宿主；属性写法照编辑器写出的样子。 */
 const MAIN = `<!doctype html>
 <html data-composition-variables="${attr(DECLARATIONS)}">
 <head><meta charset="utf-8"></head>

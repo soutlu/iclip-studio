@@ -2,7 +2,7 @@ import type { CatalogItem, CatalogVariable, ComponentCatalog, VariableValue } fr
 import { itemNamed, type FilmClip, type HostClip } from './film'
 
 /**
- * 贴片、场景里文字可填项的「固定 / 随语言」。
+ * 元素、模板片段里文字可填项的「固定 / 随语言」。
  *
  * 挂载的组件文件只读宿主自己的 `data-variable-values`，读不到主文件根上的变量。所以一个字段随语言时，主文件根上
  * 声明一个字符串变量（id 见 `localeVariableId`，默认值是这个字段的原文），宿主上的 `data-locale-bindings` 记着

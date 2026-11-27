@@ -756,7 +756,7 @@ describe('切开', () => {
     })
   })
 
-  it('贴片、场景片段的入点是从组件自己的第几毫秒开始播；音频片段按入点接着算；切点取整到毫秒', () => {
+  it('元素、模板片段的入点是从组件自己的第几毫秒开始播；音频片段按入点接着算；切点取整到毫秒', () => {
     const title = host({ id: 't', start: 1_000, duration: 3_000, playbackStart: 500 })
     expect(splitAt(title, 2_500.4, [title], NO_LINKS)).toEqual({
       cuts: [

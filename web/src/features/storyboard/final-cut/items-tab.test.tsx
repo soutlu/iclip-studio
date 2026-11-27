@@ -54,13 +54,13 @@ const players = () => [...document.querySelectorAll('hyperframes-player')]
 describe('组件、块页签 · 列出和筛选', () => {
   it('组件页签只列组件、块页签只列块，字幕不列', async () => {
     await renderTab('component')
-    expect(screen.getByRole('list', { name: '贴片' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '元素' })).toBeInTheDocument()
     expect(cardNames()).toEqual(['测试叠加，4 秒', '测试可填项，5 秒', '测试点穿，4 秒'])
   })
 
   it('块页签的卡片：封面、时长、名字、分类', async () => {
     await renderTab('block')
-    expect(screen.getByRole('list', { name: '场景' })).toBeInTheDocument()
+    expect(screen.getByRole('list', { name: '模板' })).toBeInTheDocument()
     expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒', '测试旁挂文件，2 秒'])
     const scene = card('测试画面，6 秒')
     expect(within(scene).getByText('6s')).toBeInTheDocument()
@@ -75,7 +75,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   it('分类只列这种条目里有的；点分类只看这一类，「品牌」是带品牌的条目', async () => {
     const user = userEvent.setup()
     await renderTab('block')
-    const chips = screen.getByRole('radiogroup', { name: '场景分类' })
+    const chips = screen.getByRole('radiogroup', { name: '模板分类' })
     const chipNames = within(chips)
       .getAllByRole('radio')
       .map((element) => element.textContent)
@@ -91,7 +91,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   it('组件页签的分类：没有带品牌的组件就没有「品牌」', async () => {
     const user = userEvent.setup()
     await renderTab('component')
-    const chips = screen.getByRole('radiogroup', { name: '贴片分类' })
+    const chips = screen.getByRole('radiogroup', { name: '元素分类' })
     const chipNames = within(chips)
       .getAllByRole('radio')
       .map((element) => element.textContent)
@@ -103,7 +103,7 @@ describe('组件、块页签 · 列出和筛选', () => {
   it('搜索按名字、说明、分类名筛；没有结果时说明一句', async () => {
     const user = userEvent.setup()
     await renderTab('component')
-    const search = screen.getByRole('searchbox', { name: '搜索贴片' })
+    const search = screen.getByRole('searchbox', { name: '搜索元素' })
     expect(search).toHaveAttribute('placeholder', '搜索名称或分类')
     await user.type(search, '圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
@@ -113,15 +113,15 @@ describe('组件、块页签 · 列出和筛选', () => {
     await user.clear(search)
     await user.type(search, '通用')
     expect(screen.queryByRole('list')).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的贴片，请更换关键词或分类')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的元素，请更换关键词或分类')
   })
 
-  it('块页签：搜索框和空状态说「场景」', async () => {
+  it('块页签：搜索框和空状态说「模板」', async () => {
     const user = userEvent.setup()
     await renderTab('block')
-    await user.type(screen.getByRole('searchbox', { name: '搜索场景' }), '圆环')
+    await user.type(screen.getByRole('searchbox', { name: '搜索模板' }), '圆环')
     expect(screen.queryByRole('list')).toBeNull()
-    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的场景，请更换关键词或分类')
+    expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的模板，请更换关键词或分类')
   })
 })
 

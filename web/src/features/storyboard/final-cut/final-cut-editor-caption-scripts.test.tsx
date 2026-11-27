@@ -70,7 +70,7 @@ const serveSubtitles = () => {
 }
 
 describe('final-cut 编辑器 · 字幕对照台词', () => {
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const field = () => within(panel()).getByRole('textbox', { name: /^字幕文字 / })
   const adoptButton = () => within(panel()).queryByRole('button', { name: /^采用 .+ 的台词$/ })
 
@@ -85,8 +85,8 @@ describe('final-cut 编辑器 · 字幕对照台词', () => {
     const submitted = serveSubtitles()
     await user.click(
       within(
-        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕' }),
+        screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: /^字幕/ }),
     )
 
     expect(await within(panel()).findByRole('deletion')).toHaveTextContent(/^ten$/)

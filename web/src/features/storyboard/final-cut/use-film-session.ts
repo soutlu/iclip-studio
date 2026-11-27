@@ -191,7 +191,7 @@ export type FilmView = {
   locales: readonly LocaleCode[]
   /** 组件或块的片段里随语言的文字字段（片段编号 → 字段到根变量），没有随语言字段的片段不在里面。 */
   bindings: ReadonlyMap<string, LocaleBindings>
-  /** 画布可编辑图层与贴片/场景宿主表（见 canvas-layers.ts），按主文件与字幕场景当前内存内容派生。 */
+  /** 画布可编辑图层与元素/模板宿主表（见 canvas-layers.ts），按主文件与字幕场景当前内存内容派生。 */
   layers: readonly CanvasLayer[]
   canUndo: boolean
   canRedo: boolean
@@ -480,7 +480,7 @@ const resizeRoot = (engine: Composition, canvas: Canvas) => {
 /**
  * 在同一事务批次内将工程画布尺寸修改为 `canvas`（仅修改画布本身）：同步更新主文件与字幕场景的根节点宽高（见 `resizeRoot`；
  * 主文件 `<head>` 中的模板尺寸与字幕场景统一样式的默认字号在序列化时随根节点重算，见 `viewOf`）。
- * 既有内容（贴片/场景宿主的定位与单句自定义字号）均不按比例换算，保持原有声明值不变。
+ * 既有内容（元素/模板宿主的定位与单句自定义字号）均不按比例换算，保持原有声明值不变。
  *
  * 字幕宿主节点的 `data-width` / `data-height` 保持不改：SDK 将其视作保留属性禁止直接写入，
  * 运行库挂载字幕场景时会自动按场景根节点宽高覆写宿主，且宿主本身通过样式铺满画布。
@@ -1382,7 +1382,7 @@ export function useFilmSession(
       try {
         await copyItemFiles(conversationId, catalog, item)
       } catch (error) {
-        noticeRef.current(errorMessageOf(error, '贴片和场景读取失败'))
+        noticeRef.current(errorMessageOf(error, '元素和模板读取失败'))
         return false
       }
       const project = projectRef.current

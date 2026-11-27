@@ -79,7 +79,7 @@ type HostTextFieldProps = {
 }
 
 /**
- * 组件或块的片段的一个文字字段（「组件文字」和「属性」其它语言下共用），停下 300 毫秒再写进去。原文下改的是
+ * 组件或块的片段的一个文字字段（「画面文字」和「属性」其它语言下共用），停下 300 毫秒再写进去。原文下改的是
  * 原文；其它语言下随语言的字段框里是这种语言的字，还没翻时是空的、占位字提示输入这种语言，下面写着原文；固定的字段只读，
  * 下面说明它所有语言共用。说明排在框和右边的按钮下面（见 `.wf-text-note`）。
  */
@@ -146,7 +146,7 @@ type ComponentTextsProps = {
 }
 
 /**
- * 「字幕」页签的「组件文字」：每个有文字字段的贴片、场景一张卡片（标题行是名字、开始时间），每个文字字段一段（名字，
+ * 「字幕」页签的「画面文字」：每个有文字字段的元素、模板片段一张卡片（标题行是名字、开始时间），每个文字字段一段（名字，
  * 加了语言时同一行右边是「固定 / 随语言」；下面是文字框）。焦点进一张卡片时选中那个片段，点标题行还让播放头跳到它的开始。
  */
 export function ComponentTexts({
@@ -163,11 +163,11 @@ export function ComponentTexts({
   if (hosts.length === 0)
     return (
       <EmptyNote icon="final-cut-overlays">
-        暂无带文字的贴片或场景，请先在「贴片」「场景」页签中加入
+        暂无带文字的元素或模板，请先在「元素」「模板」页签中加入
       </EmptyNote>
     )
   return (
-    <ol aria-label="组件文字" className="wf-tab-list wf-caption-list">
+    <ol aria-label="画面文字" className="wf-tab-list wf-caption-list">
       {hosts.map((clip) => {
         const item = itemNamed(catalog, clip.item)
         const fields = item === undefined ? [] : textFields(item)

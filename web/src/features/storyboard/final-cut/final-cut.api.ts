@@ -61,7 +61,7 @@ export const PROJECT_MAIN_PATH = `${PROJECT_DIR}/${PROJECT_MAIN}`
 
 const READ_FAILED = 'final-cut 读取失败'
 const SAVE_FAILED = 'final-cut 保存失败'
-const ITEM_FILES_FAILED = '贴片和场景读取失败'
+const ITEM_FILES_FAILED = '元素和模板读取失败'
 
 export const wholeFilmQueryKeys = {
   // 独立于工作区文件查询键：工作台宿主在任意文件变更时均会使工作区文件查询失效，挂在其下会导致每次保存后触发重读

@@ -50,8 +50,8 @@ describe('预览套上一种语言的值', () => {
     expect(injected(html)).toEqual({ cap_a1: tricky })
   })
 
-  describe('贴片、场景里随语言的字', () => {
-    // 一个贴片：title 随语言、brand 固定；一个没有随语言字段的贴片；字幕宿主
+  describe('元素、模板片段里随语言的字', () => {
+    // 一个元素片段：title 随语言、brand 固定；一个没有随语言字段的元素片段；字幕宿主
     const bound = (values: Record<string, unknown>) =>
       `<!doctype html>\n<html data-composition-variables='${JSON.stringify([
         { id: 'txt_t1_title', type: 'string', label: '标题', default: '早秋亚麻' },
@@ -187,7 +187,7 @@ describe('隐藏的片段不进预览', () => {
   const rootChildren = (html: string) =>
     [...(parsed(html).getElementById('film')?.children ?? [])].map((child) => child.id)
 
-  it('去掉根下这一层隐藏的视频、音频、贴片宿主和字幕宿主；没隐藏的、不在这一层的、文档类型和 <head> 都在', () => {
+  it('去掉根下这一层隐藏的视频、音频、元素宿主和字幕宿主；没隐藏的、不在这一层的、文档类型和 <head> 都在', () => {
     const html = withoutHiddenClips(`${head}${open}${hidden}${shown}${close}`)
     expect(rootChildren(html)).toEqual(['v1', 't1'])
     expect(html).toMatch(/^<!doctype html>\n<html/)

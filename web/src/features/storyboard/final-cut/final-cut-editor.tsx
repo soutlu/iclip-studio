@@ -165,7 +165,8 @@ import { LayoutSplitter } from './layout-splitter'
 import { SaveStatus } from './save-status'
 import { aroundPlayhead, firstFrameMs } from './selection'
 import { SideNav } from './side-nav'
-import { CATALOG_TABS, type CatalogTab, type SideTab } from './side-tabs'
+import { CATALOG_TABS, usedTabs, type CatalogTab, type SideTab } from './side-tabs'
+import { ThemeToggle } from './theme-toggle'
 import { resyncPlan, soundActionFor, type SoundAction, type SoundControls } from './sound-pair'
 import { rowMoveDirection } from './stacking'
 import { FIT_ZOOM, timelineScale, zoomScrollLeft, zoomToClips, type Zoom } from './timeline-scale'
@@ -201,7 +202,7 @@ import './final-cut.css'
 const EMPTY_TEXT = 'final-cut 暂无内容，加入内容后可在此预览'
 const PICK_FIRST_TEXT = '尚未选中镜头，无法加入轨道；请先在「镜头」页签中选中镜头范围'
 const NO_FULLSCREEN_TEXT = '当前浏览器不支持全屏，无法进入全屏'
-const ADDING_ITEM_TEXT = '上一个贴片或场景正在加入轨道，请稍后再试'
+const ADDING_ITEM_TEXT = '上一个元素或模板正在加入轨道，请稍后再试'
 const ADDING_PICKS_TEXT = '选中的镜头正在加入轨道，请稍后再试'
 const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
@@ -287,7 +288,7 @@ export function FinalCutEditor({
             action={{ label: '重试', onClick: () => void failed.refetch() }}
             message={errorMessageOf(
               failed.error,
-              failed === projectQuery ? 'final-cut 读取失败' : '贴片和场景读取失败',
+              failed === projectQuery ? 'final-cut 读取失败' : '元素和模板读取失败',
             )}
           />
         </div>
@@ -367,7 +368,7 @@ function EditorBody({
       ),
     [captions, locale],
   )
-  // 贴片、场景片段上接在名字后面的文字：显示着的语言下的
+  // 元素、模板片段上接在名字后面的文字：显示着的语言下的
   const hostBindings = film?.bindings ?? NO_BINDINGS
   const hostTexts = useMemo(
     () =>
@@ -844,7 +845,7 @@ function EditorBody({
     else placePicks(picked)
   }
 
-  // 防止前一条组件或场景尚未落位时重入，避免并发调用均按旧时间线状态计算落点
+  // 防止前一条元素或模板尚未落位时重入，避免并发调用均按旧时间线状态计算落点
   const addingItemRef = useRef(false)
   /** 将组件库单个条目加入轨道的 `at` 位置。 */
   const placeItem = (item: CatalogItem, at: { row: RowTarget; start: number }) => {
@@ -1423,7 +1424,7 @@ function EditorBody({
           },
         }
 
-  // 贴片、场景的文字：「组件文字」和「属性」共用
+  // 元素、模板片段的文字：「画面文字」和「属性」共用
   const itemTexts = {
     bindings: film?.bindings ?? NO_BINDINGS,
     multilingual: (film?.locales.length ?? 0) > 0,
@@ -1553,6 +1554,7 @@ function EditorBody({
       <WorkbenchHeaderActions>
         <div className="wf-header-actions">
           <SaveStatus save={session.save} />
+          <ThemeToggle />
           <ExportControl
             blocked={exportBlocked}
             onCancel={() => void exporting.cancel()}
@@ -1640,7 +1642,7 @@ function EditorBody({
         {...sideSplitter}
       />
       <aside
-        aria-label="镜头、贴片、场景、配乐、字幕和属性"
+        aria-label="镜头、元素、模板、配乐、字幕和属性"
         className={cn('wf-panel wf-side', layout.sideCollapsed && 'is-collapsed')}
         ref={sideRef}
       >
@@ -1653,7 +1655,7 @@ function EditorBody({
           <SideNav
             collapsed={layout.sideCollapsed}
             onCollapsedChange={setSideCollapsed}
-            selection={selected.size > 0}
+            used={usedTabs(film.clips, catalog)}
           />
           <div className="wf-side-scroll">
             <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>

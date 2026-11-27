@@ -383,11 +383,11 @@ export const createPreviewPage = (
     return at !== undefined && layerAt(page, at) === element ? at : undefined
   }
 
-  /** 获取当前播放文档中已登记的全部贴片/场景宿主元素。 */
+  /** 获取当前播放文档中已登记的全部元素/模板宿主。 */
   const hostsIn = (page: Document) =>
     table.flatMap((entry, at) => (entry.host ? (layerAt(page, at) ?? []) : []))
 
-  /** 查询画布坐标 (`x`, `y`) 处从上到下的已登记图层栈（贴片与场景收敛为宿主，见 `unitsAt`），附带内部命中的文字可填项。 */
+  /** 查询画布坐标 (`x`, `y`) 处从上到下的已登记图层栈（元素与模板片段收敛为宿主，见 `unitsAt`），附带内部命中的文字可填项。 */
   const pickAt = (seq: number, x: number, y: number) => {
     const page = active?.iframeElement.contentDocument ?? null
     const isHost = (element: HTMLElement) => {

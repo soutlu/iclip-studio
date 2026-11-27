@@ -127,7 +127,7 @@ type FilmTimelineProps = {
   clips: readonly FilmClip[]
   /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
   untranslated: ReadonlySet<string>
-  /** 贴片或场景片段在当前展示语言下的正文内容，用于悬停提示拼接为「名称 · 正文」；无文本时省略。 */
+  /** 元素或模板片段在当前展示语言下的正文内容，用于悬停提示拼接为「名称 · 正文」；无文本时省略。 */
   hostTexts: ReadonlyMap<string, string>
   /** 片段的链接名：链接的片段一起切。 */
   links: Links
@@ -138,7 +138,7 @@ type FilmTimelineProps = {
   tool: EditTool
   /** 切开几个片段（剃刀，或右键菜单里的「在播放头处切开」）。 */
   onSplit: (cuts: readonly Cut[]) => void
-  /** 组件库目录：供贴片与场景片段读取平铺封面图。 */
+  /** 组件库目录：供元素与模板片段读取平铺封面图。 */
   catalog: ComponentCatalog
   totalMs: number
   /** 播放头节流时刻（播放期间约每 0.1 秒同步一次），供吸附、切开提示与时间尺计算。 */
@@ -394,7 +394,7 @@ function ClipBadge({ badge }: { badge: SoundBadge }) {
 }
 
 /**
- * 渲染时间线片段主体内容：画面类片段不叠加文字（视频平铺抽帧且未分离原声时底部叠加细原声波形；贴片与场景平铺封面帧条，名称与文本由悬停提示展示）；
+ * 渲染时间线片段主体内容：画面类片段不叠加文字（视频平铺抽帧且未分离原声时底部叠加细原声波形；元素与模板片段平铺封面帧条，名称与文本由悬停提示展示）；
  * 字幕渲染为含正文胶囊；音频顶部展示名称与状态角标、下方绘制贴底波形；「其他」片段仅展示名称。
  * 自动压低图标分别位于视频片段右上角与音频片段标题条右端。
  */
@@ -554,9 +554,9 @@ type TimelineClipProps = {
     edge: Edge,
     edgeMs: number,
   ) => ReadonlyMap<string, Timing>
-  /** 贴片或场景片段的平铺封面图地址；无封面时为 `null`。 */
+  /** 元素或模板片段的平铺封面图地址；无封面时为 `null`。 */
   cover: string | null
-  /** 贴片或场景片段悬停提示中接在名称后的正文摘要；无文本时为 `undefined`。 */
+  /** 元素或模板片段悬停提示中接在名称后的正文摘要；无文本时为 `undefined`。 */
   text: string | undefined
   /** 视频片段是否仍保留原声（未分离）。 */
   withSound: boolean

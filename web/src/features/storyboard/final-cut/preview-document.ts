@@ -169,7 +169,7 @@ export const catalogBase = (catalog: ComponentCatalog, origin: string) =>
 
 /**
  * 预览用的那一份：去掉隐藏的片段（见 `withoutHiddenClips`），放进字幕场景 `captionsScene`（见
- * `withCaptionsScene`），套上显示着的语言 `locale`（贴片、场景的字见 `withLocalizedHosts`，人声见
+ * `withCaptionsScene`），套上显示着的语言 `locale`（元素、模板片段的字见 `withLocalizedHosts`，人声见
  * `withLocalizedVoices`，字幕的字见 `withPreviewVariables`），加上基准地址和预览专用的媒体加载方式。
  * 文件里的相对地址（组件文件、`vendor/`）都按 `baseHref` 取。
  */
