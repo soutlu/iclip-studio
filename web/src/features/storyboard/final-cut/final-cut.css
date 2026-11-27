@@ -2,6 +2,7 @@
    这些规则都未分层，权重相同时后引入的生效，所以已有的顺序不能调换；新文件加在所属区域的位置。 */
 @import './final-cut-base.css';
 @import './final-cut-tabs.css';
+@import './side-list.css';
 @import './audio-tab.css';
 @import './captions-tab.css';
 @import './film-inspector.css';
