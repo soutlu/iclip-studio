@@ -1,0 +1,160 @@
+/* ---- 配乐栏：页签头是「本对话 / 音频库」和右边的「生成」、导入，下面搜索（音频库里再一行「配乐 / 音效」和
+   曲风、情绪筛选），再下面媒体行列表，有试听时最下面一条迷你试听条 ---- */
+
+/* 列表占满剩下的高度、自己滚 */
+.wf-audio {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-audio.is-over {
+  background: var(--color-state-hover);
+}
+
+.wf-audio-top {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-audio-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 「生成」：墨色实底小按钮，比通用的深色胶囊高一档、和左边的分段一样高 */
+.wf-audio-tools .wf-chip-btn.is-soft {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--text-label);
+}
+
+.wf-audio-alert {
+  margin: 6px var(--wf-tab-inset) 0;
+}
+
+/* 列表的行之间不留缝，靠行自己的内边距和底色分开 */
+.wf-audio-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-inline: 8px;
+}
+
+/* 列表上方一行属性筛选小块和右边的条数；配乐栏的音频库、选音面板共用 */
+.wf-trait-filters {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-trait-count {
+  margin-left: auto;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 页签最下面常驻的迷你试听条（底条样子见 .wf-tab-dock）：封面、播放键、名字、进度滑杆、时刻、✕ 排一行 */
+.wf-audition-dock {
+  gap: 8px;
+  padding-left: 8px;
+}
+
+.wf-audition-dock-title {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 128px;
+  flex: 0 1 auto;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audition-dock-slider {
+  min-width: 48px;
+  flex: 1;
+}
+
+/* 滑杆已走过的那段和圆钮用试听进度色；两个类压过编辑器里滑杆的中性色 */
+.wf-editor .wf-audition-dock-slider .slider-range {
+  background: var(--wf-audition-progress);
+}
+
+.wf-editor .wf-audition-dock-slider .slider-thumb {
+  background: var(--wf-audition-progress);
+  box-shadow: none;
+}
+
+/* 右栏里已放过的波形、行内进度条都用试听进度色（见 Waveform 的 --waveform-played） */
+.wf-side-body {
+  --waveform-played: var(--wf-audition-progress);
+}
+
+/* 音频卡片里的文字块（选音卡片、人声卡的当前音色行共用）：名字一行，下面属性 */
+.wf-audio-text {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.wf-audio-name {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.wf-audio-title {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audio-meta {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-audio-traits {
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audio-import > svg {
+  color: var(--color-on-surface-variant);
+}
+
+/* 导入中按钮置灰，图标换成转圈（同按钮的加载态） */
+.wf-audio-import[aria-disabled='true'] > svg {
+  animation: var(--animate-spin);
+}
+
+.wf-audio-more {
+  list-style: none;
+}

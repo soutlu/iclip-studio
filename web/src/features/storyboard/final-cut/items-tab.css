@@ -1,0 +1,146 @@
+/* ---- 元素栏、模板栏：搜索，分类小块和右边的「品牌」筛选小块，下面两列卡片 ---- */
+
+.wf-items {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* 两列卡片：上面圆角封面（不压字），下面名字、时长一行；不套卡片框 */
+.wf-item-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px 10px;
+}
+
+.wf-item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--radius-md);
+  text-align: left;
+  user-select: none;
+}
+
+/* 焦点框画在整张卡片外面：选择按钮被封面盖着，它自己的焦点框看不见 */
+.wf-item:has(> .wf-item-select:focus-visible) {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.wf-item.is-lifting {
+  opacity: 0.4;
+}
+
+/* 整张卡是一个按钮：点、按 Enter、拖都落在它上面；封面、名字不接指针，只有「+」叠在它上面 */
+.wf-item-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  touch-action: none;
+}
+
+.wf-item.is-lifting .wf-item-select {
+  cursor: grabbing;
+}
+
+.wf-item-select:focus-visible {
+  outline: none;
+}
+
+.wf-item-thumb,
+.wf-item-meta {
+  pointer-events: none;
+}
+
+/* 封面：圆角，深色底（同时间线上元素、模板片段的卡底），预览图铺满 */
+.wf-item-thumb {
+  position: relative;
+  display: grid;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--wf-clip-component);
+  color: color-mix(in srgb, var(--color-on-scrim) 40%, transparent);
+}
+
+.wf-item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 悬停预览盖在封面上，大小同封面；不接指针，点按、拖动、悬停提示照旧落在卡片上 */
+.wf-hover-slot {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wf-hover-player {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* 第一帧画出来之前透明，底下的预览图照常显示 */
+.wf-hover-player.is-pending {
+  opacity: 0;
+}
+
+/* 封面右下角的「+」：按意图显露（见 .wf-reveal），白底深色加号（封面不分深浅色，它也不随主题换），停在它自己上时
+   换成主色 */
+.wf-item .wf-item-add {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 94%, transparent);
+  box-shadow: var(--shadow-2);
+  color: var(--color-scrim);
+  pointer-events: auto;
+}
+
+.wf-item .wf-item-add:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* 封面下面：名字在左、时长在右 */
+.wf-item-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.wf-item-name {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-item-duration {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}

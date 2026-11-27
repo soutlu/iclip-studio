@@ -1,0 +1,547 @@
+/* final-cut 编辑器：工作台「final-cut」页签主体布局（左上预览舞台、右上右栏、底部剪辑工具与时间线；保存状态与导出位于工作台顶栏右侧）。 */
+
+/* 本模块专用变量，仅限本文件引用。声明于 :root 而非编辑器根节点，以便挂载在 body 下的浮层（菜单、「生成音乐」卡片、音频详情）共享。
+   优先复用语义色角色，仅在无对应语义角色时直接引用基础色阶，且严格限定于此区块 */
+:root {
+  /* 中性控件：tick 为滑杆零点刻度；control-soft/ring 为中性实心控件（滑杆已选段、按下的胶囊按钮）的浅底与描边；knob 为滑杆拇指与开关圆钮 */
+  --wf-tick: var(--n70);
+  --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
+  --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
+  --wf-knob: var(--n100);
+  /* 深色实心主按钮图标的指示光色 */
+  --wf-led: var(--t80);
+  /* 中性实心主操作（「加入轨道」）：纵向微渐变叠加顶部高光；深色模式下反转为浅底 */
+  --wf-action-fill: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-action-neutral) 94%, var(--color-on-scrim)) 0%,
+    var(--color-action-neutral) 100%
+  );
+  --wf-shadow-action:
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 20%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  /* 紧凑分段容器外圆角：内项圆角 + 容器内边距，保持四角同心 */
+  --wf-radius-seg-compact: calc(var(--radius-xs) + 2px);
+  /* 右栏底部汇总栏、试听条外圆角：内部按钮圆角 + 6px 内边距，保持四角同心 */
+  --wf-radius-dock: calc(var(--radius-sm) + 6px);
+  /* 右栏列表行、分类和筛选小块的底色：悬停很浅，选中 / 正在试听稍深 */
+  --wf-fill-hover: color-mix(
+    in srgb,
+    var(--color-on-surface) calc(var(--state-hover-subtle) * 100%),
+    transparent
+  );
+  --wf-fill-selected: var(--color-state-active);
+  /* 试听进度色：已放过的波形、进度条和「当前」时刻 */
+  --wf-audition-progress: var(--color-primary);
+  /* 镜头条底部已入轨指示条：镜头条在深浅主题下均为黑底，采用固定鲜绿色 */
+  --wf-in-track: var(--p70);
+  /* 时间线片段：ink 为音频片段的字色；edge 为卡片类片段的外缘细线；label/label-line 为音频卡顶行底色与分隔线；
+     三条渐变依次对应元素/模板片段、字幕胶囊与音频卡背景 */
+  --wf-original-ink: var(--color-tone-slate);
+  --wf-dub-ink: var(--t30);
+  --wf-music-ink: var(--p20);
+  --wf-clip-video: var(--color-storyboard-stage);
+  --wf-clip-edge: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
+  --wf-clip-label: color-mix(in srgb, var(--n10) 3%, transparent);
+  --wf-clip-label-line: color-mix(in srgb, var(--n10) 6%, transparent);
+  --wf-clip-component: linear-gradient(180deg, var(--n20) 0%, var(--n12) 100%);
+  --wf-clip-caption: linear-gradient(180deg, var(--n100) 0%, var(--n96) 100%);
+  --wf-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
+  /* 时间线每一行的底色带子：浅色下比面板深一档，深色下比面板再暗一档（都是往下凹的样子） */
+  --wf-lane-bed: var(--color-surface-container-low);
+  /* 滑杆拇指与开关圆钮投影；浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
+  --wf-shadow-knob: 0 1px 3px color-mix(in srgb, var(--n0) 20%, transparent);
+  /* 低于全站最小字号一档：仅用于画布安全区标注 */
+  --wf-text-clip-label: 9.5px;
+}
+
+.dark {
+  --wf-tick: var(--n40);
+  --wf-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
+  --wf-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
+  --wf-led: var(--p40);
+  --wf-action-fill: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-action-neutral) 40%, var(--color-on-scrim)) 0%,
+    var(--color-action-neutral) 100%
+  );
+  --wf-shadow-action:
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 42%, transparent),
+    inset 0 1px 0 var(--color-on-scrim);
+  --wf-original-ink: var(--color-on-surface);
+  --wf-dub-ink: var(--t90);
+  --wf-music-ink: var(--p80);
+  --wf-clip-video: var(--n12);
+  --wf-clip-edge: color-mix(in srgb, var(--color-on-surface) 10%, transparent);
+  --wf-clip-label: color-mix(in srgb, var(--n100) 3%, transparent);
+  --wf-clip-label-line: color-mix(in srgb, var(--n100) 6%, transparent);
+  --wf-clip-component: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
+  --wf-clip-caption: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
+  --wf-clip-audio: linear-gradient(180deg, var(--n17) 0%, var(--n12) 100%);
+  --wf-lane-bed: var(--color-surface-container-lowest);
+}
+
+.wf-editor {
+  --slider-thumb-size: 14px;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+/* 根节点仅承接点击空白处的焦点以维持编辑器快捷键作用域；内部交互控件各自保留 ui-focus 焦点环 */
+.wf-editor:focus {
+  outline: none;
+}
+
+.wf-state {
+  padding: 32px 24px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+}
+
+/* ---- 通用控件：编辑器共用基础外观（挂载于 body 的浮层菜单额外携带 .wf-menu 作用域） ---- */
+
+/* 可交互按钮默认显示手型光标（禁用态除外），与 shared/ui 按钮一致；
+   通过 :where() 保持零优先级，避免覆盖裁剪把手、镜头十字或拖拽 grabbing 等专用光标 */
+:where(.wf-editor, .wf-menu) :where(button:not(:disabled, [aria-disabled='true'])) {
+  cursor: pointer;
+}
+
+/* 双色图标填充层不透明度：悬停加深，激活/选中态进一步加深（变量定义见 shared/icons/final-cut-glyphs.css） */
+:where(.wf-editor, .wf-menu) :where(.ui-state:hover) {
+  --icon-fill-opacity: 0.25;
+}
+
+:where(.wf-editor, .wf-menu)
+  :where(
+    [aria-pressed='true'],
+    [aria-checked='true'],
+    [aria-selected='true'],
+    [data-state='on'],
+    [data-state='checked'],
+    .is-active
+  ) {
+  --icon-fill-opacity: 0.3;
+}
+
+/* 浮起面板容器（用于右栏、时间线等主区域） */
+.wf-panel {
+  border-radius: var(--radius-panel);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-panel), var(--shadow-specular);
+}
+
+/* 面板内部白色分组卡片 */
+.wf-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-panel-card), var(--shadow-specular);
+}
+
+/* 胶囊形次要操作按钮：is-active / aria-pressed 为激活开关态，is-warning 为警示态，is-soft 为推荐主动作（深色实底） */
+.wf-chip-btn {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  border-radius: var(--radius-control);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-chip-btn:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-chip-btn:is(.is-active, [aria-pressed='true']) {
+  background: var(--wf-control-soft);
+  box-shadow: inset 0 0 0 1px var(--wf-control-ring);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-chip-btn.is-warning:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
+.wf-chip-btn[aria-disabled='true']:not([aria-pressed='true']) {
+  color: var(--color-on-surface-faint);
+}
+
+/* 深色实心胶囊：区域内首要动作（如生成音乐、翻译、插入配音），图标配暖色指示光 */
+.wf-chip-btn.is-soft {
+  --icon-fill-color: var(--wf-led);
+  --icon-fill-opacity: 0.32;
+  background-color: var(--color-on-surface);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-scrim) 14%, transparent);
+  color: var(--color-on-action-neutral);
+  font-weight: 600;
+}
+
+.wf-chip-btn.is-soft:hover {
+  color: var(--color-on-action-neutral);
+}
+
+.wf-chip-btn.is-soft > svg {
+  color: var(--wf-led);
+}
+
+/* 禁用态同步切换禁用底色，避免深底灰字对比度不足 */
+.wf-chip-btn.is-soft[aria-disabled='true'] {
+  background-color: var(--color-disabled-container);
+  box-shadow: none;
+}
+
+.wf-chip-btn.is-soft[aria-disabled='true'] > svg {
+  color: inherit;
+}
+
+/* 下拉选择器触发按钮：浅底内描边，展开时右侧箭头旋转 180° */
+.wf-select {
+  display: flex;
+  height: 28px;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-panel-line);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-select > svg {
+  flex: none;
+  color: var(--color-on-surface-faint);
+  transition: rotate var(--dur-s) var(--ease);
+}
+
+.wf-select[data-state='open'] > svg {
+  rotate: 180deg;
+}
+
+/* 分段切换控件：凹槽底配浮起白色激活项（「镜头」页签内附加外细线，见 .wf-materials）；
+   is-compact 为紧凑高度，供在 26px 高的标题行里行内排布（出片的版本分段） */
+.wf-editor .wf-seg {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-control-well);
+}
+
+/* 悬停仅加深文字色：将 ui-state 叠层色置透明，保留过渡曲线 */
+.wf-editor .wf-seg-item {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.wf-editor .wf-seg-item:hover {
+  color: var(--color-on-surface);
+}
+
+/* 三个选择器条件用于覆盖通用分段组件的双条件选中样式（类名 + 状态属性） */
+.wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
+  background: var(--color-card);
+  box-shadow: var(--shadow-pill), var(--shadow-specular);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+/* 深色主题下压暗槽底并提亮激活项表面，保持浮起层次（与工作台顶栏分段页签一致） */
+.dark .wf-editor .wf-seg {
+  background: var(--color-control-well);
+}
+
+.dark .wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
+  background: var(--color-surface-container-high);
+}
+
+.wf-editor .wf-seg.is-compact {
+  gap: 0;
+  border-radius: var(--wf-radius-seg-compact);
+}
+
+.wf-editor .wf-seg.is-compact .wf-seg-item {
+  height: 22px;
+  gap: 2px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+}
+
+/* 输入框、文本域与复合输入容器：常态凹槽浅底，聚焦浮起白底配 1.5px 浅色描边环；
+   关闭设计系统默认焦点环宽度避免双重描边。使用双类选择器覆盖基础组件工具类，防止构建后因同层加载顺序被覆盖 */
+.wf-editor .wf-field {
+  --state-focus-ring: 0px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
+}
+
+.wf-editor .wf-field:is(:focus, :focus-within) {
+  border-color: transparent;
+  background: var(--color-card);
+  box-shadow: 0 0 0 1.5px var(--wf-control-ring);
+}
+
+.wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  box-shadow: 0 0 0 1.5px var(--color-error);
+}
+
+/* 外框嵌套内层输入框时（如像素尺寸框、「显示时长」），悬停、按下与焦点效果统一由外框承担，关闭内层叠色与焦点环 */
+.wf-editor .wf-field input {
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+  --state-focus-ring: 0px;
+}
+
+/* 细边变体：透明底配 1px 细边，悬停与聚焦逐级加深，校验错误时转错误色 */
+.wf-editor .wf-field.is-outline {
+  border-color: var(--color-hairline);
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-editor .wf-field.is-outline:hover {
+  border-color: var(--color-outline-variant);
+}
+
+.wf-editor .wf-field.is-outline:is(:focus, :focus-within) {
+  border-color: var(--color-border-hover);
+}
+
+.wf-editor .wf-field.is-outline:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  border-color: var(--color-error);
+}
+
+/* 侧栏页签顶部搜索栏（外边距由所属页签头部控制） */
+.wf-editor .wf-search {
+  width: auto;
+  height: 30px;
+  flex: none;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+.wf-search svg {
+  width: 14px;
+  height: 14px;
+  color: var(--color-on-surface-faint);
+}
+
+.wf-search input {
+  font-size: var(--text-label);
+}
+
+/* 浮层菜单：白底大圆角、浮层阴影与顶部高光，选中项配中性浅底；
+   菜单挂载于 body 下，通过 .wf-menu[data-state] 双条件覆盖默认边框、背景与阴影 */
+.wf-menu[data-state] {
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-card);
+  box-shadow: var(--shadow-float), var(--shadow-specular);
+  backdrop-filter: none;
+}
+
+.wf-menu [role^='menuitem'] {
+  font-size: var(--text-label);
+}
+
+.wf-menu [role^='menuitem'][data-state='checked'] {
+  background: var(--wf-control-soft);
+}
+
+/* 滑杆：凹槽轨道、中性实心进度条、短竖线零点刻度与白底描边拇指；
+   挂载点见 shared/ui/slider，以双类选择器覆盖默认样式 */
+.wf-editor .slider-track {
+  height: 3.5px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-control-well);
+}
+
+.wf-editor .slider-range {
+  background: var(--color-on-surface);
+}
+
+.wf-editor .slider-mark {
+  width: 2px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--wf-tick);
+}
+
+.wf-editor .slider-thumb {
+  border: 1.75px solid var(--color-on-surface);
+  background: var(--color-card);
+  box-shadow: var(--wf-shadow-knob);
+  transition:
+    scale var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-editor .slider-root:not([data-disabled]):hover .slider-thumb {
+  scale: 1.1;
+  box-shadow:
+    var(--wf-shadow-knob),
+    0 0 0 4px var(--wf-control-soft);
+}
+
+/* 开关：关闭态为凹槽配白色圆钮；开启态沿用全站样式，前景色轨道配背景色圆钮（避免深色主题下白圆钮融入浅灰轨道）；
+   挂载点见 shared/ui/switch，以双类选择器覆盖默认尺寸与底色 */
+.wf-editor .switch-root {
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  background: var(--color-surface-container-high);
+  box-shadow: var(--shadow-control-well);
+}
+
+.wf-editor .switch-root[aria-checked='true'] {
+  background: var(--color-on-surface);
+  box-shadow: none;
+}
+
+.wf-editor .switch-thumb {
+  width: 15px;
+  height: 15px;
+  background: var(--wf-knob);
+  box-shadow: var(--wf-shadow-knob);
+}
+
+.wf-editor .switch-root[aria-checked='true'] .switch-thumb {
+  translate: 15px 0;
+  background: var(--color-background);
+}
+
+/* ---- 外框：凹底三区浮起网格（左上预览舞台、右上右栏、底部全宽时间线），面板间置可拖拽分隔条 ----
+   固定桌面三区结构，不做窄屏折行重排：超出部分由所在面板直接裁切。仅右栏页签内容支持横向滑动访问（见「右栏」一节）；
+   各容器使用 overflow: clip 而非 hidden，防止滚轮或聚焦被裁控件触发隐式滚动位移。
+   钳制数值与 use-editor-layout.ts 保持同步：右栏拖拽范围 150–580px，舞台至少保留 360×200px（播放条单行排开），时间线最小高 186px */
+.wf-workspace {
+  --wf-splitter: 10px;
+  /* 右栏页签内容最小排版宽度；右栏窄于该值时不挤压内容，整块裁切并横向滚动 */
+  --wf-side-content: 376px;
+
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  grid-template-areas:
+    'preview side-splitter side'
+    'timeline-splitter timeline-splitter timeline-splitter'
+    'timeline timeline timeline';
+  /* 右栏优先取用户拖拽宽度并为舞台保留 360px；空间不足时退让至内容宽（或用户更窄的设定宽）；
+     极端窄工作台下舞台优先，至少保留 300px 给舞台与播放条 */
+  grid-template-columns:
+    minmax(0, 1fr) var(--wf-splitter)
+    min(
+      max(
+        min(var(--wf-side-content), var(--wf-side-width)),
+        min(var(--wf-side-width), 100% - 360px - var(--wf-splitter))
+      ),
+      100% - 300px - var(--wf-splitter)
+    );
+  /* 未手动调整高度时，时间线按内容自适应且不超过 46% 高度，超限时仅压缩轨道区 */
+  grid-template-rows: minmax(0, 1fr) var(--wf-splitter) fit-content(46%);
+  /* 上缘紧贴工作台 48px 顶栏 */
+  padding: 0 12px 12px;
+  overflow: clip;
+  background: var(--color-control-well);
+  color: var(--color-on-surface);
+  font-size: var(--text-body);
+}
+
+.wf-workspace.is-side-collapsed {
+  grid-template-columns: minmax(0, 1fr) var(--wf-splitter) 50px;
+}
+
+.wf-workspace.is-timeline-sized {
+  grid-template-rows:
+    minmax(0, 1fr) var(--wf-splitter)
+    max(186px, min(var(--wf-timeline-height), 100% - 200px - var(--wf-splitter)));
+}
+
+/* 手动拉高时间线后由轨道区吸收多余高度（未调整时按内容自适应，见「下半」一节） */
+.wf-workspace.is-timeline-sized > .wf-timeline > .wf-tracks {
+  flex-grow: 1;
+}
+
+/* 面板间可拖拽分隔条：悬停、拖拽或键盘聚焦时居中显露短握把 */
+.wf-splitter {
+  display: grid;
+  place-items: center;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-splitter::after {
+  border-radius: var(--radius-full);
+  background: transparent;
+  content: '';
+  transition:
+    background var(--dur-s) var(--ease),
+    width var(--dur-s) var(--ease),
+    height var(--dur-s) var(--ease);
+}
+
+.wf-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  background: var(--color-on-surface-muted);
+}
+
+.wf-side-splitter {
+  grid-area: side-splitter;
+  cursor: col-resize;
+}
+
+.wf-side-splitter::after {
+  width: 3px;
+  height: 34px;
+}
+
+.wf-side-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  height: 52px;
+}
+
+.wf-timeline-splitter {
+  grid-area: timeline-splitter;
+  cursor: row-resize;
+}
+
+.wf-timeline-splitter::after {
+  width: 44px;
+  height: 3px;
+}
+
+.wf-timeline-splitter:is(:hover, :focus-visible, .is-dragging)::after {
+  width: 68px;
+}
