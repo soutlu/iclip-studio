@@ -2,9 +2,9 @@
 <!--
   测试夹具组件（4 秒，未声明固定尺寸、铺满宿主）：
   - 组件根声明 pointer-events: none（模拟组件库常见播放点穿写法），左上角含固定无动画绿色徽标（.fp-badge），
-    验证组件根屏蔽指针时点击内部可视内容仍能整体选中贴片、拖拽移动且围绕中心等比缩放；
+    验证组件根屏蔽指针时点击内部可视内容仍能整体选中元素片段、拖拽移动且围绕中心等比缩放；
   - 右下角含溢出裁剪窗（.fp-window，overflow: hidden）及超大琥珀色内层（.fp-wide），验证可见裁剪框计算；
-  - 左下角留空，验证点击贴片透明空白区可透传选中下方视频。
+  - 左下角留空，验证点击元素片段透明空白区可透传选中下方视频。
 -->
 <html lang="zh-CN" data-composition-id="fixture-passthrough" data-composition-duration="4">
   <head>

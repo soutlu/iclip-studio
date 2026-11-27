@@ -84,7 +84,7 @@ const ELEMENT = /^\/elements\/([^/]+)(?:\/([^/]+)(?:\/(.+))?)?$/
 
 // 画布编辑写入的属性（见 layer-edits.ts）：普通图层位移通过 SDK `moveElement` 写这四个属性，补丁应用后由预览页重算位置
 const POSITION_ATTRIBUTES = ['data-x', 'data-y', EDIT_BASE_X_ATTR, EDIT_BASE_Y_ATTR]
-// 画布缩放、旋转及贴片/场景宿主变换写入的行内样式（SDK 驼峰属性名），浏览器可实时生效无需重载
+// 画布缩放、旋转及元素/模板宿主变换写入的行内样式（SDK 驼峰属性名），浏览器可实时生效无需重载
 const GEOMETRY_STYLES = [
   ...['width', 'height', 'boxSizing', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight'],
   ...['flexBasis', 'flexGrow', 'flexShrink', 'display', 'rotate', 'transform'],
@@ -127,7 +127,7 @@ const htmlOf = (value: unknown) =>
 
 const isMediaElement = (value: unknown) => /^\s*<(video|audio)[\s>]/i.test(htmlOf(value) ?? '')
 
-/** 预览文档 `html` 里贴片、场景和字幕宿主（带 `data-composition-src` 的元素）的编号。 */
+/** 预览文档 `html` 里元素、模板和字幕宿主（带 `data-composition-src` 的元素）的编号。 */
 const hostIdsOf = (html: string): ReadonlySet<string> =>
   new Set(
     [

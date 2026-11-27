@@ -380,7 +380,7 @@ describe('useFilmSession · 文件变化的通知', () => {
     expect(result.current.film?.clips).toEqual([video()])
   })
 
-  it('贴片的组件文件在别处改了：预览要重新加载，工程不重读、不提示，没存的改动和撤销都还在', async () => {
+  it('元素的组件文件在别处改了：预览要重新加载，工程不重读、不提示，没存的改动和撤销都还在', async () => {
     const conversation = crypto.randomUUID()
     const path = 'final-cut/compositions/fixtures/fixture-fields.html'
     const component = itemFileContent('compositions/fixtures/fixture-fields.html')
@@ -993,7 +993,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
     audio({ id: 'm', duration: 8_000 }),
   ]
 
-  it('画面上改贴片整个：挪、缩放、转写在主文件里宿主自己的行内样式上，不写 data-x，一步撤销；组件文件不改', async () => {
+  it('画面上改元素整个：挪、缩放、转写在主文件里宿主自己的行内样式上，不写 data-x，一步撤销；组件文件不改', async () => {
     const conversation = crypto.randomUUID()
     const path = 'final-cut/compositions/fixtures/fixture-fields.html'
     const component = `<!doctype html>
@@ -1009,7 +1009,7 @@ describe('useFilmSession · 组件或块的片段、音频片段和「其他」�
       conversation,
     )
     const layer = result.current.film?.layers.find((each) => each.host)
-    if (layer === undefined) throw new Error('没有认出贴片的宿主')
+    if (layer === undefined) throw new Error('没有认出元素的宿主')
     expect(layer).toMatchObject({ file: 'index.html', clip: 'title-1', scope: null })
     // 组件文件里的元素不是层
     expect(result.current.film?.layers.filter((each) => each.scope === 'title-1')).toEqual([])
@@ -1611,7 +1611,7 @@ describe('useFilmSession · 切开', () => {
     expect(result.current.film?.canUndo).toBe(false)
   })
 
-  it('贴片、场景片段的后半段写从组件的第几秒开始播；可填项的值、叠放顺序、隐藏都照抄', async () => {
+  it('元素、模板片段的后半段写从组件的第几秒开始播；可填项的值、叠放顺序、隐藏都照抄', async () => {
     const { result } = await openWith([
       host({ id: 't', duration: 4_000, values: { headline: '新品' }, z: 3, hidden: true }),
     ])
@@ -2750,7 +2750,7 @@ describe('useFilmSession · 字幕', () => {
     })
   })
 
-  describe('贴片、场景的文字：固定 / 随语言', () => {
+  describe('元素、模板的文字：固定 / 随语言', () => {
     const EN_PATH = 'final-cut/locales/en.json'
     const DE_PATH = 'final-cut/locales/de.json'
 
@@ -2856,7 +2856,7 @@ describe('useFilmSession · 字幕', () => {
       expect(variablesIn(html(result))).toEqual({})
     })
 
-    it('加了语言以后新加的贴片随语言（西文的也一样），没加语言时加的不随语言', async () => {
+    it('加了语言以后新加的元素随语言（西文的也一样），没加语言时加的不随语言', async () => {
       const { result } = await openTexts([video()])
       const fields = fixtureItem('fixture-fields')
       const addAt = async (values: Record<string, string>, start: number) => {
@@ -2872,14 +2872,14 @@ describe('useFilmSession · 字幕', () => {
       const chinese = await addAt({ text: '早秋新品' }, 5_000)
       const latin = await addAt({ text: 'AUTUMN LINEN' }, 10_000)
       if (before === undefined || chinese === undefined || latin === undefined)
-        throw new Error('没有加上贴片')
+        throw new Error('没有加上元素')
       // 加 English 时已有的那个跟着改成随语言
       expect(hostIn(html(result), before)?.bindings).toEqual({ text: `txt_${before}_text` })
       expect(hostIn(html(result), chinese)?.bindings).toEqual({ text: `txt_${chinese}_text` })
       expect(hostIn(html(result), latin)?.bindings).toEqual({ text: `txt_${latin}_text` })
       expect(variablesIn(html(result))[`txt_${chinese}_text`]).toBe('早秋新品')
       expect(variablesIn(html(result))[`txt_${latin}_text`]).toBe('AUTUMN LINEN')
-      // 加贴片和它的绑定是一步
+      // 加元素和它的绑定是一步
       act(() => result.current.undo())
       expect(hostIn(html(result), latin)).toBeUndefined()
       act(() => result.current.undo())
@@ -2966,7 +2966,7 @@ describe('useFilmSession · 字幕', () => {
       expect(result.current.film?.canUndo).toBe(false)
     })
 
-    it('贴片的外文也有字形：值表里贴片文字的字算进字体块', async () => {
+    it('元素的外文也有字形：值表里元素文字的字算进字体块', async () => {
       const catalog = {
         ...fixtureCatalog,
         cjk: {
@@ -2996,7 +2996,7 @@ describe('useFilmSession · 字幕', () => {
       expect(html(result)).toContain('latin-ext-700.woff2')
     })
 
-    it('删贴片：同一步里去掉它随语言字段的根变量和所有值表里的值；撤销都回来', async () => {
+    it('删元素：同一步里去掉它随语言字段的根变量和所有值表里的值；撤销都回来', async () => {
       const { result, conversation } = await openTexts(
         [host({ id: 't1', values: { text: '新品上市' } }), video({ start: 2_000 })],
         {
@@ -3020,7 +3020,7 @@ describe('useFilmSession · 字幕', () => {
       expect(storedValues(conversation, DE_PATH)).toEqual({ txt_t1_text: 'Neu' })
     })
 
-    it('切开随语言的贴片：后半段换成按自己编号取的根变量，声明和各语言的值复制一份；两半各改各的', async () => {
+    it('切开随语言的元素：后半段换成按自己编号取的根变量，声明和各语言的值复制一份；两半各改各的', async () => {
       const { result } = await openTexts(
         [host({ id: 't1', duration: 4_000, values: { text: '新品上市' } })],
         { [EN_PATH]: '{"txt_t1_text": "New in"}' },
@@ -3245,9 +3245,9 @@ describe('useFilmSession · 画面尺寸', () => {
 
   const headOf = (html: string) => html.slice(0, html.indexOf('</head>'))
 
-  it('720×1280 换成横屏：只改画面，两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的贴片和设过字号的字幕各自写着的样式不变，没单独设过字号的字幕跟着新画面的默认字号；撤销、重做逐字回去', async () => {
+  it('720×1280 换成横屏：只改画面，两个文件的根是新尺寸，<head> 里没有旧尺寸；挪过、缩放过的元素和设过字号的字幕各自写着的样式不变，没单独设过字号的字幕跟着新画面的默认字号；撤销、重做逐字回去', async () => {
     const { result, conversation } = await openFilm([video(), host()], CANVAS)
-    // 用户在画面上把贴片往右下挪了一点、放大了一些
+    // 用户在画面上把元素往右下挪了一点、放大了一些
     act(() =>
       result.current.editLayers([
         {

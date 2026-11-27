@@ -46,7 +46,7 @@ describe('final-cut 编辑器 · 属性', () => {
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
   const sideTab = (name: string) =>
     within(
-      screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
+      screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
     ).getByRole('tab', { name })
   const row = () => screen.getByRole('group', { name: '画面 1' })
   const pick = (user: ReturnType<typeof userEvent.setup>, label: string) =>
@@ -120,7 +120,7 @@ describe('final-cut 编辑器 · 属性', () => {
     const names = within(within(inspector()).getByRole('list', { name: '选中的片段' }))
       .getAllByRole('listitem')
       .map((item) => item.textContent)
-    expect(names).toEqual(['测试可填项贴片', 'B · 镜头 1视频'])
+    expect(names).toEqual(['测试可填项元素', 'B · 镜头 1视频'])
     expect(within(inspector()).queryByRole('textbox')).toBeNull()
     expect(within(inspector()).queryByRole('heading', { level: 4 })).toBeNull()
 
@@ -147,7 +147,7 @@ describe('final-cut 编辑器 · 属性', () => {
     await pick(user, '测试可填项')
     const head = within(within(inspector()).getByRole('banner'))
     expect(head.getByRole('heading', { name: '测试可填项' })).toBeVisible()
-    expect(head.getByText('贴片')).toBeVisible()
+    expect(head.getByText('元素')).toBeVisible()
     expect(head.getByText('3.50s')).toBeVisible()
     expect(sections()).toEqual(['显示时长', '内容与样式'])
     expect(within(inspector()).queryByRole('button', { expanded: true })).toBeNull()
@@ -155,7 +155,7 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toBeVisible()
   })
 
-  it('头部名字后面的种类按条目在组件库里的种类写：块写「场景」；组件库里没有的条目、手写的元素是「其他」，不写种类、只有「显示时长」', async () => {
+  it('头部名字后面的种类按条目在组件库里的种类写：块写「模板」；组件库里没有的条目、手写的标签是「其他」，不写种类、只有「显示时长」', async () => {
     const user = await openWith(
       [brand()],
       '<div id="gone-1" data-label="已下架" data-composition-id="fixture-gone"' +
@@ -166,14 +166,14 @@ describe('final-cut 编辑器 · 属性', () => {
     const head = () => within(inspector()).getByRole('banner')
     await pick(user, '示例品牌 片尾')
     expect(within(head()).getByRole('heading', { name: '示例品牌 片尾' })).toBeVisible()
-    expect(within(head()).getByText('场景')).toBeVisible()
-    expect(within(head()).queryByText('贴片')).toBeNull()
+    expect(within(head()).getByText('模板')).toBeVisible()
+    expect(within(head()).queryByText('元素')).toBeNull()
 
     for (const name of ['已下架', '手写文字']) {
       await user.click(screen.getByRole('button', { name: new RegExp(`^选中：${name}，`) }))
       expect(within(head()).getByRole('heading', { name })).toBeVisible()
-      expect(within(head()).queryByText('场景')).toBeNull()
-      expect(within(head()).queryByText('贴片')).toBeNull()
+      expect(within(head()).queryByText('模板')).toBeNull()
+      expect(within(head()).queryByText('元素')).toBeNull()
       expect(sections()).toEqual(['显示时长'])
     }
     // 「其他」片段也能改显示时长：结尾往后拉，开始不动
@@ -464,7 +464,7 @@ describe('final-cut 编辑器 · 属性', () => {
   })
 
   describe('显示时长', () => {
-    // 一行两个贴片：测试可填项在 1–3 秒，测试叠加从 5 秒开始
+    // 一行两个元素：测试可填项在 1–3 秒，测试叠加从 5 秒开始
     const twoApart = () => [host({ start: 1_000 }), overlay()]
     const field = () => within(inspector()).getByRole('textbox', { name: '显示时长' })
     const step = (name: '缩短 0.5 秒' | '延长 0.5 秒') =>

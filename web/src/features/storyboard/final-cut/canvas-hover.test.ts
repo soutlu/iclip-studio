@@ -33,7 +33,7 @@ const measure = (cx: number): LayerMeasure => ({
   refusal: 0,
 })
 
-// 表：0 是贴片的宿主，1 是字幕的一句，2 是视频片段
+// 表：0 是元素的宿主，1 是字幕的一句，2 是视频片段
 const LAYERS = [layer('host', 'item', true), layer('line', 'line'), layer('video', 'video')]
 const picked = (at: number, cx: number, field: string | null = null): PickedLayer => ({
   layer: at,
@@ -41,7 +41,7 @@ const picked = (at: number, cx: number, field: string | null = null): PickedLaye
   measure: measure(cx),
 })
 const isCaption = (each: CanvasLayer) => each.key === 'line'
-// 贴片的文字可填项是 text
+// 元素的文字可填项是 text
 const JUDGES = {
   isText: (each: CanvasLayer, field: string | null) =>
     isCaption(each) || (each.host && field === 'text'),
@@ -49,12 +49,12 @@ const JUDGES = {
 }
 
 describe('悬停框哪一层', () => {
-  it('框最上面那一层：贴片是它的宿主，算在贴片的片段上', () => {
+  it('框最上面那一层：元素是它的宿主，算在元素的片段上', () => {
     const hover = hoverOf([picked(0, 1), picked(2, 3)], LAYERS, new Set(), JUDGES)
     expect(hover).toEqual({ frame: measure(1).frame, clip: 'item', text: false })
   })
 
-  it('指针下是贴片里绑着文字可填项的元素：框还是整个宿主，能原地改字', () => {
+  it('指针下是元素里绑着文字可填项的元素：框还是整个宿主，能原地改字', () => {
     const hover = hoverOf([picked(0, 1, 'text'), picked(2, 3)], LAYERS, new Set(), JUDGES)
     expect(hover).toEqual({ frame: measure(1).frame, clip: 'item', text: true })
   })

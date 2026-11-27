@@ -52,7 +52,7 @@ describe('final-cut 编辑器 · 配音', () => {
   }
   const ORIGINAL_B = { kind: 'original', spans: [{ startMs: 900, endMs: 1_900 }] }
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const voiceRow = () => within(panel()).getByRole('group', { name: '人声设置' })
   /** 人声设置里的按钮：「保留原声」「重新生成」「更换音色」。 */
   const voiceButton = (name: string) => within(voiceRow()).getByRole('button', { name })
@@ -185,8 +185,8 @@ describe('final-cut 编辑器 · 配音', () => {
     await shot(/^出片 A 镜头 1，/)
     await user.click(
       within(
-        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕' }),
+        screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: /^字幕/ }),
     )
     await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
     await waitFor(() => expect(voiceRow()).toBeVisible())
@@ -781,7 +781,7 @@ describe('final-cut 编辑器 · 配音', () => {
 describe('final-cut 编辑器 · 旁白配音', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const SPEECH_URL = 'https://media.test/speech.m4a'
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const narrationClips = () => screen.queryAllByRole('group', { name: /^旁白 · / })
 
@@ -870,8 +870,8 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     await shot(/^出片 A 镜头 1，/)
     await user.click(
       within(
-        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕' }),
+        screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: /^字幕/ }),
     )
     return user
   }

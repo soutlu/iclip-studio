@@ -30,7 +30,7 @@ import type { ExportLocale } from './request'
 /**
  * 按语言导出逻辑：final-cut 原文为视频自有语言（取主文件根元素变量的默认值，无独立值表），
  * 每种目标语言对应一份值表 `locales/<语言>.json`（变量 ID → 目标语言取值）。导出规则与编辑器多语言预览一致：
- * 字幕文本作为主文件根变量传给渲染器；贴片与场景中的多语言字段由 `localizedHostValues`（与预览共用）
+ * 字幕文本作为主文件根变量传给渲染器；元素与模板片段中的多语言字段由 `localizedHostValues`（与预览共用）
  * 合并至宿主元素的 `data-variable-values`；人声轨道由 `localizedVoices`（与预览共用）处理，导出原文时亦
  * 通过该函数移除其他语种的配音片段。
  */
@@ -125,7 +125,7 @@ export function checkLocaleValues(
 }
 
 /**
- * 将主文件中贴片与场景宿主的多语言属性替换为指定语言取值：仅重写含 `data-locale-bindings` 的宿主
+ * 将主文件中元素与模板宿主的多语言属性替换为指定语言取值：仅重写含 `data-locale-bindings` 的宿主
  * `data-variable-values`（规则见 `localizedHostValues`，`values` 为已校验值表，`defaults` 为根变量默认值）。
  * 字幕宿主、无多语言绑定的宿主及主文件其余内容均保持不变。
  */

@@ -159,8 +159,8 @@ test('final-cut 编辑器：选镜头加入轨道、播放、撤销、导出下�
   expect(scripts).not.toHaveLength(0)
   for (const src of scripts) expect(src).toMatch(libraryOf(previewOrigin))
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
   const card = side.getByRole('list').getByRole('group', { name: /秒$/ }).first()
   const hoverRuntime = runtimeRequested()
   await card.hover()
@@ -498,11 +498,11 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   const withVideo = htmlOf(await first)
   const videoSeconds = Number(/<video [^>]*data-duration="([^"]+)"/.exec(withVideo)?.[1])
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
-  await side.getByRole('tab', { name: '场景' }).click()
-  await side.getByRole('searchbox', { name: '搜索场景' }).fill('渐变')
-  const cards = side.getByRole('list', { name: '场景' }).getByRole('group')
+  await side.getByRole('tab', { name: '模板' }).click()
+  await side.getByRole('searchbox', { name: '搜索模板' }).fill('渐变')
+  const cards = side.getByRole('list', { name: '模板' }).getByRole('group')
   await expect(cards).toHaveCount(1)
   const scene = cards.first()
   await expect(scene).toHaveAccessibleName('测试画面，6 秒')
@@ -546,9 +546,9 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
     .toEqual({ width: true, height: true, centered: true })
 
   // 拖一个组件到第一行视频片段后面的空处（离各个吸附点都远）：落在指针的位置
-  await side.getByRole('tab', { name: '贴片' }).click()
+  await side.getByRole('tab', { name: '元素' }).click()
   const overlay = side
-    .getByRole('list', { name: '贴片' })
+    .getByRole('list', { name: '元素' })
     .getByRole('group', { name: '测试叠加，4 秒' })
   const row = editor.getByRole('group', { name: '画面 1', exact: true })
   // 6 秒长、从 0 开始的那个片段量出每秒多少像素
@@ -585,7 +585,7 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   await undone
 })
 
-test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；「显示时长」加 0.5 秒；取色板拖方块和色相条只在松手时写一次、拖到灰再拖回来色相还在；Esc 只关取色板，点空白处回到贴片页签，撤销一步回去', async ({
+test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；「显示时长」加 0.5 秒；取色板拖方块和色相条只在松手时写一次、拖到灰再拖回来色相还在；Esc 只关取色板，点空白处回到元素页签，撤销一步回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -593,12 +593,12 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await expect(side.getByRole('tab', { name: '镜头' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector).toHaveCount(0)
 
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
@@ -614,7 +614,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   const text = inspector.getByRole('textbox', { name: '文字' })
   await expect(text).toHaveValue('示例文字')
 
-  // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里。贴片的字运行库只在加载时读，整份重新加载
+  // 分两下输入，中间停过提交的时间：预览换了一份，焦点还在框里。元素的字运行库只在加载时读，整份重新加载
   await readyPlayer(editor)
   await markFinalCutPreviewPlayer(editor)
   await text.fill('新的')
@@ -720,8 +720,8 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
     'aria-pressed',
     'false',
   )
-  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
-  await expect(side.getByRole('searchbox', { name: '搜索贴片' })).toHaveValue('可填项')
+  await expect(side.getByRole('tab', { name: '元素' })).toHaveAttribute('aria-selected', 'true')
+  await expect(side.getByRole('searchbox', { name: '搜索元素' })).toHaveValue('可填项')
   await expect(inspector).toHaveCount(0)
 
   // 撤销一步：回到拖色相条之前的颜色
@@ -768,7 +768,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
     .getByRole('slider', { name: '播放进度' })
   await expect(progress).toHaveAttribute('aria-valuetext', /^00:00\.00 \/ 00:0\d\.\d\d$/)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const list = side.getByRole('list', { name: '音频' })
   const guitar = list.getByRole('listitem').filter({ hasText: '轻快原声吉他，适合秋季穿搭' })
@@ -885,7 +885,7 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
   await first
 
   // 音频加到播放头（0 秒），在画面行下面新开一行
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1007,7 +1007,7 @@ test('智能调音：把配乐的角色改成人声、打开自动平稳音量�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1064,7 +1064,7 @@ test('音色风格与精细调音：给配乐选一个预设、调一段均衡�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1138,7 +1138,7 @@ test('调音直接打进预览：给配乐选一个音色风格，预览不换�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1181,7 +1181,7 @@ test('波形音量关键帧：打开后在配乐的波形线上按下加一个�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1276,7 +1276,7 @@ test('音量关键帧跟着裁剪走：配乐上加一个点，在时间线上�
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
   const inspector = editor.getByRole('tabpanel', { name: '属性' })
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1331,7 +1331,7 @@ test('音量关键帧跟着裁剪走：配乐上加一个点，在时间线上�
   expect(after[2]?.t).toBeCloseTo((before[2]?.t ?? 0) - 0.1, 3)
 })
 
-test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到贴片页签', async ({
+test('在元素卡片上按 ] 选中片段：侧栏切到「属性」，焦点交还编辑器，Delete 照常删掉；选中没了回到元素页签', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1346,10 +1346,10 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
   await side
-    .getByRole('list', { name: '贴片' })
+    .getByRole('list', { name: '元素' })
     .getByRole('group')
     .first()
     .getByRole('button', { name: '加到播放头' })
@@ -1362,8 +1362,8 @@ test('在贴片卡片上按 ] 选中片段：侧栏切到「属性」，焦点�
   const removed = mainSaved(page, 0)
   await page.keyboard.press('Delete')
   await removed
-  await expect(side.getByRole('tab', { name: '贴片' })).toHaveAttribute('aria-selected', 'true')
-  await expect(side.getByRole('list', { name: '贴片' })).toBeVisible()
+  await expect(side.getByRole('tab', { name: '元素' })).toHaveAttribute('aria-selected', 'true')
+  await expect(side.getByRole('list', { name: '元素' })).toBeVisible()
 })
 
 test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行，放不下的被卡片裁掉，右栏内容照最窄排、被裁的能横着滑过去，页面没有横向滚动条', async ({
@@ -1372,7 +1372,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   await page.setViewportSize({ width: 1440, height: 900 })
   const panel = await openConversation(page, '夜景延时素材生成')
   const editor = await createFinalCut(panel)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   const sideSplitter = editor.getByRole('button', { name: '调整右栏宽度' })
   const preview = editor.getByRole('region', { name: '预览' })
   /** 右栏分隔条的提示写的是右栏实际排出来的宽度（记着的 432 会被编辑区夹窄）。 */
@@ -1458,7 +1458,7 @@ test('拖右栏分割条：往右拖变窄、内容被裁；拖过头收成竖�
   const panel = await openConversation(page, '夜景延时素材生成')
   await widenWorkbench(page)
   const editor = await createFinalCut(panel)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   const sideSplitter = editor.getByRole('button', { name: '调整右栏宽度' })
   const start = await boxOf(side)
   expect(start.width).toBeGreaterThanOrEqual(376)
@@ -1492,7 +1492,7 @@ test('拖右栏分割条：往右拖变窄、内容被裁；拖过头收成竖�
   await page.getByRole('button', { name: '折叠侧边栏' }).click()
   const reopened = await openFinalCut(panelAgain)
   const sideAgain = reopened.getByRole('complementary', {
-    name: '镜头、贴片、场景、配乐、字幕和属性',
+    name: '镜头、元素、模板、配乐、字幕和属性',
   })
   await expect.poll(async () => Math.round((await boxOf(sideAgain)).width)).toBe(300)
 
@@ -1707,7 +1707,7 @@ test('节拍吸附：加一首配乐，片段上画出算出来的节拍；把�
   await added
 
   // 音频库里这首配乐每 0.5 秒一下鼓点：加到播放头（0 秒），在浏览器里算出节拍画在片段上
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const withMusic = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   await side
@@ -1775,7 +1775,7 @@ test('节拍：从素材栏拖一个镜头到一拍旁边松手，开头落在�
   await added
 
   // 加一首配乐：算出节拍画在片段上，节拍文件建进工程的 beats/ 下
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '配乐' }).click()
   const withMusic = mainSavedWith(page, (html) => savedAudio(html).length === 1)
   const beatFile = page.waitForRequest(
@@ -2159,7 +2159,7 @@ test('改完马上切到别的页签再切回来：改动还在，接着改照�
   await expect(page.getByText(/已在别处修改/)).toHaveCount(0)
 })
 
-test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷新页面后都还在，预览里画出了贴片', async ({
+test('新建工程、加镜头和一个元素：条目文件拷进工程，刷新页面后都还在，预览里画出了元素', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -2188,9 +2188,9 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   expect((await first).method()).toBe('PUT')
   expect((await first).postDataJSON()).toMatchObject({ expectedVersion: 1 })
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('叠加')
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill('叠加')
   const card = side.getByRole('group', { name: '测试叠加，4 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试叠加') !== null)
   await card.hover()
@@ -2200,7 +2200,7 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   expect(placed).toMatchObject({ item: 'fixture-overlay', duration: 4 })
   expect(createdFiles).toEqual(['index.html', 'compositions/fixtures/fixture-overlay.html'])
 
-  // 刷新整页：工程从工作区读回来，镜头和贴片都还在。等这次保存有了答复再刷新——请求刚发出就刷新，这一版还没存下来
+  // 刷新整页：工程从工作区读回来，镜头和元素都还在。等这次保存有了答复再刷新——请求刚发出就刷新，这一版还没存下来
   await saved.response()
   await page.reload()
   const reloaded = await openFinalCut(await openConversation(page, '夜景延时素材生成'))
@@ -2211,7 +2211,7 @@ test('新建工程、加镜头和一个贴片：条目文件拷进工程，刷�
   ).toHaveCount(1)
   await expect(reloaded.getByRole('group', { name: '测试叠加，4.0 秒' })).toBeVisible()
 
-  // 预览里的贴片：组件文件凭令牌从工程取，画出了组件里的圆环
+  // 预览里的元素：组件文件凭令牌从工程取，画出了组件里的圆环
   const player = await readyPlayer(reloaded)
   await expect
     .poll(() =>
@@ -2432,7 +2432,7 @@ test('字幕：在「字幕」页签加一句、改字，字幕文件和主文�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   await expect(tab.getByText(/暂无字幕/)).toBeVisible()
@@ -2554,7 +2554,7 @@ test('字幕的改动直接打进预览：改一句的字、挪一句都不换�
   // 整条素材放进 final-cut：字幕在它里面挪，总长不变
   await addWholeTake(page, editor)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const created = page.waitForRequest(
@@ -2632,7 +2632,7 @@ test('字幕行：拖一句挪位置、拖结尾裁短，存下来的字幕场�
   await page.keyboard.press('Enter')
   await added
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneSavedWith = (check: (scene: string) => boolean) =>
@@ -2728,7 +2728,7 @@ test('识别字幕：点「识别字幕」发起一次识别，识别完写进�
   const videoId = /<video [^>]*id="([^"]+)"/.exec(htmlOf(added))?.[1]
   expect(videoId).toBeDefined()
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneSavedWith = (check: (lines: ReturnType<typeof savedCaptionLines>) => boolean) =>
@@ -2794,7 +2794,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   await page.keyboard.press('Enter')
   await added
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneCreated = page.waitForRequest(
@@ -2865,7 +2865,7 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
     .click()
   await page.keyboard.press('Enter')
   await added
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneCreated = page.waitForRequest(
@@ -3026,7 +3026,7 @@ const jsonAttribute = (tag: string, name: string): unknown => {
   return value === undefined ? undefined : JSON.parse(value.replaceAll('&quot;', '"'))
 }
 
-test('贴片的文字随语言：加上 English 时主文件里宿主记着根变量、根上声明了它，在「组件文字」里给原文是中文的字段写英文，English 值表里是英文，预览里贴片显示英文', async ({
+test('元素的文字随语言：加上 English 时主文件里宿主记着根变量、根上声明了它，在「画面文字」里给原文是中文的字段写英文，English 值表里是英文，预览里元素显示英文', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -3042,9 +3042,9 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
   await page.keyboard.press('Enter')
   await first
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
@@ -3070,7 +3070,7 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
 
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
-  await tab.getByRole('button', { name: '组件文字 1' }).click()
+  await tab.getByRole('button', { name: '画面文字 1' }).click()
   await expect(tab.getByRole('button', { name: '文字：随语言' })).toBeVisible()
   const field = tab.getByRole('textbox', { name: '测试可填项 文字' })
   await expect(field).toHaveValue('')
@@ -3083,7 +3083,7 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
     [variable]: 'Hello there',
   })
 
-  // 预览：贴片里的字是英文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
+  // 预览：元素里的字是英文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
   const player = await readyPlayer(editor)
   const shownText = () =>
     player.evaluateAll((elements, hostId) => {
@@ -3095,7 +3095,7 @@ test('贴片的文字随语言：加上 English 时主文件里宿主记着根�
   await expect.poll(shownText).toBe('Hello there')
 })
 
-test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言的文字一次翻好，存下的 English 值表里是译文，预览里显示译文', async ({
+test('翻译：加上 English 后点「翻译」，字幕和元素里随语言的文字一次翻好，存下的 English 值表里是译文，预览里显示译文', async ({
   page,
 }) => {
   test.setTimeout(90_000)
@@ -3112,10 +3112,10 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
   await page.keyboard.press('Enter')
   await first
 
-  // 播放头处加一个带文字可填项的贴片、一句字幕
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('可填项')
+  // 播放头处加一个带文字可填项的元素、一句字幕
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill('可填项')
   const card = side.getByRole('group', { name: '测试可填项，5 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试可填项') !== null)
   await card.hover()
@@ -3152,7 +3152,7 @@ test('翻译：加上 English 后点「翻译」，字幕和贴片里随语言�
     '[EN] 新字幕',
   )
 
-  // 预览：第 0 秒字幕和贴片都是译文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
+  // 预览：第 0 秒字幕和元素都是译文；改了值以后预览会换一个播放器重新加载，等只剩一个再看
   const player = await readyPlayer(editor)
   const shown = () =>
     player.evaluateAll((elements, hostId) => {
@@ -3183,7 +3183,7 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
@@ -3327,7 +3327,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   const panel = await openConversation(page, '工具过程展示')
   const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
@@ -3410,7 +3410,7 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   const panel = await openConversation(page, '工具过程展示')
   const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
@@ -3529,7 +3529,7 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
     .click()
   await page.keyboard.press('Enter')
   await added
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
 
@@ -3586,7 +3586,7 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   const panel = await openConversation(page, '工具过程展示')
   const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const recognized = page.waitForRequest(
@@ -3657,7 +3657,7 @@ const clipButton = (editor: Locator, row: number, name: string) =>
     .getByRole('button', { name: new RegExp(`^选中：${name}，`) })
 
 /**
- * 打开 final-cut 编辑器，放进镜头 1（0–1 秒，画面 1 行）和贴片「测试可填项」（0–5 秒，叠在上面），播放头停在
+ * 打开 final-cut 编辑器，放进镜头 1（0–1 秒，画面 1 行）和元素「测试可填项」（0–5 秒，叠在上面），播放头停在
  * 0.5 秒（两个都显示着）；返回编辑器、盖在画面上的编辑层和正在显示的播放器。
  */
 const openWithCard = async (
@@ -3680,9 +3680,9 @@ const openWithCard = async (
     .click()
   await page.keyboard.press('Enter')
   await first
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill(item.search)
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill(item.search)
   const card = side.getByRole('group', { name: `${item.title}，${item.seconds} 秒` })
   const added = mainSavedWith(page, (html) => savedItem(html, item.title) !== null)
   await card.hover()
@@ -3743,7 +3743,7 @@ const canvasSpot = async (layer: Locator, player: Locator, selector: string) => 
   }
 }
 
-// 贴片「测试可填项」宿主（1920×1080 设计尺寸，按画幅缩放居中）及其内部文字节点
+// 元素「测试可填项」宿主（1920×1080 设计尺寸，按画幅缩放居中）及其内部文字节点
 const CARD = '#film > .component'
 const TEXT = `${CARD} #ff-text`
 const CARD_FILE = 'compositions/fixtures/fixture-fields.html'
@@ -3804,7 +3804,7 @@ const shownOnPage = async (layer: Locator, player: Locator, selector: string) =>
   }
 }
 
-test('画面上点选：点贴片里画出来的字、色底、矢量图形都选中整个贴片，框就是宿主、带把手，透明的地方点到下面的视频；同一处再点一下换成压在下面的视频，再点回到贴片；时间线上选中贴片时也框住宿主、带把手；点空白处取消', async ({
+test('画面上点选：点元素里画出来的字、色底、矢量图形都选中整个元素，框就是宿主、带把手，透明的地方点到下面的视频；同一处再点一下换成压在下面的视频，再点回到元素；时间线上选中元素时也框住宿主、带把手；点空白处取消', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -3820,7 +3820,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(frame.locator('.wf-canvas-handle')).toHaveCount(4)
   await expect(layer.getByRole('button', { name: '旋转' })).toBeVisible()
 
-  // 矢量图形画的内容（下面压着视频）也是整个贴片
+  // 矢量图形画的内容（下面压着视频）也是整个元素
   await page.keyboard.press('Escape')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
   const mark = await canvasSpot(layer, player, `${CARD} #ff-mark`)
@@ -3830,7 +3830,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(frame).toBeVisible()
   alignsWith(await boxOf(frame), await shownOnPage(layer, player, CARD))
 
-  // 贴片里透明的地方（宿主框里，没有字、没有色底）点到下面的视频
+  // 元素里透明的地方（宿主框里，没有字、没有色底）点到下面的视频
   await page.keyboard.press('Escape')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
   const band = await shownOnPage(layer, player, CARD)
@@ -3838,7 +3838,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(video).toHaveAttribute('aria-pressed', 'true')
   await expect(card).toHaveAttribute('aria-pressed', 'false')
 
-  // 色底上没有字的地方也是整个贴片
+  // 色底上没有字的地方也是整个元素
   await page.keyboard.press('Escape')
   await expect(video).toHaveAttribute('aria-pressed', 'false')
   const panel = await shownOnPage(layer, player, `${CARD} #ff-panel`)
@@ -3846,7 +3846,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(frame).toBeVisible()
 
-  // 隔过 600 毫秒再在同一处很快连点：换成压在下面的视频，再点回到贴片（贴片里的层不轮到）
+  // 隔过 600 毫秒再在同一处很快连点：换成压在下面的视频，再点回到元素（元素里的层不轮到）
   await page.waitForTimeout(700)
   await page.mouse.click(spot.x, spot.y)
   await page.mouse.click(spot.x, spot.y)
@@ -3857,7 +3857,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   await expect(frame).toBeVisible()
 
-  // 时间线上选中贴片：同样框住宿主、带把手
+  // 时间线上选中元素：同样框住宿主、带把手
   await video.click()
   await card.click()
   await expect(frame).toBeVisible()
@@ -3865,7 +3865,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(frame.locator('.wf-canvas-handle')).toHaveCount(4)
   await expect(layer.getByRole('button', { name: '旋转' })).toBeVisible()
 
-  // 播放头挪到 1.5 秒（视频已经结束），点画面上贴片外面没有层的地方：取消选中
+  // 播放头挪到 1.5 秒（视频已经结束），点画面上元素外面没有层的地方：取消选中
   await stepPlayhead(page, editor, 5, 10)
   await expect(card).toHaveAttribute('aria-pressed', 'true')
   const canvas = await boxOf(layer)
@@ -3874,7 +3874,7 @@ test('画面上点选：点贴片里画出来的字、色底、矢量图形都�
   await expect(layer.getByRole('img')).toHaveCount(0)
 })
 
-/** 读取落盘主文件中贴片「测试可填项」宿主的属性；未找到时返回 `null`。 */
+/** 读取落盘主文件中元素「测试可填项」宿主的属性；未找到时返回 `null`。 */
 const savedCard = (html: string) => savedElement(html, savedItem(html, '测试可填项')?.id ?? '')
 
 /** 解析宿主单轴 `translate` 在 `-50%` 居中基准上叠加的像素偏移（`-50%` 或 `calc(-50% ± Npx)`，无法解析时返回 `NaN`）。 */
@@ -3893,7 +3893,7 @@ const cardOffset = (attributes: Record<string, string> | null) => {
   return { x: centredOffset(x), y: centredOffset(y) }
 }
 
-/** 读取预览 DOM 中贴片宿主的行内 `transform`（未经 GSAP 解析改写时应为空串）。 */
+/** 读取预览 DOM 中元素宿主的行内 `transform`（未经 GSAP 解析改写时应为空串）。 */
 const previewCardTransform = (editor: Locator) =>
   finalCutPreviewPlayer(editor).evaluate(
     (element: PreviewPlayer, query) =>
@@ -3901,7 +3901,7 @@ const previewCardTransform = (editor: Locator) =>
     CARD,
   )
 
-/** 统计贴片组件文件的落盘保存次数。 */
+/** 统计元素组件文件的落盘保存次数。 */
 const countCardSaves = (page: Page, file = CARD_FILE) => {
   const saves = { count: 0 }
   page.on('request', (request) => {
@@ -3910,7 +3910,7 @@ const countCardSaves = (page: Page, file = CARD_FILE) => {
   return saves
 }
 
-test('画面上拖动贴片：拖动中预览跟着动，松手写进主文件里宿主的 translate（不写 data-x），组件文件不动；方向键挪 1 像素、Shift 10 像素；撤销回到原来的位置', async ({
+test('画面上拖动元素：拖动中预览跟着动，松手写进主文件里宿主的 translate（不写 data-x），组件文件不动；方向键挪 1 像素、Shift 10 像素；撤销回到原来的位置', async ({
   page,
 }) => {
   const { editor, layer, player, html } = await openWithCard(page)
@@ -3952,7 +3952,7 @@ test('画面上拖动贴片：拖动中预览跟着动，松手写进主文件�
   )
   expect(await previewCardTransform(editor)).toBe('')
 
-  // 焦点在画面上：方向键挪选中的贴片（画布上 1 像素），不挪播放头
+  // 焦点在画面上：方向键挪选中的元素（画布上 1 像素），不挪播放头
   const nudged = mainSavedWith(page, (now) => {
     const at = cardOffset(savedCard(now))
     return Math.abs(at.x - (offset.x - 1)) < 0.01 && Math.abs(at.y - (offset.y + 10)) < 0.01
@@ -3980,7 +3980,7 @@ test('画面上拖动贴片：拖动中预览跟着动，松手写进主文件�
   expect(cardSaves.count).toBe(0)
 })
 
-test('其它语言下画面上挪贴片：存下之前预览里已经挪过去，存下以后还在挪过去的地方，组件文件不动', async ({
+test('其它语言下画面上挪元素：存下之前预览里已经挪过去，存下以后还在挪过去的地方，组件文件不动', async ({
   page,
 }) => {
   const { editor, layer } = await openWithCard(page)
@@ -4036,7 +4036,7 @@ const canvasSizeOf = (player: Locator) =>
     return { width: Number(film?.dataset['width']), height: Number(film?.dataset['height']) }
   })
 
-test('画面上缩放贴片：拖右下角的把手往外，整块以中心等比放大，主文件里宿主写 scale（不写宽高、不写挪的属性），中心不动', async ({
+test('画面上缩放元素：拖右下角的把手往外，整块以中心等比放大，主文件里宿主写 scale（不写宽高、不写挪的属性），中心不动', async ({
   page,
 }) => {
   const { editor, layer, player, html } = await openWithCard(page)
@@ -4088,7 +4088,7 @@ test('画面上缩放贴片：拖右下角的把手往外，整块以中心等�
   expect(cardSaves.count).toBe(0)
 })
 
-test('画面上旋转贴片：按住 Shift 拖旋转把手吸到 15° 的整数倍，主文件里宿主写 rotate；预览里整块跟着转，撤销回去', async ({
+test('画面上旋转元素：按住 Shift 拖旋转把手吸到 15° 的整数倍，主文件里宿主写 rotate；预览里整块跟着转，撤销回去', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -4135,7 +4135,7 @@ test('画面上旋转贴片：按住 Shift 拖旋转把手吸到 15° 的整数�
   expect(cardSaves.count).toBe(0)
 })
 
-test('组件根不接收指针、宿主没写尺寸（铺满画面）时：点它里面照样选中整个贴片，框是整个画面；拖动写宿主的 translate，往里拖角缩小写 scale、中心不动；组件文件不动，点完组件根还是不接收指针', async ({
+test('组件根不接收指针、宿主没写尺寸（铺满画面）时：点它里面照样选中整个元素，框是整个画面；拖动写宿主的 translate，往里拖角缩小写 scale、中心不动；组件文件不动，点完组件根还是不接收指针', async ({
   page,
 }) => {
   const PASS_FILE = 'compositions/fixtures/fixture-passthrough.html'
@@ -4219,7 +4219,7 @@ test('组件根不接收指针、宿主没写尺寸（铺满画面）时：点�
   expect(cardSaves.count).toBe(0)
 })
 
-test('铺满画面的贴片盖在视频上：点贴片里空着的地方（没有徽标、裁切窗）选中下面的视频，不选中贴片', async ({
+test('铺满画面的元素盖在视频上：点元素里空着的地方（没有徽标、裁切窗）选中下面的视频，不选中元素', async ({
   page,
 }) => {
   const { editor, layer } = await openWithCard(page, {
@@ -4229,7 +4229,7 @@ test('铺满画面的贴片盖在视频上：点贴片里空着的地方（没�
   })
   const card = clipButton(editor, 2, '测试点穿')
   const video = clipButton(editor, 1, 'A · 镜头 1')
-  // 左下角：贴片在这里什么都没画
+  // 左下角：元素在这里什么都没画
   const canvas = await boxOf(layer)
   await page.mouse.click(canvas.x + canvas.width * 0.2, canvas.y + canvas.height * 0.8)
   await expect(video).toHaveAttribute('aria-pressed', 'true')
@@ -4250,11 +4250,11 @@ test('铺满画面的贴片盖在视频上：点贴片里空着的地方（没�
   expect(rotate.y + rotate.height).toBeLessThanOrEqual(seek.y)
 })
 
-test('画面上拖贴片靠近画面中线（播放头处没有视频，只有画布可吸）：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
+test('画面上拖元素靠近画面中线（播放头处没有视频，只有画布可吸）：拖动中画出贯穿画面的对齐线，松手正好落在中线上、线消失；按住 Alt 拖不吸、不画线', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
-  // 播放头挪到 1.5 秒：视频已经结束，画面上只有贴片
+  // 播放头挪到 1.5 秒：视频已经结束，画面上只有元素
   await clipButton(editor, 2, '测试可填项').click()
   await stepPlayhead(page, editor, 5, 10)
   await page.keyboard.press('Escape')
@@ -4263,9 +4263,9 @@ test('画面上拖贴片靠近画面中线（播放头处没有视频，只有�
   )
   const canvas = await boxOf(layer)
   const zoom = canvas.height / height
-  // 贴片和画面差不多一样宽（左右边贴着画面的边），上下拖：只有中心靠得上画面的横中线
+  // 元素和画面差不多一样宽（左右边贴着画面的边），上下拖：只有中心靠得上画面的横中线
   const middle = canvas.y + canvas.height / 2
-  /** 贴片的中心在横中线下面多少（画布像素）。 */
+  /** 元素的中心在横中线下面多少（画布像素）。 */
   const offCentre = async () => {
     const rect = await previewRect(finalCutPreviewPlayer(editor), CARD)
     return (rect.y + rect.height / 2 - 0.5) * height
@@ -4281,7 +4281,7 @@ test('画面上拖贴片靠近画面中线（播放头处没有视频，只有�
   await expect(frame).toBeVisible()
   expect(Math.abs(await offCentre())).toBeLessThan(0.01)
 
-  // 贴片本来就在正中：先按住 Alt 往下拖开 40 个屏幕像素
+  // 元素本来就在正中：先按住 Alt 往下拖开 40 个屏幕像素
   const away = mainSavedWith(page, (saved) => cardOffset(savedCard(saved)).y > 0)
   await page.keyboard.down('Alt')
   await page.mouse.move(spot.x, spot.y)
@@ -4336,7 +4336,7 @@ test('画面上拖贴片靠近画面中线（播放头处没有视频，只有�
   await settles(async () => expect(Math.abs((await offCentre()) - 3 / zoom)).toBeLessThan(0.5))
 })
 
-test('画面上拖贴片靠近另一个贴片的边：吸到那条边上，拖动中在那条边上画出参考线，松手正好落在那里', async ({
+test('画面上拖元素靠近另一个元素的边：吸到那条边上，拖动中在那条边上画出参考线，松手正好落在那里', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -4349,9 +4349,9 @@ test('画面上拖贴片靠近另一个贴片的边：吸到那条边上，拖�
   await lowered
 
   // 再在播放头处加一个铺满画面的「测试点穿」
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  await side.getByRole('tab', { name: '贴片' }).click()
-  await side.getByRole('searchbox', { name: '搜索贴片' }).fill('点穿')
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '元素' }).click()
+  await side.getByRole('searchbox', { name: '搜索元素' }).fill('点穿')
   const item = side.getByRole('group', { name: '测试点穿，4 秒' })
   const added = mainSavedWith(page, (html) => savedItem(html, '测试点穿') !== null)
   await item.hover()
@@ -4363,7 +4363,7 @@ test('画面上拖贴片靠近另一个贴片的边：吸到那条边上，拖�
   const passOf = (content: string) =>
     savedElement(content, savedItem(content, '测试点穿')?.id ?? '')
 
-  // 播放头挪到 1.5 秒：视频已经结束，画面上只有这两个贴片
+  // 播放头挪到 1.5 秒：视频已经结束，画面上只有这两个元素
   await editor.getByRole('button', { name: /^选中：测试可填项，/ }).click()
   await stepPlayhead(page, editor, 5, 10)
   await page.keyboard.press('Escape')
@@ -4409,7 +4409,7 @@ test('画面上拖贴片靠近另一个贴片的边：吸到那条边上，拖�
   await expect(guides).toHaveCount(0)
 })
 
-test('贴片挪得伸出画面：悬停框、选中框只框画面里看得见的那一块，不伸出画面', async ({ page }) => {
+test('元素挪得伸出画面：悬停框、选中框只框画面里看得见的那一块，不伸出画面', async ({ page }) => {
   const { editor, layer, player } = await openWithCard(page)
   const canvas = await boxOf(layer)
   const spot = await canvasSpot(layer, player, TEXT)
@@ -4451,7 +4451,7 @@ test('贴片挪得伸出画面：悬停框、选中框只框画面里看得见�
   fitsCanvas(await boxOf(hover))
 })
 
-test('画面上双击贴片的文字原地改：悬停在字上是输入光标、色底上不是，框都是整个贴片；回车写进可填项的值，预览里换成新的字；Esc 放弃不写', async ({
+test('画面上双击元素的文字原地改：悬停在字上是输入光标、色底上不是，框都是整个元素；回车写进可填项的值，预览里换成新的字；Esc 放弃不写', async ({
   page,
 }) => {
   const { editor, layer, player } = await openWithCard(page)
@@ -4519,9 +4519,9 @@ test('画面上双击贴片的文字原地改：悬停在字上是输入光标�
   await expect.poll(shownText).toBe('画面上改的字|')
 })
 
-test('画面上正显示着字幕时点贴片：选中的还是贴片，铺满画面的字幕宿主不挡', async ({ page }) => {
+test('画面上正显示着字幕时点元素：选中的还是元素，铺满画面的字幕宿主不挡', async ({ page }) => {
   const { editor, layer } = await openWithCard(page)
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const added = page.waitForRequest(
     (request) => savedFileOf(request, CAPTIONS_FILE)?.includes('>新字幕</div>') === true,
@@ -4557,7 +4557,7 @@ const openWithCaptions = async (page: Page) => {
   const editor = await createFinalCut(panel)
   await addWholeTake(page, editor)
 
-  const side = editor.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
   const sceneWith = (text: string) =>

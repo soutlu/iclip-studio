@@ -40,8 +40,8 @@ describe('final-cut 编辑器 · 语言', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const side = () =>
-    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+    screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
 
   /** 最后一次发给预览页的 final-cut 里套的值；没套时是 undefined。 */
   const previewValues = (): unknown => {
@@ -112,7 +112,7 @@ describe('final-cut 编辑器 · 语言', () => {
   it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的显示原文并标出来，不能加字幕；切回原文都回来', async () => {
     const user = await open()
     expect(previewValues()).toBeUndefined()
-    await user.click(within(side()).getByRole('tab', { name: '字幕' }))
+    await user.click(within(side()).getByRole('tab', { name: /^字幕/ }))
 
     await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
     await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one' }))
@@ -194,14 +194,14 @@ describe('final-cut 编辑器 · 语言', () => {
   })
 })
 
-describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
+describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const side = () =>
-    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+    screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const inspector = () => screen.getByRole('tabpanel', { name: '属性' })
-  const texts = () => within(panel()).getByRole('list', { name: '组件文字' })
+  const texts = () => within(panel()).getByRole('list', { name: '画面文字' })
   const savedHost = (id: string) => {
     const element = new DOMParser().parseFromString(savedFilm(), 'text/html').getElementById(id)
     const bindings = element?.getAttribute('data-locale-bindings')
@@ -224,7 +224,7 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     return JSON.parse(element?.getAttribute('data-variable-values') ?? 'null')
   }
 
-  /** 工程：一段视频，两个贴片——中文标题、英文季标。`english` 时已有 English，中文标题随语言。 */
+  /** 工程：一段视频，两个元素——中文标题、英文季标。`english` 时已有 English，中文标题随语言。 */
   const open = async (english = false) => {
     const main = await openComposition(
       mainFile(
@@ -256,22 +256,22 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     const user = userEvent.setup()
     await openEditor()
     await previewSettled()
-    await user.click(within(side()).getByRole('tab', { name: '字幕' }))
+    await user.click(within(side()).getByRole('tab', { name: /^字幕/ }))
     return user
   }
 
-  it('「字幕」页签上面切换「字幕」「组件文字」，各带个数；「组件文字」每个贴片一块、每个文字字段一行，没加语言时不显示「固定 / 随语言」，改的是原文', async () => {
+  it('「字幕」页签上面切换「字幕」「画面文字」，各带个数；「画面文字」每个元素一块、每个文字字段一行，没加语言时不显示「固定 / 随语言」，改的是原文', async () => {
     const user = await open()
-    const views = within(panel()).getByRole('group', { name: '字幕或组件文字' })
+    const views = within(panel()).getByRole('group', { name: '字幕或画面文字' })
     expect(
       within(views)
         .getAllByRole('button')
         .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
     ).toEqual([
       ['字幕 0', 'true'],
-      ['组件文字 2', 'false'],
+      ['画面文字 2', 'false'],
     ])
-    await user.click(within(views).getByRole('button', { name: '组件文字 2' }))
+    await user.click(within(views).getByRole('button', { name: '画面文字 2' }))
     expect(
       within(texts())
         .getAllByRole('listitem')
@@ -290,11 +290,11 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     await waitFor(() => expect(progress()).toHaveAttribute('aria-valuetext', '00:02.00 / 00:04.00'))
   })
 
-  it('加上 English：文字字段都随语言（西文的也一样）；其它语言下随语言的框里写英文存进值表、预览里那个贴片是英文；改成固定的只读；点「随语言」改成固定', async () => {
+  it('加上 English：文字字段都随语言（西文的也一样）；其它语言下随语言的框里写英文存进值表、预览里那个元素是英文；改成固定的只读；点「随语言」改成固定', async () => {
     const user = await open()
     await user.click(
-      within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
-        name: '组件文字 2',
+      within(within(panel()).getByRole('group', { name: '字幕或画面文字' })).getByRole('button', {
+        name: '画面文字 2',
       }),
     )
     await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
@@ -364,7 +364,7 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     expect(within(inspector()).getByRole('button', { name: '文字：固定' })).toBeVisible()
   })
 
-  it('时间线上贴片片段不写字，悬停提示写着「名字 · 文字」，文字是显示着的语言的（没翻的写原文）；改字、换语言后跟着变', async () => {
+  it('时间线上元素片段不写字，悬停提示写着「名字 · 文字」，文字是显示着的语言的（没翻的写原文）；改字、换语言后跟着变', async () => {
     const user = await open(true)
     // 片段的名字（读屏读的）还是原来的名字；片段上不写字，名字和文字在悬停提示里
     const tipOf = async (name: string) => {
@@ -385,8 +385,8 @@ describe('final-cut 编辑器 · 贴片、场景的文字分语言', () => {
     await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
     expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
     await user.click(
-      within(within(panel()).getByRole('group', { name: '字幕或组件文字' })).getByRole('button', {
-        name: '组件文字 2',
+      within(within(panel()).getByRole('group', { name: '字幕或画面文字' })).getByRole('button', {
+        name: '画面文字 2',
       }),
     )
     await user.type(within(texts()).getByRole('textbox', { name: '中文标题 文字' }), 'New in')
@@ -402,7 +402,7 @@ describe('final-cut 编辑器 · 翻译', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const TRANSLATIONS_URL = '*/api/conversations/:conversationId/final-cut/translations'
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
-  const panel = () => screen.getByRole('tabpanel', { name: '字幕' })
+  const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const translateButton = () => within(panel()).getByRole('button', { name: /^(翻译|翻译中…)$/ })
   const savedEnglish = (): unknown =>
     JSON.parse(mockWorkspaceFile(CONVERSATION, EN_FILE)?.content ?? 'null')
@@ -435,7 +435,7 @@ describe('final-cut 编辑器 · 翻译', () => {
   }
 
   /**
-   * 工程：一段视频，两个贴片（中文标题随语言、英文季标固定），字幕 `lines`；English 的值表是 `english`。
+   * 工程：一段视频，两个元素（中文标题随语言、英文季标固定），字幕 `lines`；English 的值表是 `english`。
    * 打开编辑器，切到「字幕」页签。
    */
   const open = async (lines: SceneLine[], english: Record<string, string>) => {
@@ -457,8 +457,8 @@ describe('final-cut 编辑器 · 翻译', () => {
     await previewSettled()
     await user.click(
       within(
-        screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' }),
-      ).getByRole('tab', { name: '字幕' }),
+        screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
+      ).getByRole('tab', { name: /^字幕/ }),
     )
     return user
   }

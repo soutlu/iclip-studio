@@ -21,7 +21,7 @@ afterEach(tearDownEditorCase)
 
 describe('final-cut 编辑器 · 外框', () => {
   const side = () =>
-    screen.getByRole('complementary', { name: '镜头、贴片、场景、配乐、字幕和属性' })
+    screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   const sideSplitter = () => screen.getByRole('button', { name: '调整右栏宽度' })
   const timelineSplitter = () => screen.getByRole('button', { name: '调整时间线高度' })
   /**

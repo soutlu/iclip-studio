@@ -649,7 +649,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(shown.loudness - hidden.loudness).toBeGreaterThan(30)
   }, 600_000)
 
-  it('组件或块的片段：组件按可填项画出来，组件文字用到的中文字形在字体块里声明了', async () => {
+  it('组件或块的片段：组件按可填项画出来，组件里的字用到的中文字形在字体块里声明了', async () => {
     const catalog = library as ComponentCatalog
     // 测试组件按 1920×1080 设计：左下角 x 120–1020、y 720–940 一块色底，色底里左边一行字
     const canvas = { width: 1920, height: 1080 }
@@ -987,12 +987,12 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     expect(large.black).toBeGreaterThan(normal.black * 2)
   }, 600_000)
 
-  it('按语言导出：同一个工程（原文是中文）经接口导原文和 English，字幕和贴片里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
+  it('按语言导出：同一个工程（原文是中文）经接口导原文和 English，字幕和元素片段里随语言的字换成英文；没有错误和警告，不去外网取字体', async () => {
     const catalog = library as ComponentCatalog
     const steps = `${origin}/steps.mp4`
     const title = '成片标题'
     const titleVariable = localeVariableId('title-1', 'text')
-    // 贴片在前 1 秒、字幕在后 1 秒，各取各的那一帧
+    // 元素片段在前 1 秒、字幕在后 1 秒，各取各的那一帧
     const clips: FilmClip[] = [
       video({ src: steps, duration: 2000, muted: true, z: 1 }),
       host({ duration: 1000, values: { text: title, accent: '#2756ff' }, z: 2 }),
@@ -1013,7 +1013,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
       color: null,
       fontSize: null,
     }
-    // 照编辑器的写法：字幕的字只在根上的变量里；贴片的「文字」随语言，宿主记着根变量，根上声明它、默认值是原文
+    // 照编辑器的写法：字幕的字只在根上的变量里；元素片段的「文字」随语言，宿主记着根变量，根上声明它、默认值是原文
     const [main, ...others] = project(clips)
     const session = await openComposition(main?.content ?? '')
     session.addElement('film', 99, captionsHostElement(FRAME, 2000))
@@ -1035,7 +1035,7 @@ describe.skipIf(reason !== null)(`真实渲染${reason ? `（跳过：${reason}�
     const titleArea = { x: 40, y: 240, width: 300, height: 74 }
     const captionArea = { x: 64, y: 256, width: 512, height: 100 }
 
-    /** 经接口导出一次（两次的 `files` 一样，只差 `locale`），取上传的成片里贴片和字幕那两帧。 */
+    /** 经接口导出一次（两次的 `files` 一样，只差 `locale`），取上传的成片里元素片段和字幕那两帧。 */
     const exportIn = async (id: string, locale: 'en' | null) => {
       const { logger, lines } = memoryLogger()
       const queue = new ExportQueue({

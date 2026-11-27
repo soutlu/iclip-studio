@@ -35,7 +35,7 @@ import {
 } from './content-fields'
 import { Keys, Tool } from './editor-toolbar'
 import { SliderControl } from './inspector-controls'
-import { ITEM_KIND_LABEL } from './items'
+import { hostKindOf, ITEM_KIND_LABEL } from './items'
 import type { ShownLocale } from './locales'
 import type { KeyframeStates } from './material-media'
 import { MediaMix, RatePicker } from './media-mix'
@@ -83,7 +83,7 @@ type Props = {
   onRetime: (timings: ReadonlyMap<string, Timing>) => void
   /** 「原片截取」拖拽起止通知：拖拽期间 Esc 交由其取消手势，暂不触发全局快捷键。 */
   onGesture: (active: boolean) => void
-  /** 整体替换组件或场景片段 `id` 的可填项取值。 */
+  /** 整体替换元素或模板片段 `id` 的可填项取值。 */
   onValues: (id: string, values: Values) => void
   /** 更新片段 `id` 的属性集合（传入 `null` 表示移除属性），记为一步撤销。 */
   onAttributes: (id: string, changes: AttributeChanges) => void
@@ -99,7 +99,7 @@ type Props = {
   onCaptionTrackStyle: (changes: Partial<CaptionStyle>) => void
   /** 打开或关闭字幕 `id` 的「单独设置」，记为一步撤销。 */
   onCaptionOwnStyle: (id: string, own: boolean) => void
-  /** 组件或场景片段的多语言文字配置（供「内容与样式」使用），`bindings` 记录各片段跟随语言的字段映射。 */
+  /** 元素或模板片段的多语言文字配置（供「内容与样式」使用），`bindings` 记录各片段跟随语言的字段映射。 */
   texts: Omit<TextLocale, 'locale' | 'bindings'> & {
     bindings: ReadonlyMap<string, LocaleBindings>
   }
@@ -113,14 +113,14 @@ type Props = {
   onOpenCaptions: () => void
 }
 
-/** 获取片段类型展示名：配音（含旁白）记作「AI 配音」，贴片/场景按组件库分类名展示，「其他」类型不展示。 */
+/** 获取片段类型展示名：配音（含旁白）记作「AI 配音」，元素/模板片段按组件库条目种类展示，「其他」类型不展示。 */
 const kindLabel = (clip: FilmClip, catalog: ComponentCatalog): string | undefined => {
   if (clip.kind === 'video') return '视频'
   if (isDubClip(clip)) return 'AI 配音'
   if (clip.kind === 'audio') return clip.syncOrigin === null ? '音频' : '分离原声'
   if (clip.kind === 'caption') return '字幕'
   if (clip.kind === 'other') return undefined
-  const kind = catalog.items.find((item) => item.name === clip.item)?.kind
+  const kind = hostKindOf(clip, catalog)
   return kind === undefined ? undefined : ITEM_KIND_LABEL[kind]
 }
 
@@ -147,7 +147,7 @@ const emblemOf = (
     case 'caption':
       return { icon: 'final-cut-captions', tone: 'caption' }
     case 'host': {
-      const kind = catalog.items.find((item) => item.name === clip.item)?.kind
+      const kind = hostKindOf(clip, catalog)
       if (kind === 'component') return { icon: 'final-cut-overlays', tone: 'dark' }
       if (kind === 'block') return { icon: 'final-cut-scenes', tone: 'dark' }
       return { icon: 'layers', tone: 'dark' }
@@ -218,7 +218,7 @@ export function FilmInspector({ selected, ...rest }: Props) {
  * 单片段属性面板：顶栏包含类型徽标、名称、类型、时长（字幕显示起止时刻）及隐藏/静音、删除、取消选中与音画分离/合并操作
  * （字幕无单句隐藏，需通过轨道行头整行隐藏）。主体按片段类型组合卡片：
  * 音视频展示「原片截取」「声音与节奏」（已分离原声的视频改为「画面变速」与原声去向卡，分离原声顶部额外展示同步卡），
- * 有声片段底部附「智能调音」；贴片、场景展示「显示时长」与「内容与样式」，字幕展示「显示时长」「内容」与「字幕样式」；
+ * 有声片段底部附「智能调音」；元素、模板片段展示「显示时长」与「内容与样式」，字幕展示「显示时长」「内容」与「字幕样式」；
  * 「其他」类型仅展示「显示时长」。
  */
 function ClipInspector({

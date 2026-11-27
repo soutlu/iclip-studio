@@ -60,7 +60,7 @@ const withMain = (content: string, others: { path: string; content: string }[] =
 
 const attr = (value: unknown) => JSON.stringify(value).replaceAll('"', '&quot;')
 
-/** 根上声明了字幕变量和一个随语言字段的变量、贴片 t1 的「text」随语言的主文件。 */
+/** 根上声明了字幕变量和一个随语言字段的变量、元素片段 t1 的「text」随语言的主文件。 */
 const BOUND_MAIN = `<!doctype html><html data-composition-variables="${attr([
   { id: 'cap_a1', type: 'string', label: '字幕', default: '你好' },
   { id: 'txt_t1_text', type: 'string', label: '文字', default: '标题' },

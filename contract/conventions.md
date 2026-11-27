@@ -166,7 +166,7 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 |---|---|
 | `index.html` | 唯一主时间线（`404` 代表尚无工程）。`<html>` 根 `data-composition-variables` 声明字幕与随语言文字的字符串变量（默认值为原文）；`<head>` 中 `<!-- final-cut:fonts -->…<!-- /final-cut:fonts -->` 之间为自动重算的字体声明块；`#film`（`data-composition-id="film"`，带 `data-no-timeline`）承载全部时间线片段、`data-voice-modes` 与画布尺寸唯一事实源 `data-width` / `data-height`（序列化时据此重算 `<head>` 中的 `<meta name="viewport">` 与全画布布局宽高规则；编辑器修改的画布底色写入 `#film` 行内 `background-color` 以覆盖 `<head>` 默认底色） |
 | `compositions/captions.html` | 字幕场景文件（`<template>` 包裹 `data-composition-id="captions"` 根 `<div>`，带 `data-no-timeline`）。每句字幕为一个带时间的元素（`class="clip caption"`），通过 `data-var-text` 读取主文件根变量。场景 `<style>` 中样式分三层、后者覆盖前者：①默认规则 `[data-composition-id="captions"] .caption`，变更画布尺寸时同步更新场景根元素 `data-width` / `data-height` 并按新画布宽度重算其字号、描边与投影；②「字幕样式」规则 `[data-composition-id="captions"] .clip.caption`，紧跟默认规则之后，仅写已设置的 `font-family`、`color`、`font-size`（设字号时连同描边与投影），均未设置时不写该规则；③单句行内样式（见下表「字幕宿主与单句元素」）。②③中的字号不随画布尺寸换算。**严禁**在场景内声明 `data-composition-variables` 或在字幕宿主上设置 `data-variable-values`（否则阻断根变量透传，拒绝导出） |
-| `compositions/…` | 贴片与场景按组件库目录条目 `files` 清单从 `/hyperframes/<版本>/<路径>` 拷入的专有文本文件（已存在即 `409` 跳过），拷入后归该工程独立持有 |
+| `compositions/…` | 元素与模板按组件库目录条目 `files` 清单从 `/hyperframes/<版本>/<路径>` 拷入的专有文本文件（已存在即 `409` 跳过），拷入后归该工程独立持有 |
 | `locales/<locale>.json` | 附加语言值表（仅支持 `zh / en / de / es / fr`），内容为 `{ "<变量id>": "<译文>" }` JSON 对象（非 JSON 对象则拒绝打开与导出）；仅记录已翻译项，缺省项回退主文件根变量默认值 |
 | `beats/<音频路径>.json` | 配乐节拍缓存文件（路径按 `beatFilePathForSrc` 去除查询参数生成，在引擎节拍格式基础上附加 `downbeats`、`seconds`、`analysis` 算法版本）；仅供编辑器读取，预览与渲染服务忽略 |
 
@@ -177,9 +177,9 @@ Agent 聊天记录（Transcript）协议参考了 Kimi Code 的协议结构并�
 | 通用片段（`#film` 直接子元素） | `data-start`、`data-duration`（秒）、`data-track-index`（所属分区行号）、`data-hidden`（隐藏/静音，预览与导出均不渲染不发声）、行内 `z-index`（画面区叠放顺序）；`data-link` 为编辑器联动标识 |
 | 视频 `<video>` / 音频 `<audio>` | `src` 直写素材完整 URL；支持 `data-media-start`、`data-volume`、`data-playback-rate`、`data-fade-in`、`data-fade-out`、音频效果链 `data-fx-chain` 与自动化曲线 `data-automation`（`data-audio-group`、`data-fx-carve` 供编辑器重算智能调音）。视频有声带 `data-has-audio="true"`，静音带 `muted`；分离原声与源视频共享 `data-sync-origin`；音频循环带 `loop` |
 | 配音与旁白（`<audio>`） | 携带 `data-dub-of="<字幕id>"` 即为配音片段：带 `data-locale="<locale>"` 为对应外语配音；不带 `data-locale` 为原文旁白（额外带 `data-dub-voice="<参考音频id>"` 记录克隆音色）；生成截尾时带 `data-dub-trimmed` |
-| 组件宿主（贴片 / 场景） | 携带 `data-composition-id`、`data-composition-src`、`data-playback-start` 与 `data-variable-values`（JSON 对象，保存原文取值）；行内样式写入尺寸缩放与 `--font-display` / `--font-body`。随语言文字字段由 `data-locale-bindings='{"<字段id>":"<根变量id>"}'` 映射到主文件根变量 |
+| 组件宿主（元素 / 模板） | 携带 `data-composition-id`、`data-composition-src`、`data-playback-start` 与 `data-variable-values`（JSON 对象，保存原文取值）；行内样式写入尺寸缩放与 `--font-display` / `--font-body`。随语言文字字段由 `data-locale-bindings='{"<字段id>":"<根变量id>"}'` 映射到主文件根变量 |
 | 字幕宿主与单句元素 | `#film` 下 `data-track-kind="captions"` 宿主挂载 `compositions/captions.html`（整轨隐藏写宿主 `data-hidden`）。场景内单句元素带 `data-caption-of="<视频片段id>"` 标识识别归属；单句「单独设置」写行内 `color`、`font-family`（须在组件库 `fonts` 中声明或为组件库中文字体，否则导出报 `font-missing`）、`font-size` 及配套描边投影，行内写有三者任一即视为开启单独设置；开启时三者均写入当时的显示值。「字幕样式」规则中的字体族同样计入主文件字体声明块 |
-| 画布编辑 | 视频片段与单句字幕写入所属文件（位移写 `data-x` / `data-y` 及基线 `data-hf-edit-base-x/y`，缩放写行内宽高，旋转写 `rotate` 或 `transform`）；贴片与场景作为整体编辑，变换仅写入主文件宿主的行内 `translate`（保留居中百分比并叠加像素偏移）、`scale` 与 `rotate`，不写 `data-x` / `data-y` 或宽高，也不修改组件文件 |
+| 画布编辑 | 视频片段与单句字幕写入所属文件（位移写 `data-x` / `data-y` 及基线 `data-hf-edit-base-x/y`，缩放写行内宽高，旋转写 `rotate` 或 `transform`）；元素与模板作为整体编辑，变换仅写入主文件宿主的行内 `translate`（保留居中百分比并叠加像素偏移）、`scale` 与 `rotate`，不写 `data-x` / `data-y` 或宽高，也不修改组件文件 |
 
 3. **多语言文字与人声合并规则（预览与 `render/` 导出共用）**：
    - **人声切换 `data-voice-modes`**：位于 `#film` 上，结构为 `{ "<locale>": { "mode": "dub" | "original", "voice": "<参考音频id>" | null, "lines"?: { "<字幕id>": { "voice": "<参考音频id>" | null } | { "dub": false } } } }`（缺省或格式非法均按 `original`、`voice: null` 处理）。预览与导出统一通过 [voices.ts](../web/src/features/storyboard/final-cut/composition/voices.ts) 的 `localizedVoices` 重写主文件副本：`dub` 模式仅保留当前语言配音，移除分离原声与原文旁白并将视频置为 `muted`；原文及 `original` 模式移除所有外语配音，保留原声与原文旁白。

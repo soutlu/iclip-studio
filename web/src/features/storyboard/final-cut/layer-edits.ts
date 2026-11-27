@@ -6,7 +6,7 @@
  *    - 缩放：对齐上游 Studio，四角围绕中心等比缩放，写入行内 `width` / `height`（px）及尺寸锁定配套样式（`box-sizing`、放开最小最大宽高、弹性子项 `flex-*`、行内元素转 `inline-block`），中心回位偏移按移动写入，不写 `scale`。
  *    - 旋转：对齐上游 Studio，默认写行内 `rotate`；若元素 `transform` 以平移开头（如 `translate(-50%, -50%)` 居中），则将 `rotate()` 插入前导平移之后以保持绕视觉中心旋转。
  *
- * 2. 贴片与场景宿主（整体作为一层，仅修改主文件宿主自身行内样式，不改动组件文件）：
+ * 2. 元素与模板片段的宿主（整体作为一层，仅修改主文件宿主自身行内样式，不改动组件文件）：
  *    - 移动写行内 `translate`（见 `movedTranslate`），缩放写 `scale`（见 `scaledStyles`），旋转写 `rotate`。
  *    - 不写 `data-x` / `data-y`：运行库应用 `data-x/y` 前会触发 GSAP 首次解析变换，GSAP 会将宿主原有的 `translate: -50% -50%` 折入 `transform`，导致居中百分比在导出时被重复叠加而偏移出画面。
  *    - 不改 `width` / `height`：宿主宽高代表组件的设计画布尺寸，修改宽高会裁切内部内容而非整体缩放。

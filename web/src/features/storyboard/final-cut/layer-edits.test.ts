@@ -12,7 +12,7 @@ import {
   toLocal,
 } from './layer-edits'
 
-describe('贴片、场景的宿主', () => {
+describe('元素、模板片段的宿主', () => {
   it('挪写它的 translate：在居中用的百分比上加像素，挪几次都还是一层 calc()', () => {
     const once = movedTranslate('-50% -50%', { x: 30, y: -100 })
     expect(once).toBe('calc(-50% + 30px) calc(-50% - 100px)')

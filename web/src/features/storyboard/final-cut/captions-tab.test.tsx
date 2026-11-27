@@ -93,7 +93,7 @@ const renderTab = async (scripts: ReadonlyMap<string, ScriptNote> = new Map()) =
 
 const languages = () => screen.getByRole('group', { name: '原文与译文' })
 const view = (name: RegExp) =>
-  within(screen.getByRole('group', { name: '字幕或组件文字' })).getByRole('button', { name })
+  within(screen.getByRole('group', { name: '字幕或画面文字' })).getByRole('button', { name })
 const pick = (user: ReturnType<typeof userEvent.setup>, id: string) =>
   user.click(screen.getByRole('button', { name: `时间线上选中 ${id}` }))
 
@@ -125,11 +125,11 @@ describe('「字幕」顶部的语言', () => {
 })
 
 describe('「字幕」跟着选中走', () => {
-  it('时间线上选中有文字的贴片：切到「组件文字」', async () => {
+  it('时间线上选中有文字的元素片段：切到「画面文字」', async () => {
     const { user } = await renderTab()
     expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
     await pick(user, 'title-1')
-    expect(view(/^组件文字/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^画面文字/)).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('选中配音片段：切回「字幕」，标出它配的那一句', async () => {
@@ -149,7 +149,7 @@ describe('「字幕」跟着选中走', () => {
     expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
     await pick(user, 'cap-a1')
     await pick(user, 'title-1')
-    expect(view(/^组件文字/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^画面文字/)).toHaveAttribute('aria-pressed', 'true')
   })
 })
 

@@ -33,7 +33,7 @@ export type SourceElement = {
 }
 
 /**
- * 画布上的可编辑图层或贴片/场景宿主（`host: true`，贴片与场景在画布上整体作为一层编辑，内部子元素不入表）：
+ * 画布上的可编辑图层或元素/模板宿主（`host: true`，元素与模板片段在画布上整体作为一层编辑，内部子元素不入表）：
  * - `scope`：所属宿主的 `data-hf-id`（主文件顶层元素为 `null`）。
  * - `selector`、`index`：在该作用域内匹配选择器的序号；`count` 为源文件中的总匹配数（若预览 DOM 因脚本动态增删导致数量不一致，则拒绝匹配）。
  * - `file`：所属工程文件相对路径；`clip`：归属的时间线片段 ID（宿主、单句字幕或视频片段）。
@@ -143,8 +143,8 @@ export const layerKey = (scope: string | null, selector: string, index: number):
 export type Mount = { host: string; file: string; captions: boolean }
 
 /**
- * 汇总当前工程全部画布可编辑图层：包含主文件根下的可视元素（如视频片段）、各贴片/场景宿主自身（`host: true`），
- * 以及字幕场景内的单句字幕元素（贴片/场景组件文件内部元素不入表）。
+ * 汇总当前工程全部画布可编辑图层：包含主文件根下的可视元素（如视频片段）、各元素/模板宿主自身（`host: true`），
+ * 以及字幕场景内的单句字幕元素（元素/模板组件文件内部元素不入表）。
  *
  * @param main 主文件当前 HTML 内容
  * @param mounts 主文件根下的挂载宿主列表（按源码顺序）

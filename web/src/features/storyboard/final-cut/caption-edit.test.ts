@@ -461,7 +461,7 @@ describe('选中的片段在「字幕」里对应什么', () => {
     expect(focus.view).toBe('captions')
   })
 
-  it('选中有文字的贴片、场景：不标字幕，切到「组件文字」；同时选中了字幕时还是「字幕」', () => {
+  it('选中有文字的元素、模板片段：不标字幕，切到「画面文字」；同时选中了字幕时还是「字幕」', () => {
     expect(captionsFocus([host({ id: 'title-1' })], texted)).toEqual({
       lines: new Set(),
       view: 'texts',
@@ -471,7 +471,7 @@ describe('选中的片段在「字幕」里对应什么', () => {
     )
   })
 
-  it('选中没有文字的贴片、视频片段、配乐或什么都没选：不切', () => {
+  it('选中没有文字的元素片段、视频片段、配乐或什么都没选：不切', () => {
     expect(captionsFocus([host({ id: 'plain' })], texted).view).toBeUndefined()
     expect(captionsFocus([video(), audio()], texted).view).toBeUndefined()
     expect(captionsFocus([], texted)).toEqual({ lines: new Set(), view: undefined })

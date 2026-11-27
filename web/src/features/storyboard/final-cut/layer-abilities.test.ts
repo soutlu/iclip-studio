@@ -52,7 +52,7 @@ describe('一层能不能在画面上改', () => {
     expect(abilities).toEqual({ move: false, resize: false, rotate: false, refusal })
   })
 
-  it('别的层（视频、字幕的一句、贴片和场景的宿主）：三样都能改', () => {
+  it('别的层（视频、字幕的一句、元素和模板片段的宿主）：三样都能改', () => {
     expect(layerAbilities(inner)).toEqual({
       move: true,
       resize: true,

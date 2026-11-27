@@ -3,7 +3,7 @@ import { resolveEditingAffordances } from '@hyperframes/core/editing'
 /**
  * 画布图层可编辑性判定：
  * 1. 基础能力复用引擎 `@hyperframes/core/editing` 的 `resolveEditingAffordances`（拦截锁定组件与合成根节点）；
- *    贴片与场景在画布上整体作为一层直接编辑主文件宿主（见 layer-edits.ts），因此不传 `isCompositionHost` 拦截；
+ *    元素与模板片段在画布上整体作为一层直接编辑主文件宿主（见 layer-edits.ts），因此不传 `isCompositionHost` 拦截；
  * 2. 额外拦截由 GSAP 动画脚本驱动的维度（对齐上游 Studio `editsPlainCss`，见 `gsapOwns`）：不反向修改脚本代码，脚本控制的属性禁止画布手改。
  * 预览页基于实时 DOM 与时间线实例完成判定，仅将布尔结果与拒绝码回传给编辑器。
  */
@@ -78,7 +78,7 @@ export function layerAbilities(facts: LayerFacts): LayerAbilities {
 /** 面向用户的画布不可编辑提示文案。 */
 export const REFUSAL_TEXT: Record<Exclude<LayerRefusal, 0>, string> = {
   [LayerRefusal.locked]: '该片段已锁定，无法在画面上调整',
-  [LayerRefusal.root]: '此元素为合成根，决定画面范围，无法在画面上调整',
+  [LayerRefusal.root]: '这是合成根，决定画面范围，无法在画面上调整',
   [LayerRefusal.animated]: '该片段的位置、大小或角度由动画脚本驱动，无法在画面上调整',
 }
 

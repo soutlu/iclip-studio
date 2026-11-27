@@ -28,7 +28,7 @@
   /* 镜头条底部已入轨指示条：镜头条在深浅主题下均为黑底，采用固定鲜绿色 */
   --wf-in-track: var(--p70);
   /* 时间线片段：ink 为音频片段标题色；edge 为字幕胶囊与音频卡描边；label/label-line 为音频卡顶部标题条底色与分隔线；
-     三条渐变依次对应贴片/场景、字幕胶囊与音频卡背景 */
+     三条渐变依次对应元素/模板片段、字幕胶囊与音频卡背景 */
   --wf-original-ink: var(--color-tone-slate);
   --wf-dub-ink: var(--t30);
   --wf-music-ink: var(--p20);
@@ -539,7 +539,7 @@
   width: 68px;
 }
 
-/* ---- 右栏：顶部导航（镜头 / 贴片 / 场景 / 配乐 / 字幕、分隔线、属性及收起按钮）与下方页签内容；
+/* ---- 右栏：顶部导航（镜头 / 元素 / 模板 / 配乐 / 字幕、分隔线、属性及收起按钮）与下方页签内容；
    收起态收缩为竖向图标轨 ---- */
 
 .wf-side {
@@ -587,7 +587,7 @@
   }
 }
 
-/* 导航页签项：图标在上、文字标签在下；描边保持中性色，填充层按页签色调低不透明度着色（「属性」仅用中性前景色且无填充）。
+/* 导航页签项：图标在上、文字标签在下；描边保持中性色，填充层按页签色调低不透明度着色（「属性」用中性前景色，填充更淡）。
    使用双类选择器覆盖共用 TabsTrigger 的默认内边距、圆角、字号与文字色 */
 .wf-side-nav .wf-side-tab {
   --icon-fill-color: var(--wf-nav-tone);
@@ -631,9 +631,10 @@
   --wf-nav-tone: var(--color-tone-teal);
 }
 
+/* 「属性」图标的滑杆横线画在填充层上，填充不能关掉，只是比别的页签淡 */
 .wf-side-nav .wf-side-tab[data-tab='props'] {
   --wf-nav-tone: var(--color-on-surface);
-  --icon-fill-opacity: 0;
+  --icon-fill-opacity: 0.14;
 }
 
 .wf-side-nav .wf-side-tab:not([aria-selected='true']):hover {
@@ -680,7 +681,7 @@
   opacity: 0;
 }
 
-/* 存在选中片段时「属性」页签右上角的指示圆点，配外圈表面色描边以区分图标 */
+/* 时间线上已经用上的目录页签右上角的品牌色圆点，配外圈表面色描边以区分图标 */
 .wf-side-dot {
   position: absolute;
   top: 5px;
@@ -688,7 +689,7 @@
   width: 5px;
   height: 5px;
   border-radius: var(--radius-full);
-  background: var(--color-tone-teal);
+  background: var(--color-primary);
   box-shadow: 0 0 0 1.5px var(--color-surface);
 }
 
@@ -762,7 +763,7 @@
   line-height: var(--text-body-sm--line-height);
 }
 
-/* ---- 贴片、场景、配乐、字幕四个页签共用：页签头、列表区、空状态、分类小块 ---- */
+/* ---- 元素、模板、配乐、字幕四个页签共用：页签头、列表区、空状态、分类小块 ---- */
 
 .wf-side-body:is(.is-items, .is-audio, .is-captions) {
   /* 页签内容左右留的边：页签头、列表、卡片都按它对齐 */
@@ -988,7 +989,7 @@
   list-style: none;
 }
 
-/* ---- 字幕栏：页签头两行（语言和「字幕 / 组件文字」、动作），下面人声卡片、旁白卡片和字幕卡片 ---- */
+/* ---- 字幕栏：页签头两行（语言和「字幕 / 画面文字」、动作），下面人声卡片、旁白卡片和字幕卡片 ---- */
 
 .wf-captions {
   display: flex;
@@ -1054,7 +1055,7 @@
   padding-top: 12px;
 }
 
-/* 单条字幕卡片（「组件文字」卡片共用）：白色底卡，当前激活项左侧附加竖向指示条并加深外描边 */
+/* 单条字幕卡片（「画面文字」卡片共用）：白色底卡，当前激活项左侧附加竖向指示条并加深外描边 */
 .wf-caption {
   position: relative;
   flex: none;
@@ -1254,7 +1255,7 @@
   text-overflow: ellipsis;
 }
 
-/* 「字幕 / 组件文字」两段切换（样子见 wf-seg） */
+/* 「字幕 / 画面文字」两段切换（样子见 wf-seg） */
 .wf-captions-views {
   display: inline-flex;
   flex: none;
@@ -1532,7 +1533,7 @@
   white-space: nowrap;
 }
 
-/* 「组件文字」一张卡片的标题行：名字在左、开始时间在右，点了选中、跳到它的开始 */
+/* 「画面文字」一张卡片的标题行：名字在左、开始时间在右，点了选中、跳到它的开始 */
 .wf-text-head {
   display: flex;
   min-width: 0;
@@ -3960,7 +3961,7 @@
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }
 
-/* ---- 贴片栏、场景栏：搜索、分类小块，下面两列卡片 ---- */
+/* ---- 元素栏、模板栏：搜索、分类小块，下面两列卡片 ---- */
 
 .wf-items {
   display: flex;
@@ -4029,7 +4030,7 @@
   pointer-events: none;
 }
 
-/* 封面：深色底（同时间线上贴片、场景片段的卡底），预览图铺满 */
+/* 封面：深色底（同时间线上元素、模板片段的卡底），预览图铺满 */
 .wf-item-thumb {
   position: relative;
   display: grid;
@@ -4134,7 +4135,7 @@
   white-space: nowrap;
 }
 
-/* ---- 工作台顶栏右侧：保存状态与导出（通过顶栏挂点渲染，位于 .wf-editor 之外） ---- */
+/* ---- 工作台顶栏右侧：保存状态、外观切换与导出（通过顶栏挂点渲染，位于 .wf-editor 之外） ---- */
 
 .wf-header-actions {
   display: flex;
@@ -4143,17 +4144,31 @@
   gap: 6px;
 }
 
-/* 保存状态只是一个图标：已保存是品牌色的云，保存中转圈，失败是错误色 */
-.wf-save-status {
-  --icon-fill-opacity: 0.2;
-
+/* 顶栏上的两个图标：保存状态和外观切换一样大 */
+:is(.wf-save-status, .wf-theme-toggle) {
   display: grid;
   width: 28px;
   height: 28px;
   flex: none;
   place-items: center;
   border-radius: var(--radius-sm);
+}
+
+/* 保存状态只是一个图标：已保存是品牌色的勾（垫一层淡底），保存中转圈，失败是错误色 */
+.wf-save-status {
+  --icon-fill-opacity: 0.2;
+
   color: var(--color-primary);
+}
+
+/* 外观切换：中性色图标，悬停变深 */
+.wf-theme-toggle {
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+}
+
+.wf-theme-toggle:hover {
+  color: var(--color-on-surface);
 }
 
 .wf-save-status[data-save='saving'] {

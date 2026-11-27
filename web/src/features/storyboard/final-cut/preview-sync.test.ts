@@ -125,9 +125,9 @@ describe('要整份重新加载的', () => {
   const movement = main(MOVE)
 
   it.each<[string, JsonPatchOp]>([
-    ['加贴片、场景（含撤销删除）', { op: 'add', path: '/elements/h9', value: HOST }],
+    ['加元素、模板（含撤销删除）', { op: 'add', path: '/elements/h9', value: HOST }],
     [
-      '改贴片、场景的值',
+      '改元素、模板的值',
       { op: 'replace', path: '/elements/h1/attributes/data-variable-values', value: '{}' },
     ],
     ['改变量（字幕的字）', { op: 'replace', path: '/variables/cap_1', value: '新的字' }],
@@ -150,7 +150,7 @@ describe('要整份重新加载的', () => {
     ).toEqual({ kind: 'reload' })
   })
 
-  it('改贴片、场景的时长（运行库只认加载时的时长）；挪、换行照打', () => {
+  it('改元素、模板的时长（运行库只认加载时的时长）；挪、换行照打', () => {
     const withHost = (...changes: PatchChange[]): PreviewFilm => {
       const film = next(...changes)
       return { ...film, html: film.html.replace('</div></body>', `${HOST.html}</div></body>`) }
@@ -576,7 +576,7 @@ describe('字幕场景', () => {
       ).toEqual({ kind: 'live', patches: [], captions: [] })
     })
 
-    it('这种语言里改贴片、场景的字：整份重新加载', () => {
+    it('这种语言里改元素、模板的字：整份重新加载', () => {
       expect(
         previewSync(
           SHOWN_EN,

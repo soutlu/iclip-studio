@@ -113,7 +113,7 @@ describe('属性 · 片段种类', () => {
 })
 
 describe('属性 · 文字卡片的语言小块', () => {
-  it('贴片：标题右边写着显示着的语言，点它打开「字幕」', async () => {
+  it('元素片段：标题右边写着显示着的语言，点它打开「字幕」', async () => {
     const user = userEvent.setup()
     const onOpenCaptions = vi.fn()
     await renderWithProviders(

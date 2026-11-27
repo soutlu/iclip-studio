@@ -92,7 +92,7 @@ type CaptionsTabProps = {
   /** 资料库音色：人声卡、旁白和单句菜单从这里找名字、属性和常用音色。 */
   library: VoiceLibrary
   captions: readonly CaptionClip[]
-  /** 「组件文字」视图配置（与当前展示语言及选中片段共享状态）。 */
+  /** 「画面文字」视图配置（与当前展示语言及选中片段共享状态）。 */
   texts: Omit<ComponentProps<typeof ComponentTexts>, 'locale' | 'selected'>
   /** 当前展示语言：译文语言下输入框编辑译文，并在下方附带原文对照。 */
   locale: ShownLocale
@@ -125,14 +125,14 @@ type CaptionsTabProps = {
 }
 
 /**
- * 「字幕」页签：顶栏左侧为语言切换（见 `LocaleBar`），右侧在「字幕」与「组件文字」（见 `ComponentTexts`）间切换并附数量统计；
+ * 「字幕」页签：顶栏左侧为语言切换（见 `LocaleBar`），右侧在「字幕」与「画面文字」（见 `ComponentTexts`）间切换并附数量统计；
  * 次行为操作栏：包含译文语言的「翻译」（统一翻译两视图未译项）、「字幕」视图的「识别字幕」、原文语言的「旁白配音」（展开见 `NarrationPanel`）
  * 及右侧在播放头处新增字幕的「+」。列表按起始时间排序，支持直接编辑、删除及点击时间定位；
  * 选中字幕或对应配音片段时高亮当前句，新增字幕自动聚焦输入框；译文语言下顶部额外展示人声配置卡（见 `VoiceCard`）。
  * 人声卡、单句菜单和旁白的「更换」把页签头下面的内容换成选音面板（见 `TargetVoicePicker`），选用或返回后回到这里；
  * 整个页签共用一个试听，有当前试听时底部贴一条试听条。
  *
- * 视图随选区变化自动跟随：选中字幕或配音时切至「字幕」，选中含文字贴片/场景时切至「组件文字」；
+ * 视图随选区变化自动跟随：选中字幕或配音时切至「字幕」，选中含文字的元素/模板片段时切至「画面文字」；
  * 用户手动切换视图后保持选择，直至下次选区发生变化。
  */
 export function CaptionsTab({
@@ -176,7 +176,7 @@ export function CaptionsTab({
   }
   const views = [
     { value: 'captions', label: '字幕', count: captions.length },
-    { value: 'texts', label: '组件文字', count: texts.hosts.length },
+    { value: 'texts', label: '画面文字', count: texts.hosts.length },
   ] as const
   const onCaptions = view === 'captions'
 
@@ -196,7 +196,7 @@ export function CaptionsTab({
   // 旁白要用的音色：没换过时是资料库的第一个音色
   const [narrationChoice, setNarrationChoice] = useState<string | null>(null)
   const narrationVoice = narrationChoice ?? library.voices?.[0]?.id ?? null
-  // 选音面板给谁选：换了语言、收起旁白、切到「组件文字」时关掉
+  // 选音面板给谁选：换了语言、收起旁白、切到「画面文字」时关掉
   const [picking, setPicking] = useState<{ pick: VoicePick; locale: Language } | null>(null)
   const pick =
     onCaptions &&
@@ -238,7 +238,7 @@ export function CaptionsTab({
       <div className="wf-tab-head wf-captions-head">
         <div className="wf-captions-top">
           <LocaleBar {...locales} inPanel />
-          <div aria-label="字幕或组件文字" className="wf-seg wf-captions-views" role="group">
+          <div aria-label="字幕或画面文字" className="wf-seg wf-captions-views" role="group">
             {views.map((each) => (
               <button
                 aria-pressed={view === each.value}

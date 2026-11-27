@@ -115,7 +115,7 @@ const individualScale = (value: string): { x: number; y: number } | null => {
 /**
  * 累乘元素及其全部祖先的 `rotate`、`scale`、`transform` 得到完整的 2D 变换矩阵。
  * 运行库自带的 `readElementTransformSnapshot` 仅向上合成到最近合成根且忽略独立 `scale` 属性，
- * 而贴片宿主依赖独立 `scale` 适配画幅，因此在此从文档根完整合成；遇到无法解析的变换时返回 `null`。
+ * 而元素片段的宿主依赖独立 `scale` 适配画幅，因此在此从文档根完整合成；遇到无法解析的变换时返回 `null`。
  */
 const paintedMatrix = (view: Window, element: Laid): DOMMatrix | null => {
   const chain: Element[] = []
@@ -314,7 +314,7 @@ const snapRectOf = (view: Window, origin: DOMRect, element: Laid): Rect => {
 
 /**
  * 收集移动 `moving` 元素时的吸附输入矩形（见 canvas-snap.ts）：
- * `moving` 为被移元素的联合外框；`targets` 由运行库 `snapCandidates`（排除组件宿主子树、被移元素与隐藏元素）加上其余可见贴片/场景宿主（`hosts`）组成。
+ * `moving` 为被移元素的联合外框；`targets` 由运行库 `snapCandidates`（排除组件宿主子树、被移元素与隐藏元素）加上其余可见元素/模板宿主（`hosts`）组成。
  */
 export const snapRectsOf = (
   page: Document,
@@ -401,14 +401,14 @@ const withPickableRoots = <T>(
 
 /**
  * 画布单点拾取单元：`unit` 为应选中的可编辑单元（如宿主或独立层），`target` 为指针下实际命中的最顶层内部元素
- * （贴片或场景内的矢量图形可能命中 SVG 元素）。
+ * （元素或模板片段内的矢量图形可能命中 SVG 元素）。
  */
 export type PointerUnit = { unit: Laid; target: Element }
 
 /**
  * 获取画布坐标 `point` 处从上到下不重复的可选中单元列表：
  * 先通过运行库 `pointerTargets` 拾取可视元素（自动跳过宿主外壳、全屏空容器、非可视标签及显式 `pointer-events: none` 元素），
- * 若命中元素归属 `isHost` 认定的贴片/场景宿主，则收敛为该宿主整体（透明空白区域自然点穿至下方图层）；字幕宿主内的单句元素仍各自独立。
+ * 若命中元素归属 `isHost` 认定的元素/模板宿主，则收敛为该宿主整体（透明空白区域自然点穿至下方图层）；字幕宿主内的单句元素仍各自独立。
  */
 export const unitsAt = (
   page: Document,
@@ -435,7 +435,7 @@ export const unitsAt = (
 }
 
 /**
- * 拖拽草稿上下文：记录目标元素、是否为贴片/场景宿主、起拖时的生效位移与原始行内 `translate`、已改行内样式备份及初始画布中心。
+ * 拖拽草稿上下文：记录目标元素、是否为元素/模板宿主、起拖时的生效位移与原始行内 `translate`、已改行内样式备份及初始画布中心。
  */
 export type Drafting = {
   element: Laid
@@ -449,7 +449,7 @@ export type Drafting = {
 /** 开启图层拖拽草稿并快照初始位移与画布中心。 */
 export const startDraft = (page: Document, element: Laid, host: boolean): Drafting => {
   // 普通图层改写 `translate` 前先触发 GSAP 初始化变换缓存（与运行库一致），防止后续首次解析把草稿 `translate` 重复折算；
-  // 贴片/场景宿主不受动画驱动，不能触发 GSAP 解析，否则其原有的 `translate / scale / rotate` 会被折入 `transform` 导致后续缩放翻倍（见 layer-edits.ts）。
+  // 元素/模板宿主不受动画驱动，不能触发 GSAP 解析，否则其原有的 `translate / scale / rotate` 会被折入 `transform` 导致后续缩放翻倍（见 layer-edits.ts）。
   if (!host) {
     const view = page.defaultView as
       (Window & { gsap?: { getProperty?: (target: Element, property: string) => unknown } }) | null

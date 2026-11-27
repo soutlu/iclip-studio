@@ -18,7 +18,7 @@ const catalog: ComponentCatalog = { ...fixtureCatalog, items: [...fixtureCatalog
 const clip = (values: Record<string, string>) => host({ item: 'two-texts', values })
 const english = (values: Record<string, string>): ShownLocale => ({ code: 'en', values })
 
-describe('贴片、场景片段上的文字', () => {
+describe('元素、模板片段上的文字', () => {
   it('按字段的先后取第一个非空的；换行和连着的空白合成一个空格', () => {
     expect(hostTextIn(SOURCE_SHOWN, clip({ title: '新品\n  上市' }), catalog, {})).toBe('新品 上市')
     // 主文案空着（默认值也是空的）：取副文案，没填用条目的默认值

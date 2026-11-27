@@ -119,7 +119,7 @@ export const zPreviewCommand = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('retry') }),
   /**
    * 同步可编辑图层表（见 canvas-layers.ts）：后续 `watch`、`pick`、`snap`、`draft` 均按表下标引用图层。
-   * `count` 用于核对预览 DOM 同名匹配数一致；`host` 标识贴片/场景宿主（命中内部可视元素即归属整个宿主，拖拽草稿按宿主规则更新）。
+   * `count` 用于核对预览 DOM 同名匹配数一致；`host` 标识元素/模板宿主（命中内部可视元素即归属整个宿主，拖拽草稿按宿主规则更新）。
    */
   z.strictObject({
     type: z.literal('layers'),
@@ -217,7 +217,7 @@ export const zPreviewEvent = z.discriminatedUnion('type', [
   }),
   /**
    * 对应第 `seq` 次 `snap` 的吸附矩形（画布像素，均已按自身 `inset()` 收窄）：
-   * `moving` 为待移图层的联合外框（均未找到时为 `null`），`targets` 为其他候选图层与可见贴片/场景宿主外框。
+   * `moving` 为待移图层的联合外框（均未找到时为 `null`），`targets` 为其他候选图层与可见元素/模板宿主外框。
    */
   z.strictObject({
     type: z.literal('snapRects'),

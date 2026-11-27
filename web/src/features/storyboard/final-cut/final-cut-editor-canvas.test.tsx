@@ -83,7 +83,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
     expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('还没有视频片段时放进第一段视频：画面尺寸改成跟它一致（720×1280 的素材 → 1080×1920），已有贴片的行内样式不变；一次撤销尺寸和片段一起回去', async () => {
+  it('还没有视频片段时放进第一段视频：画面尺寸改成跟它一致（720×1280 的素材 → 1080×1920），已有元素片段的行内样式不变；一次撤销尺寸和片段一起回去', async () => {
     const user = await openWith([host()], { width: 1920, height: 1080 })
     const hostTag = () => /<[a-z]+ [^>]*\bid="title-1"[^>]*>/.exec(savedFilm())?.[0] ?? ''
     const hostBefore = hostTag()

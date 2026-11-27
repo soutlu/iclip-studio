@@ -53,7 +53,7 @@ type SnapInput = {
 
 /**
  * 计算单次拖拽经吸附修正后的实际位移（画布像素）及参考线（无参考线时为 `null`）。
- * 即使画布中无其他目标图层，仍支持向画布四边与中心线吸附（上游 Studio 在无其他图层时会一并跳过画布吸附，此处保留以便单贴片居中对齐）。
+ * 即使画布中无其他目标图层，仍支持向画布四边与中心线吸附（上游 Studio 在无其他图层时会一并跳过画布吸附，此处保留以便单个元素片段居中对齐）。
  * 拖拽行程未达 `snapEngagedForTravel` 前不触发吸附（多选时亦不显示等距线）；单图层旋转达 `ROTATED_SNAP_BYPASS_DEGREES` 时跳过吸附。
  */
 export function snapDrag({ delta, zoom, rects, canvas, alt, angle }: SnapInput): {
