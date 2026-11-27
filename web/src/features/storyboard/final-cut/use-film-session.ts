@@ -88,13 +88,14 @@ import {
 } from './composition/locale-text'
 import {
   VOICE_MODES,
+  voiceKeyOf,
   voiceModeOf,
   voiceModesAttribute,
   voiceModesOf,
   voiceModesWithout,
   voiceSettingOf,
-  type LineVoices,
   type VoiceMode,
+  type VoiceModes,
   type VoiceSetting,
 } from './composition/voices'
 import { dubsOf, dubsOverlapped, shownIn, type NewDub } from './dubbing'
@@ -129,6 +130,7 @@ import {
   type ValueTable,
 } from './locales'
 import type { AttributeChanges } from './original-sound'
+import { ownedIn } from './voice-lines'
 import {
   dubRowFor,
   onRow,
@@ -163,19 +165,17 @@ export type FilmView = {
    */
   clips: readonly FilmClip[]
   /**
-   * 没显示的配音片段（别的语言的、当前语言保留原声时这种语言的、AI 配音时原文的旁白；原文下是其它语言所有的）：
-   * 新开一行时它们也要跟着重新编号（见 `rowOpeningAmong`）。
+   * 没显示的配音片段（见 `shownIn`：别的语言的、当前语言原声时这种语言的、配音时原文的、原声时原文下属于视频片段
+   * 的字幕的）：新开一行时它们也要跟着重新编号（见 `rowOpeningAmong`）。
    */
   unshownDubs: readonly FilmClip[]
-  /** 当前显示的语言的人声设置（见 `voices.ts`）；原文总是保留原声。 */
+  /** 当前显示的语言（原文也是）出不出配音（见 `voices.ts`）。 */
   voiceMode: VoiceMode
+  /** 主文件根上记的各语言人声设置（见 `voices.ts`，原文的键是 `SOURCE_VOICES`）。 */
+  voiceModes: VoiceModes
   /** 带链接（`data-link`）的片段各自的链接名。 */
   links: Links
   durationMs: number
-  /** 当前显示的语言配音用的音色（参考音频的编号，见 `voices.ts`）；null 是原声的音色，原文也是 null。 */
-  dubVoice: string | null
-  /** 当前显示的语言里各句自己的配音选择（见 `voices.ts`）；原文下是空的。 */
-  voiceLines: LineVoices
   /** 字幕写法不对时的原因（见 `captionsProblem`），导出前要先改好。 */
   captionsProblem: string | undefined
   /** 字幕场景文件的路径（相对工程根）和现在的内容（没存的改动也在里面）；工程里还没有时是 null。 */
@@ -687,8 +687,9 @@ const viewOf = (
       ? SOURCE_SHOWN
       : { code: locale, values: table.values() }
   const sceneContent = present.get(project.captionsPath)
-  const voiceMode = voiceModeOf(voiceModesIn(main), shown.code)
-  const shownHere = shownIn(shown.code, voiceMode)
+  const voiceModes = voiceModesIn(main)
+  const voiceMode = voiceModeOf(voiceModes, shown.code)
+  const shownHere = shownIn(shown.code, voiceMode, ownedIn(clips))
   const view: FilmView = {
     html,
     canvas,
@@ -703,10 +704,9 @@ const viewOf = (
     ),
     unshownDubs: clips.filter((clip) => !shownHere(clip)),
     voiceMode,
+    voiceModes,
     links: new Map(clips.flatMap((clip) => (clip.link === null ? [] : [[clip.id, clip.link]]))),
     durationMs: latestEnd(main, scene),
-    dubVoice: voiceSettingOf(voiceModesIn(main), shown.code).voice,
-    voiceLines: voiceSettingOf(voiceModesIn(main), shown.code).lines,
     captionsProblem: captionsProblem(
       present.get(project.captionsPath) ?? null,
       captionsHostOf(main)?.attributes,
@@ -852,20 +852,20 @@ const followClips = (
   for (const id of dubs.removed) main.removeElement(id)
 }
 
-/** 要加的一个配音片段，和它记着的音色（只有旁白记，见 `AudioDub`）。 */
-type VoicedDub = NewDub & { voice: string | null }
+/** 只看配音模式下显示的片段时用：配音模式下原文的配音片段都显示，用不着分哪些字幕属于视频片段。 */
+const NO_OWNED: ReadonlySet<string> = new Set()
 
 /**
- * 把一批配音片段（语言 `locale`，旁白是原文）写在根下第一个，一起放进第一条这几段时间都空着的「配音」行（见
- * `dubRowFor`，只看这种语言下它们显示时显示着的片段）。先把这种语言里压在它们开始上的已有配音片段收短、该标的
- * 标成截了尾（见 `dubsOverlapped`），再找行。一个都没有时不动。
+ * 把一批配音片段（语言 `locale`，原文是 null）写在根下第一个，一起放进第一条这几段时间都空着的「配音」行（见
+ * `dubRowFor`，只看这种语言配音时显示着的片段：原文的旁白在别的时候也显示，但那时显示的只会更少）。先把这种语言里
+ * 压在它们开始上的已有配音片段收短、该标的标成截了尾（见 `dubsOverlapped`），再找行。一个都没有时不动。
  */
 const addDubElements = (
   engine: Composition,
   catalog: ComponentCatalog,
   rootId: string,
   locale: Language,
-  dubs: readonly VoicedDub[],
+  dubs: readonly NewDub[],
 ) => {
   if (dubs.length === 0) return
   const overlapped = dubsOverlapped(clipsOf(engine, catalog), locale, dubs)
@@ -877,10 +877,10 @@ const addDubElements = (
   const { track, renumber } = dubRowFor(
     clipsOf(engine, catalog),
     dubs,
-    shownIn(locale, locale === SOURCE_LOCALE ? 'original' : 'dub'),
+    shownIn(locale, 'dub', NO_OWNED),
   )
   for (const [id, next] of renumber) engine.setTiming(id, { trackIndex: next })
-  for (const { caption, trimmed, voice, ...dub } of dubs)
+  for (const { caption, trimmed, text, voice, speed, ...dub } of dubs)
     engine.addElement(
       rootId,
       0,
@@ -895,7 +895,7 @@ const addDubElements = (
         hidden: false,
         link: null,
         syncOrigin: null,
-        dub: { locale, caption, trimmed, voice },
+        dub: { locale, caption, trimmed, text, voice, speed },
         audioGroup: null,
         fxCarve: null,
         fxChain: null,
@@ -907,21 +907,26 @@ const addDubElements = (
 /** 主文件根上记的各语言人声设置（见 `voices.ts`）。 */
 const voiceModesIn = (main: Composition) => voiceModesOf(rootOf(main)?.attributes[VOICE_MODES])
 
-/** 语言 `locale` 的人声设置按 `update` 改以后 `data-voice-modes` 要写的值；和现在一样时是 undefined。 */
+/**
+ * 语言 `locale`（原文是 null）的人声设置按 `update` 改以后 `data-voice-modes` 要写的值；和现在一样时是 undefined。
+ */
 const voiceChange = (
   main: Composition,
-  locale: LocaleCode,
+  locale: Language,
   update: (setting: VoiceSetting) => VoiceSetting,
 ): string | null | undefined => {
   const modes = voiceModesIn(main)
-  const next = voiceModesAttribute({ ...modes, [locale]: update(voiceSettingOf(modes, locale)) })
+  const next = voiceModesAttribute({
+    ...modes,
+    [voiceKeyOf(locale)]: update(voiceSettingOf(modes, locale)),
+  })
   return next === voiceModesAttribute(modes) ? undefined : next
 }
 
-/** 把语言 `locale` 的人声设置按 `update` 改；写出来和现在一样时不动。 */
+/** 把语言 `locale`（原文是 null）的人声设置按 `update` 改；写出来和现在一样时不动。 */
 const writeVoice = (
   main: Composition,
-  locale: LocaleCode,
+  locale: Language,
   update: (setting: VoiceSetting) => VoiceSetting,
 ) => {
   const root = rootOf(main)
@@ -2069,13 +2074,14 @@ export function useFilmSession(
   /**
    * 批量添加字幕并记为一步撤销：按需预先创建空字幕场景文件，再基于当前全部片段调用 `captionsFor` 生成字幕项，
    * 按起始时间插入场景节点并在主文件根节点声明对应变量（尚无字幕宿主时追加至根节点末尾）。
-   * 传入 `narration` 时同步为每句在「配音」行创建对齐的旁白音频片段（见 `addDubElements`），同属一步撤销。
+   * 传入 `narration` 时同步为每句在「配音」行创建对齐的旁白音频片段（见 `addDubElements`，带着合成时的记录），
+   * 同属一步撤销。
    * 返回新建字幕 ID 列表（无新增项时返回空数组且不修改工程）；工程未就绪或字幕场景文件创建失败（已提示原因）时返回 `undefined`。
    */
   const addCaptions = useCallback(
     async (
       captionsFor: (clips: readonly FilmClip[]) => readonly NewCaption[],
-      narration?: { src: string; label: string; voice: string },
+      narration?: Pick<NewDub, 'src' | 'label' | 'text' | 'voice' | 'speed' | 'trimmed'>,
     ): Promise<string[] | undefined> => {
       const project = projectRef.current
       if (project === null) return undefined
@@ -2125,7 +2131,6 @@ export function useFilmSession(
               duration,
               mediaStart: 0,
               playbackRate: 1,
-              trimmed: false,
             })),
           )
       })
@@ -2264,9 +2269,12 @@ export function useFilmSession(
     [catalog, edit],
   )
 
-  /** 把语言 `locale` 的人声设置改成 `mode`（见 `voices.ts`），音色不动，算一步撤销；已经是这样时不动工程。 */
+  /**
+   * 把语言 `locale`（原文是 null）的人声设置改成 `mode`（见 `voices.ts`），音色不动，算一步撤销；已经是这样时不动
+   * 工程。不生成配音。
+   */
   const setVoiceMode = useCallback(
-    (locale: LocaleCode, mode: VoiceMode) => {
+    (locale: Language, mode: VoiceMode) => {
       const project = projectRef.current
       if (project === null || voiceModeOf(voiceModesIn(mainOf(project)), locale) === mode) return
       edit((main) => writeVoice(main, locale, (setting) => ({ ...setting, mode })))
@@ -2275,12 +2283,12 @@ export function useFilmSession(
   )
 
   /**
-   * 不生成配音、只改语言 `locale` 的人声设置（`update`，比如一句改成不配音、换音色时没有句子要重配），同时删掉这种
-   * 语言里配 `unvoiced` 这几句字幕的配音片段，算一步撤销；什么都不变时不动工程。
+   * 只改语言 `locale`（原文是 null）的人声设置（`update`：换默认音色、改一句的选择……），不生成配音；同时删掉这种
+   * 语言里配 `unvoiced` 这几句字幕的配音片段（设成不配音的句子），算一步撤销；什么都不变时不动工程。
    */
   const changeVoice = useCallback(
     (
-      locale: LocaleCode,
+      locale: Language,
       update: (setting: VoiceSetting) => VoiceSetting,
       unvoiced: readonly string[] = [],
     ) => {
@@ -2298,16 +2306,14 @@ export function useFilmSession(
   )
 
   /**
-   * 写进语言 `locale` 生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），答复要换掉
-   * 的配音片段、要加的素材片的配音片段（`added`）和旁白的配音片段（`narrated`）。换掉的先删；加的两种各一批，
-   * 先后各自放进第一条这几段时间都空着的「配音」行（见 `addDubElements`：压在新片段开始上的已有配音片段先收短），
-   * 写在根下第一个；这种语言的人声设置按 `update` 改（发起时定的：换整种语言的音色、记下一句的选择……），并改成
-   * AI 配音。答复加了几个；一个都不加时不动工程，答 0。
+   * 写进语言 `locale`（原文是 null）生成好的配音，算一步撤销：`plan` 拿到这一刻的片段（含字幕和所有语言的配音片段），
+   * 答复要换掉的配音片段、要加的素材片的配音片段（`added`）和旁白句的配音片段（`narrated`），都带着合成时的记录。
+   * 换掉的先删；加的两种各一批，先后各自放进第一条这几段时间都空着的「配音」行（见 `addDubElements`：压在新片段
+   * 开始上的已有配音片段先收短），写在根下第一个。人声设置不动。答复加了几个；一个都不加时不动工程，答 0。
    */
   const addDubs = useCallback(
     (
-      locale: LocaleCode,
-      update: (setting: VoiceSetting) => VoiceSetting,
+      locale: Language,
       plan: (clips: readonly FilmClip[]) => {
         removed: readonly string[]
         added: readonly NewDub[]
@@ -2320,12 +2326,10 @@ export function useFilmSession(
       if (project === null || main === undefined || root === undefined) return 0
       const { removed, added, narrated } = plan(allClipsOf(main, sceneOf(project), catalog))
       if (added.length + narrated.length === 0) return 0
-      const unvoiced = (dubs: readonly NewDub[]) => dubs.map((dub) => ({ ...dub, voice: null }))
       edit((engine) => {
         for (const id of removed) engine.removeElement(id)
-        addDubElements(engine, catalog, root.id, locale, unvoiced(added))
-        addDubElements(engine, catalog, root.id, locale, unvoiced(narrated))
-        writeVoice(engine, locale, (setting) => ({ ...update(setting), mode: 'dub' }))
+        addDubElements(engine, catalog, root.id, locale, added)
+        addDubElements(engine, catalog, root.id, locale, narrated)
       })
       return added.length + narrated.length
     },

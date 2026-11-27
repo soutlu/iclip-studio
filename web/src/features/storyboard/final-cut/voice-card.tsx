@@ -9,7 +9,6 @@ import { AudioCardText } from './audio-card'
 import {
   languageChoice,
   ORIGINAL_VOICE_NAME,
-  voiceBusy,
   voiceLocaleTag,
   voiceNameOf,
   type VoiceControl,
@@ -92,8 +91,19 @@ type VoiceCardProps = {
 }
 
 /**
- * 译文语言下的人声卡：顶栏「人声」、「保留原声」及已有配音时的「重新生成」；下面当前音色行（见 `CurrentVoice`）和
- * 一排常用音色（「原声」居首）。点常用音色：这种语言已有它的配音时直接切回 AI 配音，否则设成整体音色并重配跟着它的句子。
+ * 配音模式下的合成按钮：还没配过时「生成配音」（整种语言生成），有待处理的句子时「重配 N 句」（补齐），都配好了时
+ * 「重新生成」（整种语言生成）。
+ */
+const dubButton = ({ summary, generate, fill }: VoiceControl) =>
+  !summary.dubbed
+    ? { label: '生成配音', action: generate }
+    : summary.pending > 0
+      ? { label: `重配 ${summary.pending} 句`, action: fill }
+      : { label: '重新生成', action: generate }
+
+/**
+ * 译文语言下的人声卡：顶栏「人声」、「保留原声」及配音时的合成按钮（见 `dubButton`）；下面当前音色行（见
+ * `CurrentVoice`）和一排常用音色（「原声」居首）。点常用音色只记下它作默认音色并切到配音，不合成。
  */
 export function VoiceCard({
   voice,
@@ -103,8 +113,8 @@ export function VoiceCard({
   onToggle,
   onChange,
 }: VoiceCardProps) {
-  const { mode, dubbed, generating, narrating, onMode, onRedo } = voice
-  const redoBlocked = voiceBusy(voice) ?? voice.redoBlocked
+  const { mode, summary, onMode } = voice
+  const button = dubButton(voice)
   const chips = [
     { value: 'original', name: ORIGINAL_VOICE_NAME, ...languageChoice(voice, null) },
     ...common.map((id) => ({
@@ -128,17 +138,15 @@ export function VoiceCard({
         >
           保留原声
         </button>
-        {dubbed ? (
-          <BlockedReason reason={redoBlocked}>
+        {mode === 'dub' ? (
+          <BlockedReason reason={button.action.blocked}>
             <button
-              aria-disabled={redoBlocked === undefined ? undefined : true}
+              aria-disabled={button.action.blocked === undefined ? undefined : true}
               className="wf-chip-btn ui-state ui-focus"
-              onClick={() => {
-                if (redoBlocked === undefined) onRedo()
-              }}
+              onClick={button.action.run}
               type="button"
             >
-              重新生成
+              {button.label}
             </button>
           </BlockedReason>
         ) : null}
@@ -160,19 +168,11 @@ export function VoiceCard({
         variant="option"
       >
         {chips.map((chip) => (
-          // 选项小块自己带 data-state（选中与否），提示挂在外面一层上，不去盖掉它
-          <BlockedReason key={chip.value} reason={chip.blocked}>
-            <span className="wf-voice-common-item">
-              <FilterChip
-                aria-disabled={chip.blocked === undefined ? undefined : true}
-                title={chip.name}
-                value={chip.value}
-                variant="option"
-              >
-                {chip.name}
-              </FilterChip>
-            </span>
-          </BlockedReason>
+          <span className="wf-voice-common-item" key={chip.value}>
+            <FilterChip title={chip.name} value={chip.value} variant="option">
+              {chip.name}
+            </FilterChip>
+          </span>
         ))}
       </ChipGroup>
       {library.problem === undefined ? null : (
@@ -181,14 +181,9 @@ export function VoiceCard({
           message={library.problem.message}
         />
       )}
-      {generating + narrating > 0 ? (
+      {summary.running > 0 ? (
         <p className="wf-voice-note" role="status">
-          {`正在为 ${[
-            generating > 0 ? `${generating} 条素材片` : '',
-            narrating > 0 ? `${narrating} 句旁白` : '',
-          ]
-            .filter((part) => part !== '')
-            .join('、')}生成配音，可继续编辑`}
+          {`正在生成配音，还剩 ${summary.running} 句，可继续编辑`}
         </p>
       ) : null}
     </div>

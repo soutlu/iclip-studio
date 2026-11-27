@@ -17,7 +17,9 @@ describe('右栏导航上带圆点的页签', () => {
   })
 
   it('配音片段、从视频分离出来的原声、组件库里查不到的宿主不算', () => {
-    const dub = audio({ dub: { locale: 'en', caption: 'c1', trimmed: false, voice: null } })
+    const dub = audio({
+      dub: { locale: 'en', caption: 'c1', trimmed: false, text: null, voice: null, speed: 1 },
+    })
     const original = audio({ syncOrigin: 'v1' })
     expect(used(dub, original, host({ item: 'missing' }))).toEqual([])
   })

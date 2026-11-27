@@ -228,14 +228,14 @@ describe('按语言放人声', () => {
 
   it('原文：配音片段都去掉，原声照常，别的字一个不动', () => {
     const html = film(EN_DUB)
-    expect(withLocalizedVoices(html, null)).toBe(
+    expect(withLocalizedVoices(html, null, null)).toBe(
       without(html, dub('en', 'd-en'), dub('de', 'd-de')),
     )
   })
 
   it('AI 配音：只留这种语言的配音，视频关掉原声、分离出来的原声去掉，配乐不动', () => {
     const html = film(EN_DUB)
-    expect(withLocalizedVoices(html, 'en')).toBe(
+    expect(withLocalizedVoices(html, 'en', null)).toBe(
       without(html, DETACHED, dub('de', 'd-de')).replace(
         ' data-has-audio="true" playsinline>',
         ' playsinline muted="true">',
@@ -245,21 +245,65 @@ describe('按语言放人声', () => {
 
   it('保留原声：这种语言的配音也去掉，原声照常', () => {
     const html = film(EN_DUB)
-    expect(withLocalizedVoices(html, 'de')).toBe(
+    expect(withLocalizedVoices(html, 'de', null)).toBe(
       without(html, dub('en', 'd-en'), dub('de', 'd-de')),
     )
-    expect(withLocalizedVoices(film(null), 'en')).toBe(
+    expect(withLocalizedVoices(film(null), 'en', null)).toBe(
       without(film(null), dub('en', 'd-en'), dub('de', 'd-de')),
     )
   })
 
-  it('原文的旁白（只写了配哪句的配音片段）：原文、保留原声时留着，AI 配音时去掉', () => {
+  describe('原文下的配音片段：字幕场景里属于视频片段的句子和旁白句分开', () => {
+    // 原文下给 cap-a1（属于视频片段 c1）配的音，和旁白 cap-n1（手动加的字幕）
+    const SOURCE_TAKE =
+      '<audio id="s1" class="clip audio" data-start="0.3" data-duration="1.7" src="https://m.test/s.m4a" data-dub-of="cap-a1" data-dub-text="一" data-dub-voice="original"></audio>'
     const NARRATION =
       '<audio id="n1" class="clip audio" data-start="2" data-duration="1.5" src="https://m.test/narration.m4a" data-dub-of="cap-n1" data-dub-voice="v-1"></audio>'
-    const html = film(EN_DUB).replace(`\n  ${MUSIC}`, `\n  ${MUSIC}\n  ${NARRATION}`)
-    expect(withLocalizedVoices(html, null)).toContain(NARRATION)
-    expect(withLocalizedVoices(html, 'de')).toContain(NARRATION)
-    expect(withLocalizedVoices(html, 'en')).not.toContain(NARRATION)
+    const SCENE =
+      '<template><div data-composition-id="captions">' +
+      '<div id="cap-a1" class="clip caption" data-var-text="cap_a1" data-caption-of="c1">一</div>' +
+      '<div id="cap-n1" class="clip caption" data-var-text="cap_n1">旁白</div>' +
+      '</div></template>'
+    const withSource = (modes: string) =>
+      film(modes).replace(`\n  ${MUSIC}`, `\n  ${MUSIC}\n  ${SOURCE_TAKE}\n  ${NARRATION}`)
+
+    it('原文原声、外语原声：只留旁白；外语配音：都去掉', () => {
+      const html = withSource(EN_DUB)
+      for (const locale of [null, 'de'] as const) {
+        const voiced = withLocalizedVoices(html, locale, SCENE)
+        expect(voiced).toContain(NARRATION)
+        expect(voiced).not.toContain(SOURCE_TAKE)
+      }
+      const english = withLocalizedVoices(html, 'en', SCENE)
+      expect(english).not.toContain(NARRATION)
+      expect(english).not.toContain(SOURCE_TAKE)
+    })
+
+    it('原文配音：原文下的都留着，视频关掉原声，外语配音去掉', () => {
+      const voiced = withLocalizedVoices(
+        withSource('{"_source":{"mode":"dub","voice":null}}'),
+        null,
+        SCENE,
+      )
+      expect(voiced).toContain(SOURCE_TAKE)
+      expect(voiced).toContain(NARRATION)
+      expect(voiced).toContain(' playsinline muted="true">')
+      expect(voiced).not.toContain('d-en')
+    })
+
+    it('按语言导出时从字幕宿主挂载的场景文件里读', () => {
+      const HOST =
+        '<div id="captions" class="clip" data-composition-id="captions" data-composition-src="compositions/captions.html" data-track-kind="captions" data-start="0" data-duration="8"></div>'
+      const main = withSource(EN_DUB).replace(`\n  ${MUSIC}`, `\n  ${MUSIC}\n  ${HOST}`)
+      const project = [
+        { path: 'index.html', content: main },
+        { path: 'compositions/captions.html', content: SCENE },
+      ]
+      const source = localizeProject(project, null)
+      const content = source.ok ? (source.value.files[0]?.content ?? '') : ''
+      expect(content).toContain(NARRATION)
+      expect(content).not.toContain(SOURCE_TAKE)
+    })
   })
 
   it('按语言导出用上它：原文去掉配音，English 用 English 的配音', () => {

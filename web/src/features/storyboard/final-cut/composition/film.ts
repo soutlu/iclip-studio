@@ -95,24 +95,29 @@ export interface AudioClip extends MediaBase {
 /**
  * 配音片段：一句字幕的配音，是一个普通的音频片段，放在「配音」行上、和那句字幕对齐。`caption` 是 `data-dub-of`
  * （它配的那句字幕的编号），写了就是配音片段。`locale` 是 `data-locale`，配的是哪种语言；没写（null）的是这句
- * 在原文下的配音，即旁白，`voice` 是 `data-dub-voice`，记着合成它用的参考音频库里的音色（其它语言给这句配音、
- * 音色取「原声」时用它）。`trimmed` 是 `data-dub-trimmed`，生成时这句加速到上限也放不下、截掉了尾巴。哪种语言下
- * 出不出声见 `voices.ts`。
+ * 在原文下的配音（字幕不属于视频片段时就是旁白，见 `voices.ts`）。`trimmed` 是 `data-dub-trimmed`，生成时这句
+ * 加速到上限也放不下、截掉了尾巴。
+ *
+ * 合成时的记录：`text` 是 `data-dub-text`，念的字；`voice` 是 `data-dub-voice`，用的参考音频库音色的编号，写成
+ * `original`（`DUB_ORIGINAL_VOICE`）的是从素材片的原声里取的（这里是 null）；`speed` 是 `data-dub-speed`，加速的
+ * 倍数（没写是 1）。写了 `data-dub-text` 才算有记录（`text` 不是 null），老的配音片段没有：老的旁白只写了
+ * `data-dub-voice`，`voice` 照样读出来。哪种语言下出不出声见 `voices.ts`。
  */
 export interface AudioDub {
   locale: string | null
   caption: string
   trimmed: boolean
+  text: string | null
   voice: string | null
+  speed: number
 }
+
+/** `data-dub-voice` 里表示「从素材片的原声里取」的写法。 */
+export const DUB_ORIGINAL_VOICE = 'original'
 
 /** 一句字幕的配音片段：带 `data-dub-of` 的音频片段。 */
 export const isDubClip = (clip: FilmClip): clip is AudioClip & { dub: AudioDub } =>
   clip.kind === 'audio' && clip.dub !== null
-
-/** 旁白片段：原文下的配音片段（没有 `data-locale`）。 */
-export const isNarration = (clip: FilmClip): clip is AudioClip & { dub: AudioDub } =>
-  isDubClip(clip) && clip.dub.locale === null
 
 /** 别的带时间的元素（手写的文字、目录里查不到的宿主等）：只能挪动、裁两端、换行、隐藏和删除。 */
 export interface OtherClip extends ClipBase {
@@ -269,6 +274,7 @@ export function clipOf(
     return { kind: 'video', ...common, ...media(), muted: attributes['muted'] !== undefined, z }
   if (element.tag === 'audio') {
     const caption = nameOf(attributes['data-dub-of'])
+    const voice = nameOf(attributes['data-dub-voice'])
     return {
       kind: 'audio',
       ...common,
@@ -281,7 +287,9 @@ export function clipOf(
               locale: nameOf(attributes['data-locale']),
               caption,
               trimmed: attributes['data-dub-trimmed'] !== undefined,
-              voice: nameOf(attributes['data-dub-voice']),
+              text: nameOf(attributes['data-dub-text']),
+              voice: voice === DUB_ORIGINAL_VOICE ? null : voice,
+              speed: Math.max(1, numberOr(attributes['data-dub-speed'], 1)),
             },
     }
   }
@@ -359,18 +367,25 @@ export function videoElement(clip: Omit<VideoClip, 'kind'>): string {
   })
 }
 
-/** 新加的音频片段；配音片段带上语言（旁白不带）、配的哪句、截没截尾和旁白的音色。 */
+/** 配音片段的音色要写的值：有记录时原声的音色写成 `DUB_ORIGINAL_VOICE`，没记录也没音色时不写。 */
+const dubVoiceAttribute = ({ text, voice }: AudioDub) =>
+  voice ?? (text === null ? undefined : DUB_ORIGINAL_VOICE)
+
+/** 新加的音频片段；配音片段带上语言（原文不带）、配的哪句、截没截尾和合成时的记录（见 `AudioDub`）。 */
 export function audioElement(clip: Omit<AudioClip, 'kind'>): string {
+  const { dub } = clip
   return element('audio', {
     'data-hidden': clip.hidden ? '' : undefined,
     ...commonAttributes(clip),
     class: 'clip audio',
     ...mediaAttributes(clip),
     loop: clip.loop ? 'true' : undefined,
-    'data-locale': clip.dub?.locale ?? undefined,
-    'data-dub-of': clip.dub?.caption,
-    'data-dub-trimmed': clip.dub?.trimmed === true ? '' : undefined,
-    'data-dub-voice': clip.dub?.voice ?? undefined,
+    'data-locale': dub?.locale ?? undefined,
+    'data-dub-of': dub?.caption,
+    'data-dub-trimmed': dub?.trimmed === true ? '' : undefined,
+    'data-dub-text': dub?.text ?? undefined,
+    'data-dub-voice': dub === null ? undefined : dubVoiceAttribute(dub),
+    'data-dub-speed': dub === null || dub.speed === 1 ? undefined : String(dub.speed),
   })
 }
 

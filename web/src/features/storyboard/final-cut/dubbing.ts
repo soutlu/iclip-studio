@@ -2,33 +2,30 @@ import type { DubbedLine, DubbingLine, DubbingSpeechSpan } from '@/shared/api/ge
 import { zSpeechIn } from '@/shared/api/generated/zod.gen'
 import {
   isDubClip,
-  isNarration,
   MIN_CLIP_MS,
   type AudioClip,
+  type AudioDub,
   type CaptionClip,
   type FilmClip,
   type VideoClip,
 } from './composition/film'
 import type { VoiceMode } from './composition/voices'
-import {
-  phraseWith,
-  SOURCE_NAME,
-  translationOf,
-  type Language,
-  type LocaleCode,
-  type LocaleValues,
-} from './locales'
+import { phraseWith, SOURCE_NAME, type Language } from './locales'
+import type { Voicing } from './voice-lines'
 
 /**
- * 在语言 `locale`（人声设置 `mode`）下显示的片段：其它语言的配音片段只在这种语言 AI 配音时显示这种语言的；原文的
- * 旁白在原文下、保留原声时显示，AI 配音时不显示；别的片段都显示。时间线、行名和同一行不能重叠都按显示着的片段算，
- * 不同时显示的配音在同一行同一时间不算重叠。
+ * 在语言 `locale`（人声设置 `mode`）下显示的片段，和出声的一样（见 `voices.ts` 的 `localizedVoices`，`owned` 是属于
+ * 视频片段的字幕）：其它语言的配音片段只在这种语言配音时显示这种语言的；原文的配音片段在原文配音时都显示，别的
+ * 时候只显示旁白；别的片段都显示。时间线、行名和同一行不能重叠都按显示着的片段算，不同时显示的配音在同一行同一
+ * 时间不算重叠。
  */
 export const shownIn =
-  (locale: Language, mode: VoiceMode) =>
+  (locale: Language, mode: VoiceMode, owned: ReadonlySet<string>) =>
   (clip: FilmClip): boolean =>
     !isDubClip(clip) ||
-    (clip.dub.locale === null ? mode === 'original' : mode === 'dub' && clip.dub.locale === locale)
+    (clip.dub.locale === null
+      ? (locale === null && mode === 'dub') || (mode === 'original' && !owned.has(clip.dub.caption))
+      : mode === 'dub' && clip.dub.locale === locale)
 
 /**
  * 要配的一句：在素材片视频里的起止（毫秒）、译文和最晚占到哪儿（`slotEndMs`：这条素材片上下一句要配音的字幕的
@@ -49,58 +46,53 @@ export type DubbingRequest = {
   spans: readonly DubbingSpeechSpan[]
 }
 
-/** 一句用的音色（null 是原声的音色）；undefined 是这句不配音。 */
-export type VoiceOfCaption = (caption: string) => string | null | undefined
-
-/** 为什么一条素材片都配不了：没有视频片段、视频片段都没有识别出的字幕、字幕一句都没翻。 */
+/** 为什么一条素材片都配不了：没有视频片段、视频片段都没有识别出的字幕、字幕一句都没翻（原文是一句都没有字）。 */
 export type DubbingRefusal = 'empty' | 'uncaptioned' | 'untranslated'
 
-/** 配不了的原因，`code` 是要配的语言。 */
-export const dubbingRefusalText = (refusal: DubbingRefusal, code: LocaleCode): string =>
+/** 配不了的原因，`code` 是要配的语言（原文是 null）。 */
+export const dubbingRefusalText = (refusal: DubbingRefusal, code: Language): string =>
   refusal === 'empty'
     ? 'final-cut 中暂无视频片段，无法生成配音；请先添加镜头'
     : refusal === 'uncaptioned'
       ? `视频片段均无已识别字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
-      : phraseWith('字幕尚未翻译为', code, '，无法生成配音；请先点击「翻译」')
+      : code === null
+        ? '字幕均没有文字，无法生成配音'
+        : phraseWith('字幕尚未翻译为', code, '，无法生成配音；请先点击「翻译」')
 
 const isCaption = (clip: FilmClip): clip is CaptionClip => clip.kind === 'caption'
 
-/** 一句为什么配不了音：不属于视频片段也没有旁白、还没翻、素材片对不上生成记录、和前一句重叠得放不下。 */
-export type LineRefusal = 'unowned' | 'untranslated' | 'untaken' | 'crowded'
+/** 一句为什么配不了音：还没翻（原文是没有字）、素材片对不上生成记录、和前一句重叠得放不下。 */
+export type LineRefusal = 'untranslated' | 'untaken' | 'crowded'
 
-/** 一句配不了音的原因，`code` 是要配的语言。 */
-export const lineRefusalText = (refusal: LineRefusal, code: LocaleCode): string =>
-  refusal === 'unowned'
-    ? '该条字幕不属于任何视频片段，无法配音'
-    : refusal === 'untranslated'
-      ? phraseWith('该条字幕尚未翻译为', code, '，无法配音；请先点击「翻译」')
-      : refusal === 'untaken'
-        ? '未找到该条字幕所属视频片段的素材片记录，无法配音'
-        : '该条字幕与前一条重叠过多，无法配音'
+/** 一句配不了音的原因，`code` 是要配的语言（原文是 null）。 */
+export const lineRefusalText = (refusal: LineRefusal, code: Language): string =>
+  refusal === 'untranslated'
+    ? code === null
+      ? '该条字幕没有文字，无法配音'
+      : phraseWith('该条字幕尚未翻译为', code, '，无法配音；请先点击「翻译」')
+    : refusal === 'untaken'
+      ? '未找到该条字幕所属视频片段的素材片记录，无法配音'
+      : '该条字幕与前一条重叠过多，无法配音'
 
 /**
- * 各句字幕在一种语言（值表 `values`）下为什么配不了音，配得了的不在里面。`clips` 要含原文的旁白片段（这种语言
- * AI 配音时它们不显示）；有旁白的句子翻了就配得了。`dubbable` 是每句都配音时排进了素材片的请求、素材片对得上
- * 生成记录（`hasTake`）的句子。
+ * 要配的各句字幕（`voicing` 说用某个音色配的）在一种语言下为什么合成不了，合成得了的不在里面：没有字；属于视频
+ * 片段的，素材片对不上生成记录（`hasTake`），或者每句都配音时排不进素材片的请求（不在 `dubbable` 里）。
  */
 export function lineRefusals(
   clips: readonly FilmClip[],
-  values: LocaleValues,
+  voicing: Voicing,
   dubbable: ReadonlySet<string>,
   hasTake: (src: string) => boolean,
 ): ReadonlyMap<string, LineRefusal> {
   const videos = new Map(
     clips.flatMap((clip) => (clip.kind === 'video' ? [[clip.id, clip] as const] : [])),
   )
-  const narrated = new Set(clips.filter(isNarration).map((clip) => clip.dub.caption))
   return new Map(
     clips.filter(isCaption).flatMap((caption): [string, LineRefusal][] => {
-      if (dubbable.has(caption.id)) return []
-      const video = videos.get(caption.owner ?? '')
-      if (video === undefined && !narrated.has(caption.id)) return [[caption.id, 'unowned']]
-      if ((translationOf(values, caption.variable)?.trim() ?? '') === '')
-        return [[caption.id, 'untranslated']]
-      if (video === undefined) return []
+      if (voicing.voice(caption).kind !== 'voiced') return []
+      if (voicing.text(caption) === '') return [[caption.id, 'untranslated']]
+      const video = voicing.owned.has(caption.id) ? videos.get(caption.owner ?? '') : undefined
+      if (video === undefined || dubbable.has(caption.id)) return []
       return [[caption.id, hasTake(video.src) ? 'crowded' : 'untaken']]
     }),
   )
@@ -109,26 +101,29 @@ export function lineRefusals(
 const ALL_LINES = () => true
 
 /**
- * 一种语言（值表 `values`）下要配音的字幕，按开始排好：属于视频片段或有旁白（`clips` 要含原文的旁白片段）、
- * 翻了、`voiceOf` 没说不配音的，不管它用哪个音色。`narrated` 是其中有旁白的。
+ * 一种语言下要配音的字幕（`voicing` 说用某个音色配、有字的，不管用哪个音色），按开始排好。`narrated` 是其中的
+ * 旁白句。
  */
 const voicedCaptions = (
   clips: readonly FilmClip[],
-  values: LocaleValues,
-  voiceOf: VoiceOfCaption,
+  voicing: Voicing,
 ): { voiced: CaptionClip[]; narrated: ReadonlySet<string> } => {
-  const narrated = new Set(clips.filter(isNarration).map((clip) => clip.dub.caption))
-  const videos = new Set(clips.flatMap((clip) => (clip.kind === 'video' ? [clip.id] : [])))
   const voiced = clips
     .filter(isCaption)
-    .filter(
-      (caption) =>
-        (videos.has(caption.owner ?? '') || narrated.has(caption.id)) &&
-        (translationOf(values, caption.variable)?.trim() ?? '') !== '' &&
-        voiceOf(caption.id) !== undefined,
-    )
+    .filter((caption) => voicing.text(caption) !== '' && voicing.voice(caption).kind === 'voiced')
     .toSorted((a, b) => a.start - b.start)
-  return { voiced, narrated }
+  return {
+    voiced,
+    narrated: new Set(
+      voiced.filter((caption) => !voicing.owned.has(caption.id)).map(({ id }) => id),
+    ),
+  }
+}
+
+/** 一句要用的音色；不配时是 undefined。 */
+const voiceIn = (voicing: Voicing, caption: CaptionClip): string | null | undefined => {
+  const voice = voicing.voice(caption)
+  return voice.kind === 'voiced' ? voice.voice : undefined
 }
 
 /** 时间线上 `start` 以后开始的下一句（`voiced` 按开始排好），只看 `which` 挑的；没有时是 undefined。 */
@@ -152,29 +147,29 @@ const mergedSpans = (spans: readonly DubbingSpeechSpan[]): DubbingSpeechSpan[] =
 }
 
 /**
- * 一种语言（值表 `values`）下的配音请求：每条素材片取用它的视频片段名下的字幕（识别出来、属于这个片段的），
- * 用这种语言的字，没翻的不配，`voiceOf` 说不配音的不配。字幕的时间换算到素材片视频里：
+ * 一种语言（每句怎么配见 `voicing`）下的配音请求：每条素材片取用它的视频片段名下的字幕（识别出来、属于这个片段
+ * 的），用这种语言的字，没字的不配，`voicing` 说不配的不配。字幕的时间换算到素材片视频里：
  * `入点 + (字幕时间 − 片段开始) × 速度`，收在 0 到素材片总长（`sourceMs`，读不到时不收）之间；按开始排好，
  * 和前一句重叠的从前一句结尾开始，不到最短长度的不要；每句最晚占到这条素材片上下一句的开始，和时间线上它后面
- * 下一句有旁白要配音的字幕（见 `narrationRequests`）的开始按同样的换算，取早的；那句旁白在这句的视频片段结尾以后
+ * 下一句要配音的旁白句（见 `narrationRequests`）的开始按同样的换算，取早的；那句旁白在这句的视频片段结尾以后
  * 时不算。排好以后只留 `picked` 挑中的句子，按素材片和音色分成几次请求（没有挑中的句子时是空的）。每次请求带着
- * 这条素材片的说话时段：全部字幕按同样的换算，按开始排好，重叠的并成一段。一句都没翻时答复原因。
+ * 这条素材片的说话时段：全部字幕按同样的换算，按开始排好，重叠的并成一段。一句都没字时答复原因。
  */
 export function dubbingRequests(
   clips: readonly FilmClip[],
-  values: LocaleValues,
+  voicing: Voicing,
   sourceMs: (src: string) => number | undefined,
-  voiceOf: VoiceOfCaption,
   picked: (caption: string) => boolean = ALL_LINES,
 ): { requests: readonly DubbingRequest[] } | { refusal: DubbingRefusal } {
   const videos = clips.filter((clip): clip is VideoClip => clip.kind === 'video')
   if (videos.length === 0) return { refusal: 'empty' }
   const owners = new Map(videos.map((video) => [video.id, video]))
-  const owned = clips.filter(isCaption).filter((caption) => owners.has(caption.owner ?? ''))
+  const owned = clips.filter(isCaption).filter((caption) => voicing.owned.has(caption.id))
   if (owned.length === 0) return { refusal: 'uncaptioned' }
   const bySource = new Map<string, DubLine[]>()
   const spoken = new Map<string, DubbingSpeechSpan[]>()
-  const { voiced, narrated } = voicedCaptions(clips, values, voiceOf)
+  const { voiced, narrated } = voicedCaptions(clips, voicing)
+  const voices = new Map(owned.map((caption) => [caption.id, voiceIn(voicing, caption)]))
   // 各句到时间线上下一句旁白的开始在素材片里是多少毫秒
   const beforeNarration = new Map<string, number>()
   let translated = false
@@ -188,10 +183,10 @@ export function dubbingRequests(
       )
     const span = { startMs: at(caption.start), endMs: at(caption.start + caption.duration) }
     spoken.set(video.src, [...(spoken.get(video.src) ?? []), span])
-    const text = translationOf(values, caption.variable)?.trim() ?? ''
+    const text = voicing.text(caption)
     if (text === '') continue
     translated = true
-    if (voiceOf(caption.id) === undefined) continue
+    if (voices.get(caption.id) === undefined) continue
     const narration = nextVoiced(voiced, caption.start, (other) => narrated.has(other.id))
     if (narration !== undefined && narration.start < video.start + video.duration)
       beforeNarration.set(caption.id, at(narration.start))
@@ -208,7 +203,7 @@ export function dubbingRequests(
       if (line.endMs - startMs >= MIN_CLIP_MS) kept.push({ ...line, startMs })
     }
     for (const [index, line] of kept.entries()) {
-      const voice = voiceOf(line.caption)
+      const voice = voices.get(line.caption)
       if (!picked(line.caption) || voice === undefined) continue
       const slotEndMs = Math.min(
         kept[index + 1]?.startMs ?? Infinity,
@@ -233,72 +228,61 @@ const narrationTextLimit = (): number => {
 export const NARRATION_TEXT_LIMIT = narrationTextLimit()
 
 /**
- * 要合成的一句旁白：配的哪句字幕（原文下新加的旁白还没有字幕，是 null）、念的字、用的参考音频库音色，和最长
- * 多少毫秒（`maxMs`，不限时没有）。
+ * 要合成的一句旁白：配的哪句字幕（原文下「旁白配音」新加的旁白还没有字幕，是 null）、念的字、用的参考音频库
+ * 音色，和最长多少毫秒（`maxMs`，不限时没有）。
  */
 export type NarrationLine = { caption: string | null; text: string; voice: string; maxMs?: number }
 
 /**
- * 一种语言（值表 `values`）下要给旁白配的句子：原文下有旁白片段的字幕（`clips` 要含这些片段），用这种语言的字，
- * 没翻的、`voiceOf` 说不配音的、`picked` 没挑中的不配。音色按 `voiceOf`，取到「原声」（null）时用旁白片段记着
- * 的音色（它也没记时不配）。最晚占到时间线上它后面下一句要配音的字幕的开始：属于视频片段或有旁白、翻了、没选
- * 不配音的字幕，不管它用哪个音色、挑没挑中；后面没有了时不限。`narrated` 是有没有旁白的字幕，`translated` 是
- * 其中有没有翻了的。
+ * 一种语言（每句怎么配见 `voicing`）下要给旁白句配的句子：要配音的旁白句（`voicing` 说用参考音频库的某个音色配、
+ * 有字的）里 `picked` 挑中的，用这种语言的字。最晚占到时间线上它后面下一句要配音的字幕（见 `voicedCaptions`，
+ * 不管用哪个音色、挑没挑中）的开始；后面没有了时不限。
  */
 export function narrationRequests(
   clips: readonly FilmClip[],
-  values: LocaleValues,
-  voiceOf: VoiceOfCaption,
+  voicing: Voicing,
   picked: (caption: string) => boolean = ALL_LINES,
-): { lines: NarrationLine[]; narrated: boolean; translated: boolean } {
-  const voices = new Map(
-    clips.filter(isNarration).map((clip) => [clip.dub.caption, clip.dub.voice] as const),
-  )
-  const textOf = (caption: CaptionClip) => translationOf(values, caption.variable)?.trim() ?? ''
-  const { voiced } = voicedCaptions(clips, values, voiceOf)
-  const narrated = clips.filter(isCaption).filter((caption) => voices.has(caption.id))
-  const lines = voiced.flatMap((caption): NarrationLine[] => {
-    const own = voices.get(caption.id)
-    if (own === undefined || !picked(caption.id)) return []
-    const voice = voiceOf(caption.id) ?? own
-    if (voice === null) return []
+): NarrationLine[] {
+  const { voiced, narrated } = voicedCaptions(clips, voicing)
+  return voiced.flatMap((caption): NarrationLine[] => {
+    const voice = voiceIn(voicing, caption)
+    if (!narrated.has(caption.id) || !picked(caption.id) || typeof voice !== 'string') return []
     const next = nextVoiced(voiced, caption.start)
-    const line = { caption: caption.id, text: textOf(caption), voice }
+    const line = { caption: caption.id, text: voicing.text(caption), voice }
     return [next === undefined ? line : { ...line, maxMs: next.start - caption.start }]
   })
-  return {
-    lines,
-    narrated: narrated.length > 0,
-    translated: narrated.some((caption) => textOf(caption) !== ''),
-  }
 }
 
 /**
- * 一种语言下的配音：素材片的请求（见 `dubbingRequests`）和旁白的句子（见 `narrationRequests`），`clips` 要含原文的
- * 旁白片段。素材片配不了、有旁白的句子也一句都没翻时答复原因（有旁白的句子时是没翻）。
+ * 一种语言下的配音：素材片的请求（见 `dubbingRequests`）和旁白句的句子（见 `narrationRequests`）。素材片配不了、
+ * 也没有要配的旁白句时答复素材片配不了的原因。
  */
 export function dubbingPlanOf(
   clips: readonly FilmClip[],
-  values: LocaleValues,
+  voicing: Voicing,
   sourceMs: (src: string) => number | undefined,
-  voiceOf: VoiceOfCaption,
   picked: (caption: string) => boolean = ALL_LINES,
 ):
   | { requests: readonly DubbingRequest[]; narrations: readonly NarrationLine[] }
   | { refusal: DubbingRefusal } {
-  const takes = dubbingRequests(clips, values, sourceMs, voiceOf, picked)
-  const spoken = narrationRequests(clips, values, voiceOf, picked)
-  if (!('refusal' in takes)) return { requests: takes.requests, narrations: spoken.lines }
-  if (spoken.translated) return { requests: [], narrations: spoken.lines }
-  return { refusal: spoken.narrated ? 'untranslated' : takes.refusal }
+  const takes = dubbingRequests(clips, voicing, sourceMs, picked)
+  const narrations = narrationRequests(clips, voicing, picked)
+  if (!('refusal' in takes)) return { requests: takes.requests, narrations }
+  return narrations.length > 0 ? { requests: [], narrations } : takes
 }
 
-/** 合成好的一段旁白：地址、时长（毫秒）和截没截尾。 */
-export type SpokenAudio = { url: string; durationMs: number | null; trimmed: boolean }
+/** 合成好的一段旁白：地址、时长（毫秒）、加速的倍数和截没截尾。 */
+export type SpokenAudio = {
+  url: string
+  durationMs: number | null
+  speed: number
+  trimmed: boolean
+}
 
 /**
- * 其它语言给旁白配好的音（`spoken`：各句和合成好的音频）按 `clips`（这一刻的片段）建成配音片段：和它配的那句
- * 字幕对齐，从音频开头放，长度是音频的长度（有上限时不超过它）。字幕已经不在、读不到时长、不到最短长度的不建。
+ * 给旁白句配好的音（`spoken`：各句和合成好的音频）按 `clips`（这一刻的片段）建成配音片段：和它配的那句字幕对齐，
+ * 从音频开头放，长度是音频的长度（有上限时不超过它），记着念的字、音色和倍数。字幕已经不在、读不到时长、不到
+ * 最短长度的不建。
  */
 export function narrationDubs(
   clips: readonly FilmClip[],
@@ -320,16 +304,23 @@ export function narrationDubs(
         mediaStart: 0,
         playbackRate: 1,
         trimmed: audio.trimmed,
+        text: line.text,
+        voice: line.voice,
+        speed: audio.speed,
       },
     ]
   })
 }
 
-/** 待加入轨道的配音片段（落位行由会话按配音行规则决定，见 `dubRowFor`）。 */
+/**
+ * 待加入轨道的配音片段（落位行由会话按配音行规则决定，见 `dubRowFor`），带着合成时的记录（念的字、音色、倍数，
+ * 见 `AudioDub`）。
+ */
 export type NewDub = Pick<
   AudioClip,
   'label' | 'src' | 'start' | 'duration' | 'mediaStart' | 'playbackRate'
-> & { caption: string; trimmed: boolean }
+> &
+  Pick<AudioDub, 'caption' | 'trimmed' | 'voice' | 'speed'> & { text: string }
 
 /** 素材片已完成配音记录的关键信息：音轨地址、总时长（毫秒）与单句结果列表。 */
 export type DubbedTrack = { url: string; durationMs: number | null; lines: readonly DubbedLine[] }
@@ -338,7 +329,8 @@ export type DubbedTrack = { url: string; durationMs: number | null; lines: reado
  * 根据当前工程片段 `clips` 将单条素材片的配音结果（`request` 为发起请求，`track` 为产出音轨）构建为配音片段：
  * 每句与对应字幕起点对齐、沿用所属视频片段的播放倍速；长度按 `slotEndMs`（缺省为音轨结尾）经倍速换算，
  * 上限取所属视频片段结尾与该句字幕结尾的较晚者（跨镜头识别的字幕长于其归属片段时确保配音完整播放）。
- * 对应字幕或视频片段已移除、或可用时长不足最短片段时长的条目不生成，截尾条目保留标记。
+ * 对应字幕或视频片段已移除、或可用时长不足最短片段时长的条目不生成，截尾条目保留标记。每段记着请求里这句念的字、
+ * 请求的音色和这句的加速倍数（见 `AudioDub`）。
  */
 export function dubClips(
   clips: readonly FilmClip[],
@@ -349,6 +341,7 @@ export function dubClips(
   return request.lines.flatMap((line, index) => {
     const caption = byId.get(line.caption)
     const video = caption?.kind === 'caption' ? byId.get(caption.owner ?? '') : undefined
+    const result = track.lines.find((each) => each.index === index)
     if (caption === undefined || video?.kind !== 'video') return []
     // 后续句起点不早于 slotEndMs，与后端槽位计算规则保持一致。
     const slotEnd = line.slotEndMs ?? track.durationMs ?? line.endMs
@@ -366,16 +359,22 @@ export function dubClips(
         duration,
         mediaStart: line.startMs,
         playbackRate: video.playbackRate,
-        trimmed: track.lines.some((each) => each.index === index && each.trimmed),
+        trimmed: result?.trimmed ?? false,
+        text: line.text,
+        voice: request.voice,
+        speed: result?.speed ?? 1,
       },
     ]
   })
 }
 
-/** 语言 `locale` 下配的是 `captions` 里这几句字幕的配音片段：重新配好这几句时换掉它们，不配音时删掉它们。 */
+/**
+ * 语言 `locale`（原文是 null）下配的是 `captions` 里这几句字幕的配音片段：重新配好这几句时换掉它们，不配音时删掉
+ * 它们。
+ */
 export function dubsOf(
   clips: readonly FilmClip[],
-  locale: string,
+  locale: string | null,
   captions: Iterable<string>,
 ): string[] {
   const wanted = new Set(captions)

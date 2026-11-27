@@ -76,24 +76,29 @@ describe('useDubbing', () => {
       ),
     })
 
-    await act(() =>
-      result.current.start('en', { takes: targets, narrations: [] }, (setting) => setting),
-    )
+    await act(() => result.current.start('en', { takes: targets, narrations: [] }))
     await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
 
     expect(
       sent
-        .map(({ sourceJobId, lines, reference }) => ({ sourceJobId, lines, reference }))
+        .map(({ sourceJobId, locale, lines, reference }) => ({
+          sourceJobId,
+          locale,
+          lines,
+          reference,
+        }))
         .toSorted((left, right) => (left.lines[0]?.startMs ?? 0) - (right.lines[0]?.startMs ?? 0)),
     ).toEqual([
       {
         sourceJobId: TAKE,
+        locale: 'en',
         lines: [{ startMs: 0, endMs: 500, text: 'one', slotEndMs: 1_000 }],
         // 原声的音色带着整条素材片的说话时段，资料库的音色不带
         reference: { kind: 'original', spans },
       },
       {
         sourceJobId: TAKE,
+        locale: 'en',
         lines: [{ startMs: 1_000, endMs: 1_500, text: 'two' }],
         reference: { kind: 'reference_audio', referenceId: EMMA },
       },
@@ -108,7 +113,87 @@ describe('useDubbing', () => {
       { voice: null, url: 'https://media.test/dub-original.m4a' },
       { voice: EMMA, url: 'https://media.test/dub-emma.m4a' },
     ])
-    expect(result.current.generating).toBe(0)
+    expect(result.current.running).toBeNull()
+  })
+
+  it('原文下给素材片配音：不写语言；还在合成时记着这批的句子和还没有结果的句数，同一时间只跑一批', async () => {
+    const sent: DubbingIn[] = []
+    const records = new Map<string, GenerationJob>()
+    server.use(
+      http.get('*/api/generations', () => HttpResponse.json({ items: [...records.values()] })),
+      http.post('*/api/generations/dubbings', async ({ request }) => {
+        const body = (await request.json()) as DubbingIn
+        sent.push(body)
+        const id = crypto.randomUUID()
+        records.set(
+          id,
+          makeGenerationJob({
+            id,
+            kind: 'dubbing',
+            status: 'submitted',
+            sourceJobId: body.sourceJobId,
+            outputUrl: null,
+          }),
+        )
+        return HttpResponse.json({ generation: records.get(id) }, { status: 202 })
+      }),
+    )
+    const finish = (sourceJobId: string) => {
+      for (const [id, job] of records)
+        if (job.sourceJobId === sourceJobId)
+          records.set(id, {
+            ...job,
+            status: 'completed',
+            outputUrl: `https://media.test/${id}.m4a`,
+          })
+    }
+    const OTHER = '1f2e3d4c-5b6a-4978-8877-665544332211'
+    const target = (sourceJobId: string, captions: string[]): DubbingTarget => ({
+      src: SRC,
+      sourceJobId,
+      voice: null,
+      lines: captions.map((caption, index) => ({
+        caption,
+        startMs: index * 1_000,
+        endMs: index * 1_000 + 500,
+        text: caption,
+      })),
+      spans: [],
+    })
+    const onDone = vi.fn<(done: DubbingDone) => void>()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { result } = renderHook(() => useDubbing(CONVERSATION, onDone), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    })
+
+    await act(() =>
+      result.current.start(null, {
+        takes: [target(TAKE, ['c1', 'c2']), target(OTHER, ['c3'])],
+        narrations: [],
+      }),
+    )
+    expect(sent.map((body) => 'locale' in body)).toEqual([false, false])
+    expect(result.current.running).toEqual({
+      locale: null,
+      lines: new Set(['c1', 'c2', 'c3']),
+      remaining: 3,
+    })
+    // 在跑时再发起不做事
+    await act(() => result.current.start(null, { takes: [target(TAKE, ['c9'])], narrations: [] }))
+    expect(sent).toHaveLength(2)
+
+    finish(TAKE)
+    await act(() => client.invalidateQueries())
+    await waitFor(() => expect(result.current.running?.remaining).toBe(1))
+    expect(result.current.running?.lines).toEqual(new Set(['c1', 'c2', 'c3']))
+    expect(onDone).not.toHaveBeenCalled()
+
+    finish(OTHER)
+    await act(() => client.invalidateQueries())
+    await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
+    expect(result.current.running).toBeNull()
   })
 
   describe('旁白的句子：每句按文字合成一次，和素材片的请求一起结束', () => {
@@ -157,9 +242,7 @@ describe('useDubbing', () => {
       const result = render(onDone)
       const line = { caption: 'n1', text: 'Hello', voice: EMMA, maxMs: 900 }
 
-      await act(() =>
-        result.current.start('en', { takes: [], narrations: [line] }, (setting) => setting),
-      )
+      await act(() => result.current.start('en', { takes: [], narrations: [line] }))
       await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
 
       expect(sent).toEqual([
@@ -186,9 +269,7 @@ describe('useDubbing', () => {
       const result = render(onDone)
       const line = { caption: null, text: '欢迎光临', voice: EMMA }
 
-      await act(() =>
-        result.current.start(null, { takes: [], narrations: [line] }, (setting) => setting),
-      )
+      await act(() => result.current.start(null, { takes: [], narrations: [line] }))
       await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
 
       expect(sent).toEqual([
@@ -198,7 +279,7 @@ describe('useDubbing', () => {
           reference: { kind: 'reference_audio', referenceId: EMMA },
         },
       ])
-      expect(result.current.narrating).toBe(0)
+      expect(result.current.running).toBeNull()
     })
   })
 })

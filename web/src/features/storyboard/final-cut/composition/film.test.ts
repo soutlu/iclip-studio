@@ -214,19 +214,42 @@ describe('按标签认片段', () => {
       expect(written).not.toMatch(/data-audio-group|data-fx-carve|data-fx-chain/)
   })
 
-  it('配音片段：其它语言的写着语言，原文的旁白不写语言、写着音色；读回来一样', () => {
+  it('配音片段：其它语言的写着语言，原文的不写语言；合成时的字、音色（原声的音色写成 original）和倍数写着；读回来一样', () => {
     const dubbed = audio({
       id: 'd',
-      dub: { locale: 'en', caption: 'cap-1', trimmed: true, voice: null },
+      dub: {
+        locale: 'en',
+        caption: 'cap-1',
+        trimmed: true,
+        text: 'Hi "you"',
+        voice: null,
+        speed: 1.183,
+      },
     })
     const narration = audio({
       id: 'n',
-      dub: { locale: null, caption: 'cap-2', trimmed: false, voice: 'v-1' },
+      dub: { locale: null, caption: 'cap-2', trimmed: false, text: '你好', voice: 'v-1', speed: 1 },
     })
     expect(readBack(mainFile([dubbed, narration], CANVAS))).toEqual([dubbed, narration])
     expect(audioElement(narration)).not.toContain('data-locale')
     expect(audioElement(narration)).toContain('data-dub-voice="v-1"')
-    expect(audioElement(dubbed)).not.toContain('data-dub-voice')
+    expect(audioElement(narration)).not.toContain('data-dub-speed')
+    expect(audioElement(dubbed)).toContain('data-dub-voice="original"')
+    expect(audioElement(dubbed)).toContain('data-dub-speed="1.183"')
+  })
+
+  it('没有记录的老配音片段：不写字和倍数，老旁白只有音色；读回来没有记录', () => {
+    const legacy = audio({
+      id: 'l',
+      dub: { locale: 'en', caption: 'cap-1', trimmed: false, text: null, voice: null, speed: 1 },
+    })
+    const narration = audio({
+      id: 'n',
+      dub: { locale: null, caption: 'cap-2', trimmed: false, text: null, voice: 'v-1', speed: 1 },
+    })
+    expect(readBack(mainFile([legacy, narration], CANVAS))).toEqual([legacy, narration])
+    expect(audioElement(legacy)).not.toMatch(/data-dub-(text|voice|speed)/)
+    expect(audioElement(narration)).not.toMatch(/data-dub-(text|speed)/)
   })
 })
 

@@ -1227,7 +1227,7 @@ export const workspaceHandlers = [
     const created = acceptGeneration({
       kind: 'dubbing',
       prompt: '',
-      request: { locale: body.locale, lines: body.lines, reference: body.reference },
+      request: { locale: body.locale ?? null, lines: body.lines, reference: body.reference },
       conversationId: body.conversationId ?? null,
       taskId: body.taskId ?? null,
       metadata: body.metadata ?? null,

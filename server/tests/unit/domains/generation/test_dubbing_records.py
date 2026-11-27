@@ -22,8 +22,10 @@ from iclip.domains.generation.ports import VoiceSample
 from iclip.domains.generation.provider import ProviderSubmission
 from iclip.domains.generation.queue import GenerationQueue, ProviderLane, submit_queue
 from iclip.domains.generation.schemas import (
+    KIND_DUBBING,
     MAX_DUBBING_LINE_CHARS,
     MAX_DUBBING_LINES,
+    OPERATION_GENERATE,
     DubbedLine,
     DubbingLine,
     DubbingOriginalReference,
@@ -33,8 +35,10 @@ from iclip.domains.generation.schemas import (
     DubbingUploadReference,
     DubbingVoiceReference,
     SpeechRequest,
+    request_to_payload,
 )
 from iclip.domains.generation.service import GenerationService
+from iclip.domains.generation.stored_requests import request_from_payload
 from iclip.domains.identity.acting import ActAs
 from iclip.domains.identity.models import Principal
 from tests.helpers.app import app_with_principal
@@ -224,6 +228,25 @@ async def test_dubbing_a_take_records_the_lines_reference_and_video_length_and_q
         reference=DubbingOriginalReference(kind="original"),
     )
     assert len(world.submits_to(FAKE_DUBBING_PROVIDER)) == 1
+
+
+async def test_a_dubbing_without_a_locale_records_none_and_reads_back() -> None:
+    me = uuid.uuid4()
+    take = completed_take(owner_user_id=me)
+    world = build_world([take])
+    payload = body(take)
+    del payload["locale"]
+
+    response = await post(world, me, payload)
+
+    assert response.status_code == 202, response.text
+    (dubbing,) = world.dubbings()
+    assert isinstance(dubbing.request, DubbingRequest)
+    assert dubbing.request.locale is None
+    stored = request_to_payload(dubbing.request)
+    restored = request_from_payload(KIND_DUBBING, OPERATION_GENERATE, stored, has_source=True)
+    assert isinstance(restored, DubbingRequest)
+    assert restored.locale is None
 
 
 @pytest.mark.parametrize("group", ["mkt", None], ids=["grouped", "default"])
