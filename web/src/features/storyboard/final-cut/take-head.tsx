@@ -3,15 +3,15 @@ import { useElementSize } from '@/shared/lib/use-element-size'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { Tool } from './editor-toolbar'
 import type { Material, MaterialTake, UsedSpan } from './materials'
+import { UsedBadge } from './media-row'
 
 type TakeHeadProps = {
   take: MaterialTake
   /** 当前展示的版本。 */
   version: Material
-  /** 时间线已占用的素材区间映射（按素材地址索引，见 `usedSpans`），用于标识各版本是否已入轨。 */
+  /** 时间线已占用的素材区间映射（按素材地址索引，见 `usedSpans`），用于标识各版本是否已用。 */
   used: ReadonlyMap<string, readonly UsedSpan[]>
-  /** 镜头数与总时长（毫秒），分镜镜头解析完成后可用。 */
-  shotCount: number | undefined
+  /** 总时长（毫秒），分镜镜头解析完成后可用。 */
   durationMs: number | undefined
   /** 「+」按钮不可用时的禁用原因说明。 */
   blocked: string | undefined
@@ -19,12 +19,14 @@ type TakeHeadProps = {
   onInsertWhole: () => void
 }
 
-/** 原作卡片顶栏：依次展示「出片 A」、版本选择器、「● 已入轨」标识，右侧展示镜头数、总时长及整条加入轨道按钮。 */
+/**
+ * 出片的标题行：「出片 A」、有几个版本时的版本分段；右边悬停露出的「+」（整条加入轨道）、
+ * 当前版本在时间线上时常驻的「✓ 已用」和时长。
+ */
 export function TakeHead({
   take,
   version,
   used,
-  shotCount,
   durationMs,
   blocked,
   onVersion,
@@ -35,34 +37,24 @@ export function TakeHead({
       <span className="wf-take-name">{take.label}</span>
       {take.versions.length > 1 ? (
         <TakeVersions onVersion={onVersion} take={take} used={used} version={version} />
-      ) : (
-        <span className="wf-take-version">{version.versionNumber}</span>
-      )}
-      {used.has(version.url) ? (
-        <span className="wf-take-in-track">
-          <i aria-hidden="true" className="wf-take-dot" />
-          已入轨
-        </span>
       ) : null}
-      <span className="wf-take-meta">
-        {shotCount === undefined ? null : <span>{shotCount} 镜</span>}
-        {durationMs === undefined ? null : (
-          <span className="wf-take-duration">{(durationMs / 1000).toFixed(1)}s</span>
-        )}
-      </span>
       <Tool
         blocked={blocked}
-        className="wf-take-add"
+        className="wf-take-add wf-reveal"
         icon="final-cut-add"
         label="整条加入轨道"
         onClick={onInsertWhole}
         tip="整条加入轨道"
       />
+      {used.has(version.url) ? <UsedBadge>已用</UsedBadge> : null}
+      {durationMs === undefined ? null : (
+        <span className="wf-take-duration">{(durationMs / 1000).toFixed(1)}s</span>
+      )}
     </div>
   )
 }
 
-/** 多版本分段选择器：点击即切换当前展示版本；非当前展示但已入轨的版本附带绿色圆点提示。 */
+/** 多版本分段选择器：点击即切换当前展示版本；非当前展示但已用的版本附带圆点提示。 */
 function TakeVersions({
   take,
   version,
@@ -96,7 +88,7 @@ function TakeVersions({
           <TooltipRoot key={item.jobId}>
             <TooltipTrigger asChild>
               <button
-                aria-label={inTrack ? `${item.version}，已入轨` : item.version}
+                aria-label={inTrack ? `${item.version}，已用` : item.version}
                 aria-pressed={current}
                 className="wf-seg-item ui-state ui-focus"
                 onClick={() => {
@@ -111,7 +103,7 @@ function TakeVersions({
               </button>
             </TooltipTrigger>
             <TooltipContent className="wf-tip" side="top">
-              {inTrack ? `${item.version} · 已入轨` : item.version}
+              {inTrack ? `${item.version} · 已用` : item.version}
             </TooltipContent>
           </TooltipRoot>
         )

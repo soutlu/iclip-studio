@@ -18,7 +18,7 @@ import {
   AuditionBuffering,
   AuditionButton,
   audioDurationText,
-  audioTraitsText,
+  type AudioCoverTraits,
   type Audition,
 } from '@/shared/ui/audition'
 import { IconButton } from '@/shared/ui/button'
@@ -41,12 +41,14 @@ import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
 import { filterAudio, firstAudioClipOf, type ConversationAudio, type LibraryAudio } from './audio'
-import { AudioCardText, AudioCardWave, TabAuditionBar } from './audio-card'
-import { AudioLibrary, type LibraryKind, type LibraryScope } from './audio-library'
+import { AudioRowWave, RowClock, TabAuditionBar } from './audio-card'
+import { AudioLibrary, LIBRARY_FILTERS, type LibraryKind, type LibraryScope } from './audio-library'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
 import { EmptyNote } from './empty-note'
+import { MediaRow, RowProgress, UsedBadge } from './media-row'
+import { TraitFilters } from './trait-filters'
 import type { NewAudio } from './use-film-session'
 import { useTabAudition } from './use-tab-audition'
 import {
@@ -58,10 +60,13 @@ import {
 
 const MAX_PROMPT_CHARS = 3000
 
-/** final-cut 里用着的那一行：行尾那个勾的无障碍名，也接在整行按钮的名字后面。 */
-const USED_LABEL = '使用中'
+/** final-cut 里用着的那一行：行尾常驻的徽标，也接在整行按钮的名字后面。 */
+const USED_LABEL = '已用'
 
 const LIBRARY_KINDS: readonly LibraryKind[] = ['bgm', 'sfx']
+
+/** 本对话的音频没有曲风情绪：封面按配乐、按编号挑。 */
+const CONVERSATION_TRAITS: AudioCoverTraits = { audioKind: 'bgm' }
 
 type AudioTabProps = {
   conversationId: string
@@ -89,16 +94,13 @@ const statusLabel = (status: GenerationJob['status']) =>
         ? '已就绪'
         : '生成失败'
 
+/** 还没生成完、生成失败的音频盖在封面上的状态：生成中是跳动的竖条，排队中是时钟，失败是警示。 */
 function MusicStatus({ status }: { status: GenerationJob['status'] }) {
   const running = status !== 'pending' && isRunningStatus(status)
   return (
     <span
       aria-label={statusLabel(status)}
-      className={cn(
-        'wf-song-disc wf-music-status',
-        running && 'is-running',
-        status === 'failed' && 'is-failed',
-      )}
+      className={cn('wf-music-status', status === 'failed' && 'is-failed')}
       role="img"
     >
       {running ? (
@@ -136,11 +138,9 @@ export function AudioTab({
   const [query, setQuery] = useState('')
   const shown = filterAudio(items, query)
 
-  // 上传的音频不记时长：和时间线一样从音频文件里读
-  const unmeasured = useStableValue(
-    items.flatMap((item) => (isReady(item) && item.durationMs === null ? [item.url] : [])),
-  )
-  const peaks = useAudioPeaks(unmeasured)
+  // 本对话的音频不带波形，上传的也不记时长：和时间线一样从音频文件里读
+  const readyUrls = useStableValue(items.flatMap((item) => (isReady(item) ? [item.url] : [])))
+  const peaks = useAudioPeaks(readyUrls)
   /** 构建待加入轨道的音频数据；尚不满足加入条件时返回不可加入的原因文案。 */
   const addable = (item: ConversationAudio): NewAudio | string => {
     if (!isReady(item))
@@ -157,6 +157,11 @@ export function AudioTab({
         : '音频时长读取失败，无法加入轨道'
     return { label: item.title, src: item.url, mediaStart: 0, duration }
   }
+  const peaksOf = (item: ConversationAudio | LibraryAudio) => {
+    if ('reference' in item) return item.reference.peaks
+    const state = item.url === null ? undefined : peaks.get(item.url)
+    return state?.kind === 'ready' ? state.peaks.peaks : null
+  }
 
   // 「本对话」和「音频库」两块：搜索框共用，本对话的按名字筛，音频库的按它去搜
   const [view, setView] = useState<AudioView>('conversation')
@@ -171,9 +176,26 @@ export function AudioTab({
     active,
     onError: () => onNotice('音频试听失败，请重试'),
   })
+  const showView = (next: AudioView) => {
+    if (next === view) return
+    audition.stop()
+    setView(next)
+  }
   const rowFor = (item: ConversationAudio | LibraryAudio, ready: NewAudio | string) => {
     const used = item.url === null ? undefined : firstAudioClipOf(clips, item.url)
     const durationMs = typeof ready === 'string' ? item.durationMs : ready.duration
+    const traits = 'reference' in item ? item.reference : CONVERSATION_TRAITS
+    const start = () => {
+      if (isReady(item))
+        toggle({
+          id: item.id,
+          url: item.url,
+          title: item.title,
+          peaks: peaksOf(item),
+          traits,
+          durationMs: durationMs ?? 0,
+        })
+    }
     return (
       <AudioRow
         addable={ready}
@@ -192,16 +214,13 @@ export function AudioTab({
         onReveal={() => {
           if (used !== undefined) onReveal(used.id)
         }}
-        onToggle={() => {
-          if (isReady(item))
-            toggle({
-              id: item.id,
-              url: item.url,
-              title: item.title,
-              peaks: 'reference' in item ? item.reference.peaks : null,
-              durationMs: durationMs ?? 0,
-            })
+        onStartAt={(ratio) => {
+          start()
+          audition.seek(ratio, durationMs ?? undefined)
         }}
+        onToggle={start}
+        peaks={peaksOf(item)}
+        traits={traits}
         used={used !== undefined}
       />
     )
@@ -211,6 +230,8 @@ export function AudioTab({
   const fileRef = useRef<HTMLInputElement>(null)
   const upload = async (files: File[]) => {
     setUploading(true)
+    // 导入的音频进「本对话」：在音频库里导入时切过去，好看到新的一条
+    showView('conversation')
     for (const file of files) {
       try {
         await uploadMediaFile(file, 'audio', { conversationId })
@@ -232,60 +253,106 @@ export function AudioTab({
       aria-label="搜索音频"
       leadingIcon="final-cut-search"
       onChange={(event) => setQuery(event.currentTarget.value)}
-      placeholder="搜索音频"
+      placeholder="搜索"
       type="search"
       value={query}
-      wrapperClassName="wf-field wf-search wf-audio-search"
+      wrapperClassName="wf-field wf-search"
     />
   )
-  const views = (
-    <ChipGroup
-      aria-label="音频来源"
-      className="wf-seg"
-      onValueChange={(value) => {
-        if (value !== 'conversation' && value !== 'library') return
-        audition.stop()
-        setView(value)
-      }}
-      type="single"
-      value={view}
-      variant="segmented"
-    >
-      <FilterChip className="wf-seg-item" value="conversation" variant="segmented">
-        本对话
-      </FilterChip>
-      <FilterChip className="wf-seg-item" value="library" variant="segmented">
-        音频库
-      </FilterChip>
-    </ChipGroup>
+  const top = (
+    <div className="wf-audio-top">
+      <ChipGroup
+        aria-label="音频来源"
+        className="wf-seg"
+        onValueChange={(value) => {
+          if (value === 'conversation' || value === 'library') showView(value)
+        }}
+        type="single"
+        value={view}
+        variant="segmented"
+      >
+        <FilterChip className="wf-seg-item" value="conversation" variant="segmented">
+          本对话
+        </FilterChip>
+        <FilterChip className="wf-seg-item" value="library" variant="segmented">
+          音频库
+        </FilterChip>
+      </ChipGroup>
+      <div className="wf-audio-tools">
+        <GenerateMusic
+          conversationId={conversationId}
+          onNotice={onNotice}
+          onSubmitted={() => showView('conversation')}
+        >
+          <button
+            aria-label="生成音乐"
+            className="wf-chip-btn is-soft ui-state ui-focus"
+            type="button"
+          >
+            <Icon decorative name="final-cut-generate" size="sm" />
+            生成
+          </button>
+        </GenerateMusic>
+        <IconButton
+          className="wf-audio-import"
+          disabled={uploading}
+          label="导入音频"
+          name={uploading ? 'loading' : 'final-cut-upload'}
+          onClick={() => fileRef.current?.click()}
+          size="sm"
+          tooltip="导入音频"
+        />
+        <input
+          accept={MEDIA_AUDIO_ACCEPT}
+          aria-label="选择音频文件"
+          className="hidden"
+          multiple
+          onChange={(event) => {
+            const files = [...(event.target.files ?? [])]
+            event.target.value = ''
+            if (files.length > 0) void upload(files)
+          }}
+          ref={fileRef}
+          tabIndex={-1}
+          type="file"
+        />
+      </div>
+    </div>
   )
   const bar =
     auditioning === null ? null : <TabAuditionBar audition={audition} item={auditioning} />
   if (view === 'library')
     return (
       <div className="wf-audio">
-        <div className="wf-audio-top">
-          {views}
-          <ChipGroup
-            aria-label="音频库分类"
-            className="wf-filters"
-            onValueChange={(value) => {
-              const kind = LIBRARY_KINDS.find((each) => each === value)
-              // 换子类时清掉属性筛选，关键词留着
-              if (kind !== undefined) setScope({ kind, traits: {} })
-            }}
-            type="single"
-            value={scope.kind}
-          >
-            {LIBRARY_KINDS.map((kind) => (
-              <FilterChip className="wf-filter" key={kind} value={kind}>
-                {AUDIO_KIND_LABELS[kind]}
-              </FilterChip>
-            ))}
-          </ChipGroup>
+        <div className="wf-tab-head">
+          {top}
+          {search}
+          <div className="wf-audio-filters">
+            <ChipGroup
+              aria-label="音频库分类"
+              className="wf-filters"
+              onValueChange={(value) => {
+                const kind = LIBRARY_KINDS.find((each) => each === value)
+                // 换子类时清掉属性筛选，关键词留着
+                if (kind !== undefined) setScope({ kind, traits: {} })
+              }}
+              type="single"
+              value={scope.kind}
+            >
+              {LIBRARY_KINDS.map((kind) => (
+                <FilterChip className="wf-filter" key={kind} value={kind}>
+                  {AUDIO_KIND_LABELS[kind]}
+                </FilterChip>
+              ))}
+            </ChipGroup>
+            <TraitFilters
+              keys={LIBRARY_FILTERS[scope.kind]}
+              onChange={(traits) => setScope({ ...scope, traits })}
+              value={scope.traits}
+            />
+          </div>
         </div>
         <AudioLibrary
-          onTraits={(traits) => setScope({ ...scope, traits })}
           query={query}
           renderRow={(item) =>
             rowFor(item, {
@@ -296,7 +363,6 @@ export function AudioTab({
             })
           }
           scope={scope}
-          search={search}
         />
         {bar}
       </div>
@@ -304,40 +370,10 @@ export function AudioTab({
 
   return (
     <div className={cn('wf-audio', drop.dragOver && 'is-over')} {...drop.dragHandlers}>
-      <div className="wf-audio-top">
-        {views}
-        <div className="wf-audio-tools">
-          <GenerateMusic conversationId={conversationId} onNotice={onNotice}>
-            <button className="wf-chip-btn is-soft ui-state ui-focus" type="button">
-              <Icon decorative name="final-cut-generate" size="sm" />
-              生成音乐
-            </button>
-          </GenerateMusic>
-          <IconButton
-            className="wf-audio-import"
-            disabled={uploading}
-            label="导入音频"
-            name={uploading ? 'loading' : 'final-cut-upload'}
-            onClick={() => fileRef.current?.click()}
-            size="sm"
-          />
-          <input
-            accept={MEDIA_AUDIO_ACCEPT}
-            aria-label="选择音频文件"
-            className="hidden"
-            multiple
-            onChange={(event) => {
-              const files = [...(event.target.files ?? [])]
-              event.target.value = ''
-              if (files.length > 0) void upload(files)
-            }}
-            ref={fileRef}
-            tabIndex={-1}
-            type="file"
-          />
-        </div>
+      <div className="wf-tab-head">
+        {top}
+        {items.length === 0 ? null : search}
       </div>
-      {search}
       {music.isError ? (
         <div className="wf-audio-alert">
           <InlineAlert
@@ -348,7 +384,7 @@ export function AudioTab({
       ) : music.isPending ? (
         <EmptyNote icon="final-cut-music">正在读取音频…</EmptyNote>
       ) : items.length === 0 ? (
-        <EmptyNote icon="final-cut-music">暂无音频，请点击「生成音乐」或「导入音频」</EmptyNote>
+        <EmptyNote icon="final-cut-music">暂无音频，请点击「生成」或「导入音频」</EmptyNote>
       ) : shown.length === 0 ? (
         <EmptyNote icon="final-cut-music">暂无符合条件的音频，请更换关键词</EmptyNote>
       ) : (
@@ -364,14 +400,20 @@ export function AudioTab({
 type Press = { pointerId: number; originX: number; originY: number; moved: boolean }
 
 type AudioRowProps = {
-  /** 本对话的音频，或「音频库」里的一条（带库里那条的封面、波形和属性）。 */
+  /** 本对话的音频，或「音频库」里的一条（带库里那条的波形和属性）。 */
   audio: ConversationAudio | LibraryAudio
   conversationId: string
   addable: NewAudio | string
   used: boolean
   /** 页签共用的试听：看这一行是不是当前那条、在不在放。 */
   audition: Audition
+  /** 波形峰值；还没读到、读不出来时是 null（这时试听中的行展开一条细进度条）。 */
+  peaks: readonly number[] | null
+  /** 封面按它挑插画。 */
+  traits: AudioCoverTraits
   onToggle: () => void
+  /** 点没在试听的这一行的波形：从点到的比例处开始试听。 */
+  onStartAt: (ratio: number) => void
   onAdd: () => void
   onCarry: (point: CarryPoint | null) => void
   onDrop: (point: CarryPoint) => void
@@ -380,8 +422,8 @@ type AudioRowProps = {
 }
 
 /**
- * 一条音频：白色卡片，左边是试听（本对话的是色块上的试听键，音频库的配乐是封面、音效是圆形试听键），中间名字和右边的
- * 时长（音频库的下面再加真实波形和属性），最右是用着的勾或悬停出来的「+」。整行点了加入配乐行，也能拖进时间线。
+ * 一条音频（媒体行，见 `MediaRow`）：左边插画封面（音效是圆形试听键），中间名字和对称波形，右边时长
+ * （试听中是「当前 / 总长」，悬停时换成「+」），用着的常驻「✓ 已用」。整行点了加入配乐行，也能拖进时间线。
  */
 function AudioRow({
   audio,
@@ -389,7 +431,10 @@ function AudioRow({
   addable,
   used,
   audition,
+  peaks,
+  traits,
   onToggle,
+  onStartAt,
   onAdd,
   onCarry,
   onDrop,
@@ -398,10 +443,8 @@ function AudioRow({
 }: AudioRowProps) {
   const title = audio.title
   const ready = isReady(audio)
-  const reference = 'reference' in audio ? audio.reference : undefined
   const current = audition.current === audio.id
   const playing = audition.playing === audio.id
-  const playLabel = playing ? `暂停试听：${title}` : `试听：${title}`
   const durationMs = typeof addable === 'string' ? audio.durationMs : addable.duration
   const pressRef = useRef<Press | null>(null)
   const clickAfterDrag = useClickAfterDrag()
@@ -452,128 +495,137 @@ function AudioRow({
 
   // 还加不了的行点了什么都不做，按 Enter、右键时才说明原因
   const addsOnClick = typeof addable !== 'string'
-  return (
-    <li className={cn('wf-song wf-card', current && 'is-playing', lifting && 'is-lifting')}>
-      <ContextMenuRoot>
-        <ContextMenuTrigger asChild>
-          <button
-            aria-keyshortcuts="Enter"
-            aria-label={used ? `${title}，${USED_LABEL}` : title}
-            className={cn('wf-song-select', !addsOnClick && !used && 'is-inert')}
-            onClick={() => {
-              if (clickAfterDrag.take()) return
-              if (used) onReveal()
-              else if (addsOnClick) onAdd()
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== 'Enter') return
-              event.preventDefault()
-              onAdd()
-            }}
-            onPointerCancel={cancel}
-            onPointerDown={press}
-            onPointerMove={move}
-            onPointerUp={release}
-            type="button"
-          />
-        </ContextMenuTrigger>
-        <ContextMenuSurface aria-label={title} className="wf-menu">
-          <ContextMenuItem onSelect={onAdd}>加到播放头</ContextMenuItem>
-        </ContextMenuSurface>
-      </ContextMenuRoot>
-      {reference === undefined ? (
-        ready ? (
-          <IconButton
-            aria-pressed={playing}
-            className="wf-song-disc"
-            label={playLabel}
-            name={playing ? 'final-cut-pause' : 'final-cut-play'}
-            onClick={onToggle}
-            size="sm"
-          />
-        ) : (
-          <MusicStatus status={audio.status} />
-        )
-      ) : reference.audioKind === 'sfx' ? (
-        <AuditionButton label={playLabel} onToggle={onToggle} playing={playing}>
-          {current ? <AuditionBuffering audition={audition} /> : null}
-        </AuditionButton>
-      ) : (
-        <AudioCover
-          id={reference.id}
-          onToggle={onToggle}
-          size="sm"
-          state={playing ? 'playing' : current ? 'paused' : 'idle'}
-          title={title}
-          traits={reference}
-        >
-          {current ? <AuditionBuffering audition={audition} /> : null}
-        </AudioCover>
-      )}
-      <AudioCardText
-        meta={ready && durationMs !== null ? audioDurationText(durationMs) : undefined}
-        metaAtEnd
+  const hit = (
+    <ContextMenuRoot>
+      <ContextMenuTrigger asChild>
+        <button
+          aria-keyshortcuts="Enter"
+          aria-label={used ? `${title}，${USED_LABEL}` : title}
+          className={cn('wf-row-hit', !addsOnClick && !used && 'is-inert')}
+          onClick={() => {
+            if (clickAfterDrag.take()) return
+            if (used) onReveal()
+            else if (addsOnClick) onAdd()
+          }}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return
+            event.preventDefault()
+            onAdd()
+          }}
+          onPointerCancel={cancel}
+          onPointerDown={press}
+          onPointerMove={move}
+          onPointerUp={release}
+          type="button"
+        />
+      </ContextMenuTrigger>
+      <ContextMenuSurface aria-label={title} className="wf-menu">
+        <ContextMenuItem onSelect={onAdd}>加到播放头</ContextMenuItem>
+      </ContextMenuSurface>
+    </ContextMenuRoot>
+  )
+  const cover =
+    'reference' in audio && audio.reference.audioKind === 'sfx' ? (
+      <AuditionButton
+        label={playing ? `暂停试听：${title}` : `试听：${title}`}
+        onToggle={onToggle}
+        playing={playing}
+      >
+        {current ? <AuditionBuffering audition={audition} /> : null}
+      </AuditionButton>
+    ) : (
+      <AudioCover
+        id={audio.id}
+        onToggle={ready ? onToggle : undefined}
+        size="sm"
+        state={playing ? 'playing' : current ? 'paused' : 'idle'}
         title={title}
-        traits={reference === undefined ? undefined : audioTraitsText(reference)}
-        wave={
-          reference === undefined ? undefined : (
-            <AudioCardWave
-              audition={audition}
-              current={current}
-              durationMs={reference.durationMs}
-              peaks={reference.peaks}
-            />
-          )
-        }
-      />
-      {used ? (
-        <span aria-label={USED_LABEL} className="wf-song-used" role="img">
-          <Icon decorative name="final-cut-in-use" size="sm" />
-        </span>
-      ) : addsOnClick ? (
-        // 整行已能用 Enter 加入，「+」不再占一个 Tab 停靠点
-        <IconButton
-          className="wf-song-add"
-          label={`放入配乐行：${title}`}
-          name="final-cut-add"
-          onClick={onAdd}
-          size="xs"
-          tabIndex={-1}
-          tooltip="放入配乐行"
+        traits={traits}
+      >
+        {ready ? null : <MusicStatus status={audio.status} />}
+        {current ? <AuditionBuffering audition={audition} /> : null}
+      </AudioCover>
+    )
+  const failure =
+    audio.status === 'failed' ? (
+      <span className="wf-media-actions">
+        {audio.generated ? (
+          <GenerateMusic conversationId={conversationId} initialPrompt={title} onNotice={onNotice}>
+            <IconButton label={`重新生成：${title}`} name="refresh" size="xs" />
+          </GenerateMusic>
+        ) : null}
+        <PopupRoot>
+          <PopupTrigger asChild>
+            <IconButton label={`查看失败原因：${title}`} name="final-cut-more" size="xs" />
+          </PopupTrigger>
+          <PopupSurface
+            align="end"
+            aria-label={`失败原因：${title}`}
+            className="wf-music-details"
+            collisionPadding={16}
+            sideOffset={6}
+          >
+            <strong>{statusLabel(audio.status)}</strong>
+            {audio.errorMessage !== null ? (
+              <p className="wf-music-error">{audio.errorMessage}</p>
+            ) : null}
+            <p>{title}</p>
+          </PopupSurface>
+        </PopupRoot>
+      </span>
+    ) : undefined
+  return (
+    <MediaRow
+      badge={used ? <UsedBadge>{USED_LABEL}</UsedBadge> : undefined}
+      className={cn(lifting && 'is-lifting')}
+      cover={cover}
+      current={current}
+      detail={
+        ready && peaks !== null ? (
+          <AudioRowWave
+            audition={audition}
+            current={current}
+            durationMs={durationMs ?? 0}
+            onStartAt={onStartAt}
+            peaks={peaks}
+            title={title}
+          />
+        ) : undefined
+      }
+      end={
+        !ready || durationMs === null ? undefined : current ? (
+          <RowClock audition={audition} durationMs={durationMs} />
+        ) : (
+          <span className="wf-media-duration">{audioDurationText(durationMs)}</span>
+        )
+      }
+      actions={
+        failure ??
+        (addsOnClick && !used ? (
+          // 整行已能用 Enter 加入，「+」不再占一个 Tab 停靠点
+          <IconButton
+            className="wf-media-add"
+            label={`放入配乐行：${title}`}
+            name="final-cut-add"
+            onClick={onAdd}
+            size="xs"
+            tabIndex={-1}
+            tooltip="放入配乐行"
+          />
+        ) : undefined)
+      }
+      hit={hit}
+      title={title}
+    >
+      {ready && peaks === null ? (
+        <RowProgress
+          audition={audition}
+          current={current}
+          durationMs={durationMs ?? 0}
+          label={`播放进度：${title}`}
         />
       ) : null}
-      {audio.status === 'failed' ? (
-        <span className="wf-song-actions">
-          {audio.generated ? (
-            <GenerateMusic
-              conversationId={conversationId}
-              initialPrompt={title}
-              onNotice={onNotice}
-            >
-              <IconButton label={`重新生成：${title}`} name="refresh" size="xs" />
-            </GenerateMusic>
-          ) : null}
-          <PopupRoot>
-            <PopupTrigger asChild>
-              <IconButton label={`查看失败原因：${title}`} name="final-cut-more" size="xs" />
-            </PopupTrigger>
-            <PopupSurface
-              align="end"
-              aria-label={`失败原因：${title}`}
-              className="wf-song-details"
-              collisionPadding={16}
-              sideOffset={6}
-            >
-              <strong>{statusLabel(audio.status)}</strong>
-              {audio.errorMessage !== null ? (
-                <p className="wf-music-error">{audio.errorMessage}</p>
-              ) : null}
-              <p>{title}</p>
-            </PopupSurface>
-          </PopupRoot>
-        </span>
-      ) : null}
-    </li>
+    </MediaRow>
   )
 }
 
@@ -586,15 +638,20 @@ const MUSIC_PRESETS = [
   { label: '极简钢琴', prompt: '清澈极简钢琴尾奏，温暖留白' },
 ] as const
 
-/** 点 `children` 弹出生成音乐的输入框；`initialPrompt` 是重新生成时沿用的描述。 */
+/**
+ * 点 `children` 弹出生成音乐的输入框；`initialPrompt` 是重新生成时沿用的描述，
+ * `onSubmitted` 在提交成功、输入框收起后调。
+ */
 export function GenerateMusic({
   conversationId,
   onNotice,
+  onSubmitted,
   children,
   initialPrompt,
 }: {
   conversationId: string
   onNotice: (message: string) => void
+  onSubmitted?: () => void
   children: ReactElement
   initialPrompt?: string
 }) {
@@ -658,6 +715,7 @@ export function GenerateMusic({
       await refreshConversationMusic(queryClient, conversationId, job)
       setOpen(false)
       setTyped(null)
+      onSubmitted?.()
     } catch (error) {
       onNotice(errorMessageOf(error, '音乐生成提交失败'))
     } finally {
@@ -670,7 +728,7 @@ export function GenerateMusic({
       <PopupTrigger asChild ref={setTrigger}>
         {children}
       </PopupTrigger>
-      {/* 触发的「生成音乐」「重新生成」都在右边，输入卡和它们右对齐 */}
+      {/* 触发的「生成」「重新生成」都在右边，输入卡和它们右对齐 */}
       <PopupSurface
         align="end"
         aria-describedby={hintId}

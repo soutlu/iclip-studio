@@ -24,7 +24,7 @@ type WaveformSeek = {
 type WaveformProps = {
   /** 归一到 0～1 的峰值；null 时不画（能拖时退成一条细进度线）。 */
   peaks: readonly number[] | null
-  /** 已放过的比例（0～1），这部分用正文色，其余淡色。 */
+  /** 已放过的比例（0～1），这部分用正文色（`--waveform-played` 可换），其余淡色。 */
   progress?: number
   /** 给了就能点、拖着跳，方向键前后跳几秒。 */
   seek?: WaveformSeek | undefined
@@ -42,7 +42,7 @@ export function Waveform({ peaks, progress = 0, seek, className }: WaveformProps
       {peaks === null ? (
         <span className="relative h-0.5 w-full overflow-hidden rounded-full bg-outline-variant">
           <span
-            className="absolute inset-y-0 left-0 rounded-full bg-on-surface"
+            className="absolute inset-y-0 left-0 rounded-full bg-[var(--waveform-played,var(--color-on-surface))]"
             style={{ width: `${String(progress * 100)}%` }}
           />
         </span>
@@ -95,9 +95,9 @@ function WaveBars({
         preserveAspectRatio="none"
         viewBox={`0 0 ${String(bars.length)} 2`}
       >
-        {/* 线宽不随拉伸变，窄的宽的都是细竖条 */}
+        {/* 线宽不随拉伸变，窄的宽的都是细竖条；已放过的颜色默认正文色，所在页面可用 --waveform-played 换 */}
         <path
-          className="stroke-on-surface"
+          className="stroke-[var(--waveform-played,var(--color-on-surface))]"
           d={path(0, played)}
           strokeWidth={BAR_WIDTH}
           vectorEffect="non-scaling-stroke"

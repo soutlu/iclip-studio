@@ -4,25 +4,23 @@ import {
   type AudioTraitFilter,
 } from '@/shared/api/reference-audios'
 import { AUDIO_FILTER_LABELS, audioFilterOptions } from '@/shared/ui/audition'
-import { FilterBarRoot, SelectFilter } from '@/shared/ui/filter-bar'
+import { SelectChip } from './select-chip'
 
 type TraitFiltersProps = {
   /** 按先后列出的属性。 */
   keys: readonly AudioFilterKey[]
   value: AudioTraitFilter
   onChange: (next: AudioTraitFilter) => void
-  /** 右边的条数；还没读到时不显示。 */
-  total: number | null | undefined
+  /** 右边的条数；不给、还没读到时不显示。 */
+  total?: number | null | undefined
 }
 
-/** 侧栏里音频列表上方的一行属性筛选（素净的单选弹层，和资料库「音频库」同一种）加右边的条数。 */
+/** 侧栏里音频列表上方的一行属性筛选：每项一个筛选小块（`SelectChip`），右边可带条数。 */
 export function TraitFilters({ keys, value, onChange, total }: TraitFiltersProps) {
   return (
-    <FilterBarRoot className="wf-trait-filters">
+    <div className="wf-trait-filters">
       {keys.map((key) => (
-        <SelectFilter
-          className="wf-trait-filter"
-          id={key}
+        <SelectChip
           key={key}
           noun={AUDIO_FILTER_LABELS[key].name}
           onChange={(picked) =>
@@ -33,12 +31,11 @@ export function TraitFilters({ keys, value, onChange, total }: TraitFiltersProps
           }
           options={audioFilterOptions(key)}
           value={value[key]}
-          width="w-44"
         />
       ))}
       {total === undefined || total === null ? null : (
         <span className="wf-trait-count">{`${String(total)} 条`}</span>
       )}
-    </FilterBarRoot>
+    </div>
   )
 }

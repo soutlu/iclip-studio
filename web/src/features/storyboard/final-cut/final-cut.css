@@ -19,12 +19,19 @@
   --wf-shadow-action:
     0 1px 3px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
-  /* 极淡中性衬底：用于单版本「V1」标签 */
-  --wf-wash: color-mix(in srgb, var(--color-on-surface) 4.5%, transparent);
-  /* 紧凑分段容器及并排「V1」标签外圆角：内项圆角 + 容器内边距，保持四角同心 */
+  /* 紧凑分段容器外圆角：内项圆角 + 容器内边距，保持四角同心 */
   --wf-radius-seg-compact: calc(var(--radius-xs) + 2px);
-  /* 「镜头」页签底部操作条外圆角：内部按钮圆角 + 6px 内边距，保持四角同心 */
+  /* 右栏底部汇总栏、试听条外圆角：内部按钮圆角 + 6px 内边距，保持四角同心 */
   --wf-radius-dock: calc(var(--radius-sm) + 6px);
+  /* 右栏列表行、分类和筛选小块的底色：悬停很浅，选中 / 正在试听稍深 */
+  --wf-fill-hover: color-mix(
+    in srgb,
+    var(--color-on-surface) calc(var(--state-hover-subtle) * 100%),
+    transparent
+  );
+  --wf-fill-selected: var(--color-state-active);
+  /* 试听进度色：已放过的波形、进度条和「当前」时刻 */
+  --wf-audition-progress: var(--color-primary);
   /* 镜头条底部已入轨指示条：镜头条在深浅主题下均为黑底，采用固定鲜绿色 */
   --wf-in-track: var(--p70);
   /* 时间线片段：ink 为音频片段标题色；edge 为字幕胶囊与音频卡描边；label/label-line 为音频卡顶部标题条底色与分隔线；
@@ -228,7 +235,7 @@
 }
 
 /* 分段切换控件：凹槽底配浮起白色激活项（「镜头」页签内附加外细线，见 .wf-materials）；
-   is-compact 为紧凑高度，供与 20px 高元素同行排布 */
+   is-compact 为紧凑高度，供在 26px 高的标题行里行内排布（出片的版本分段） */
 .wf-editor .wf-seg {
   gap: 2px;
   padding: 2px;
@@ -282,11 +289,10 @@
 }
 
 .wf-editor .wf-seg.is-compact .wf-seg-item {
-  height: 16px;
+  height: 22px;
   gap: 2px;
-  padding: 0 4px;
+  padding: 0 8px;
   border-radius: var(--radius-xs);
-  font-size: var(--text-caption);
 }
 
 /* 输入框、文本域与复合输入容器：常态凹槽浅底，聚焦浮起白底配 1.5px 浅色描边环；
@@ -791,7 +797,7 @@
   scrollbar-width: thin;
 }
 
-/* 列表空着、正在读或筛不出东西：一块浅底，页签图标在上、说明在下 */
+/* 列表空着、正在读或筛不出东西：不套框，页签图标在上、说明在下 */
 .wf-empty {
   display: flex;
   flex: none;
@@ -800,9 +806,6 @@
   gap: 8px;
   margin: 6px var(--wf-tab-inset) 0;
   padding: 20px 16px;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
-  box-shadow: inset 0 0 0 1px var(--color-panel-line);
   color: var(--color-on-surface-muted);
   font-size: var(--text-label);
   line-height: var(--text-label--line-height);
@@ -813,9 +816,18 @@
   color: var(--color-on-surface-faint);
 }
 
-/* 分类小块：一排平铺，放不下时左右滑动；选中的那块浮起成白底。
-   两个类压过 ChipGroup、FilterChip 自带的换行、边框、底色和高度 */
-:is(.wf-tab-head, .wf-audio-top) > .wf-filters {
+/* 页签头里分类小块和筛选小块排成的一行：分类在左，放不下时左右滑动；筛选小块跟在后面（品牌靠右） */
+.wf-item-filters,
+.wf-audio-filters {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 分类小块：一排平铺，选中的那块垫一层浅底。两个类压过 ChipGroup、FilterChip 自带的换行、边框、底色和高度 */
+.wf-tab-head .wf-filters {
+  min-width: 0;
   flex-wrap: nowrap;
   gap: 4px;
   overflow-x: auto;
@@ -823,7 +835,7 @@
 }
 
 .wf-filters .wf-filter {
-  height: 25px;
+  height: 26px;
   flex: none;
   padding: 0 10px;
   border: 0;
@@ -840,23 +852,353 @@
 }
 
 .wf-filters .wf-filter[data-state='on'] {
-  background-color: var(--color-card);
-  box-shadow: var(--shadow-pill);
+  background-color: var(--wf-fill-selected);
   color: var(--color-on-surface);
   font-weight: 600;
 }
 
-/* ---- 配乐栏：顶行左边「本对话 / 音频库」，右边生成、导入（音频库里是「配乐 / 音效」）；下面搜索、
-   （音频库里的属性筛选）、音频列表，有试听时最下面贴一条试听条 ---- */
+.wf-item-brand {
+  margin-left: auto;
+}
 
-/* AudioLibrary 画出来的几块直接排进这一列；列表占满剩下的高度、自己滚 */
+/* ---- 右栏列表通用件：行底色、按意图显露的次要操作、媒体行、「✓ 已用」徽标、行内试听进度条、筛选小块 ---- */
+
+/* 列表行的底色状态：不画外框和竖条，只靠底色深浅。静止透明，悬停很浅，选中 / 正在试听稍深；只换底色，不动排版 */
+.wf-row {
+  position: relative;
+  border-radius: var(--radius-control);
+  transition: background-color var(--dur-s) var(--ease);
+}
+
+@media (hover: hover) {
+  .wf-row:hover {
+    background-color: var(--wf-fill-hover);
+  }
+}
+
+.wf-row.is-current {
+  background-color: var(--wf-fill-selected);
+}
+
+.wf-row.is-lifting {
+  opacity: 0.4;
+}
+
+/* 盖满整行的按钮：点、拖到时间线、右键、按 Enter 都落在它上面；行里别的控件叠在它上面 */
+.wf-row-hit {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-row-hit.is-inert {
+  cursor: default;
+}
+
+.wf-row.is-lifting .wf-row-hit {
+  cursor: grabbing;
+}
+
+.wf-row-hit:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* 按意图显露的次要操作（.wf-reveal）：指针停在宿主（.wf-reveal-host）上、键盘焦点在宿主里、宿主里有菜单或浮层开着时显出来；
+   平时占着位置但透明、不接指针，显出来时同一格里平时的内容（.wf-reveal-rest）淡出。没有悬停能力的设备一直显示 */
+.wf-reveal,
+.wf-reveal-rest {
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+@media (hover: hover) {
+  .wf-reveal-host:not(:hover, :has(:focus-visible, [data-state='open'])) .wf-reveal {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .wf-reveal-host:is(:hover, :has(:focus-visible, [data-state='open'])) .wf-reveal-rest {
+    opacity: 0;
+  }
+}
+
+/* 媒体行：左封面，中间名字和下面一行（波形或属性），右边对齐的一列和常驻徽标 */
+.wf-media-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+}
+
+.wf-media-cover,
+.wf-media-end,
+.wf-used-badge {
+  position: relative;
+  flex: none;
+}
+
+.wf-media-cover {
+  display: grid;
+}
+
+/* 文字块叠在整行按钮上面但不接指针，点名字也是点整行；里面的波形、进度条自己接 */
+.wf-media-text {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.wf-media-title {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右边那一列：平时的内容和显露的操作叠在同一格里，换的时候不挪位置；没有悬停能力时并排 */
+.wf-media-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .wf-media-end {
+    display: grid;
+    justify-items: end;
+  }
+
+  .wf-media-end > * {
+    grid-area: 1 / 1;
+  }
+}
+
+.wf-media-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 「当前 / 总长」：已放到的时刻用试听进度色 */
+.wf-audio-clock {
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-audio-clock b {
+  color: var(--wf-audition-progress);
+  font-weight: 500;
+}
+
+/* 行尾的「+」等小圆钮：浅底，停在它自己上时换成主色 */
+.wf-media-row .wf-media-add {
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+}
+
+.wf-media-row .wf-media-add:hover {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+/* 常驻的「✓ 已用」「✓ 当前」：中性浅底小胶囊 */
+.wf-used-badge {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 配乐行名字下面的对称波形：试听中的那条能点能拖；别的行点一下从那里开始试听 */
+.wf-media-wave {
+  height: 16px;
+  pointer-events: auto;
+}
+
+.wf-media-wave.is-idle {
+  display: block;
+  cursor: pointer;
+}
+
+.wf-media-wave-bars {
+  height: 16px;
+}
+
+/* 行内试听进度条：正在试听的行展开一条细线（点、拖任意位置跳过去），停了收起；高度过渡，不跳排版 */
+.wf-row-progress {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: -4px;
+  pointer-events: auto;
+  transition:
+    grid-template-rows var(--dur-m) var(--ease),
+    margin-top var(--dur-m) var(--ease);
+}
+
+.wf-row-progress[data-open] {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+}
+
+.wf-row-progress-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wf-row-progress-idle {
+  display: block;
+  height: 16px;
+}
+
+.wf-row-progress-line {
+  height: 16px;
+}
+
+/* 筛选小块：没选时是素净的「名词 ⌄」，选了以后垫浅底、写选中值，右边一个 × */
+.wf-select-chip {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease);
+}
+
+.wf-select-chip:hover,
+.wf-select-chip:has([data-state='open']) {
+  background-color: var(--wf-fill-hover);
+  color: var(--color-on-surface);
+}
+
+.wf-select-chip.is-picked {
+  background-color: var(--wf-fill-selected);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-select-chip-main {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 10px;
+  border-radius: inherit;
+}
+
+.wf-select-chip.is-picked .wf-select-chip-main {
+  padding-right: 4px;
+}
+
+.wf-select-chip-label {
+  overflow: hidden;
+  max-width: 120px;
+  text-overflow: ellipsis;
+}
+
+.wf-select-chip-main > svg {
+  color: var(--color-on-surface-faint);
+}
+
+.wf-select-chip-clear {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-muted);
+}
+
+.wf-select-chip-clear:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-select-chip-menu {
+  min-width: 140px;
+}
+
+.wf-select-chip-options {
+  display: grid;
+  gap: 2px;
+}
+
+.wf-select-chip-options.is-two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wf-select-chip-option {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-select-chip-option[aria-checked='true'] {
+  background-color: var(--wf-fill-selected);
+  font-weight: 600;
+}
+
+/* 页签底部贴着的条（迷你试听条、镜头的选区汇总栏）：浅灰圆角底条，占自己的一行、不盖住列表 */
+.wf-tab-dock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin: auto 10px 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--wf-radius-dock);
+  background: var(--color-surface-container);
+}
+
+.dark .wf-tab-dock {
+  background: var(--color-surface-container-lowest);
+}
+
+/* ---- 配乐栏：页签头是「本对话 / 音频库」和右边的「生成」、导入，下面搜索（音频库里再一行「配乐 / 音效」和
+   曲风、情绪筛选），再下面媒体行列表，有试听时最下面一条迷你试听条 ---- */
+
+/* 列表占满剩下的高度、自己滚 */
 .wf-audio {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 10px;
 }
 
 .wf-audio.is-over {
@@ -866,11 +1208,9 @@
 .wf-audio-top {
   display: flex;
   min-width: 0;
-  flex: none;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin: 0 var(--wf-tab-inset);
 }
 
 .wf-audio-tools {
@@ -880,27 +1220,32 @@
   gap: 4px;
 }
 
-.wf-editor .wf-audio-search {
-  margin: 0 var(--wf-tab-inset);
+/* 「生成」：墨色实底小按钮，比通用的深色胶囊高一档、和左边的分段一样高 */
+.wf-audio-tools .wf-chip-btn.is-soft {
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--text-label);
 }
 
 .wf-audio-alert {
   margin: 6px var(--wf-tab-inset) 0;
 }
 
-/* 列表上方一行属性筛选（素净的弹层触发器）和右边的条数；配乐栏的音频库、选音面板共用 */
-.wf-trait-filters {
-  flex: none;
+/* 列表的行之间不留缝，靠行自己的内边距和底色分开 */
+.wf-audio-list {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
-  margin: 0 var(--wf-tab-inset);
+  padding-inline: 8px;
 }
 
-.wf-trait-filters .wf-trait-filter {
-  height: 26px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
+/* 列表上方一行属性筛选小块和右边的条数；配乐栏的音频库、选音面板共用 */
+.wf-trait-filters {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 4px;
 }
 
 .wf-trait-count {
@@ -910,13 +1255,44 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* 页签最下面贴着的试听条（样子见共用的 AuditionBar 紧凑样子）：占自己的一行，不盖住列表 */
+/* 页签最下面常驻的迷你试听条（底条样子见 .wf-tab-dock）：封面、播放键、名字、进度滑杆、时刻、✕ 排一行 */
 .wf-audition-dock {
-  flex: none;
-  margin-top: auto;
+  gap: 8px;
+  padding-left: 8px;
 }
 
-/* 音频卡片里的文字块（配乐栏的音频行、选音卡片、人声卡的当前音色行共用）：名字一行，下面波形、属性 */
+.wf-audition-dock-title {
+  overflow: hidden;
+  min-width: 0;
+  max-width: 128px;
+  flex: 0 1 auto;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-audition-dock-slider {
+  min-width: 48px;
+  flex: 1;
+}
+
+/* 滑杆已走过的那段和圆钮用试听进度色；两个类压过编辑器里滑杆的中性色 */
+.wf-editor .wf-audition-dock-slider .slider-range {
+  background: var(--wf-audition-progress);
+}
+
+.wf-editor .wf-audition-dock-slider .slider-thumb {
+  background: var(--wf-audition-progress);
+  box-shadow: none;
+}
+
+/* 右栏里已放过的波形、行内进度条都用试听进度色（见 Waveform 的 --waveform-played） */
+.wf-side-body {
+  --waveform-played: var(--wf-audition-progress);
+}
+
+/* 音频卡片里的文字块（选音卡片、人声卡的当前音色行共用）：名字一行，下面属性 */
 .wf-audio-text {
   position: relative;
   display: flex;
@@ -953,10 +1329,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.wf-audio-meta.is-end {
-  margin-left: auto;
-}
-
 .wf-audio-traits {
   overflow: hidden;
   color: var(--color-on-surface-muted);
@@ -966,10 +1338,6 @@
   white-space: nowrap;
 }
 
-.wf-audio-wave {
-  height: 14px;
-}
-
 .wf-audio-import > svg {
   color: var(--color-on-surface-variant);
 }
@@ -977,12 +1345,6 @@
 /* 导入中按钮置灰，图标换成转圈（同按钮的加载态） */
 .wf-audio-import[aria-disabled='true'] > svg {
   animation: var(--animate-spin);
-}
-
-.wf-audio-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .wf-audio-more {
@@ -1074,8 +1436,7 @@
 }
 
 .wf-caption.is-current,
-.wf-voice-option:is(.is-picked, .is-current),
-.wf-song.is-playing {
+.wf-voice-option:is(.is-picked, .is-current) {
   box-shadow:
     var(--shadow-panel-card),
     0 0 0 1px var(--wf-control-ring),
@@ -1610,136 +1971,17 @@
   overflow-wrap: anywhere;
 }
 
-/* 一条音频：白色卡片，左边试听（色块上的试听键、封面或圆形试听键），中间文字块（见 wf-audio-text），右边用着的勾或悬停出来的「+」。
-   悬停只加深阴影、不位移：「重新生成」的输入卡挂在行里，位移会让行变成它的定位参照、跟着跳 */
-.wf-song {
-  position: relative;
-  flex: none;
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  transition:
-    background-color var(--dur-s) var(--ease),
-    box-shadow var(--dur-s) var(--ease);
-}
-
-/* 选中的音色卡、当前试听的配乐（在放或暂停着）深色下垫一层底 */
-.dark :is(.wf-voice-option:is(.is-picked, .is-current), .wf-song.is-playing) {
+/* 选中的音色卡深色下垫一层底 */
+.dark .wf-voice-option:is(.is-picked, .is-current) {
   background: var(--color-surface-container);
 }
 
-.wf-voice-option:hover,
-.wf-song:hover:not(.is-lifting) {
+.wf-voice-option:hover {
   box-shadow: var(--shadow-float), var(--shadow-specular);
 }
 
-.wf-song.is-lifting {
-  opacity: 0.4;
-}
-
-/* 整行是一个按钮：点、拖到时间线、右键、按 Enter 都落在它上面；试听键和别的按钮叠在它上面 */
-.wf-song-select {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
-  touch-action: none;
-  user-select: none;
-}
-
-.wf-song-select.is-inert {
-  cursor: default;
-}
-
-.wf-song.is-lifting .wf-song-select {
-  cursor: grabbing;
-}
-
-.wf-song-select:focus-visible {
-  outline: 2px solid var(--color-focus-ring);
-  outline-offset: -2px;
-}
-
-.wf-song-disc,
-.wf-song-actions,
-.wf-song-used,
-.wf-song-add {
-  position: relative;
-}
-
-/* 左边的色块：配乐的色相由浅到深，白色图标；试听键、生成中和失败的状态都画在它上面 */
-.wf-song .wf-song-disc {
-  display: inline-grid;
-  width: 36px;
-  height: 36px;
-  flex: none;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: linear-gradient(
-    135deg,
-    var(--color-tone-teal),
-    color-mix(in srgb, var(--color-tone-teal) 45%, var(--color-scrim))
-  );
-  box-shadow: var(--wf-shadow-knob);
-  color: var(--color-on-scrim);
-}
-
-.wf-song .wf-song-disc svg {
-  width: 14px;
-  height: 14px;
-}
-
-/* 用着的那一行行尾：主色浅底圆块里一个勾 */
-.wf-song-used {
-  display: inline-grid;
-  width: 26px;
-  height: 26px;
-  flex: none;
-  place-items: center;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  color: var(--color-primary);
-  pointer-events: none;
-}
-
-/* 没用过的那一行行尾的「+」：指针停在这一行上（或焦点在这一行里）才出来，停在它自己上时换成主色 */
-.wf-song .wf-song-add {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: var(--radius-full);
-  background: var(--color-surface-container-low);
-  color: var(--color-on-surface-variant);
-  opacity: 0;
-  scale: 0.9;
-  transition:
-    background-color var(--dur-s) var(--ease),
-    color var(--dur-s) var(--ease),
-    opacity var(--dur-s) var(--ease),
-    scale var(--dur-s) var(--ease);
-}
-
-.wf-song:is(:hover, :focus-within) .wf-song-add {
-  opacity: 1;
-  scale: 1;
-}
-
-.wf-song .wf-song-add:hover {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.wf-song-actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-}
-
 /* 失败原因的小卡片，材质同生成音乐的输入卡（见 .wf-generate） */
-.wf-song-details {
+.wf-music-details {
   display: grid;
   width: 280px;
   max-width: calc(100vw - 32px);
@@ -1750,30 +1992,29 @@
   white-space: pre-wrap;
 }
 
-.wf-song-details p {
+.wf-music-details p {
   margin: 0;
   color: var(--color-on-surface-muted);
 }
 
-.wf-song-details .wf-music-error {
+.wf-music-details .wf-music-error {
   color: var(--color-error);
 }
 
-/* 还没生成完、生成失败的音频在色块上显示状态（色块见 wf-song-disc）：生成中是跳动的竖条，排队中换成中性的浅底，
-   失败换成错误色的浅底 */
+/* 还没生成完、生成失败的音频盖在封面上的状态：插画上一层暗色，中间跳动的竖条（生成中）、时钟（排队中）；
+   失败时暗层换成错误色 */
 .wf-music-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--color-scrim) 48%, transparent);
+  color: var(--color-on-scrim);
   pointer-events: none;
 }
 
-.wf-song .wf-music-status:not(.is-running) {
-  background: var(--color-surface-container-high);
-  box-shadow: none;
-  color: var(--color-on-surface-muted);
-}
-
-.wf-song .wf-music-status.is-failed {
-  background: color-mix(in srgb, var(--color-error) 9%, transparent);
-  color: var(--color-error);
+.wf-music-status.is-failed {
+  background: color-mix(in srgb, var(--color-error) 72%, transparent);
 }
 
 .wf-music-pulse {
@@ -1815,7 +2056,7 @@
 
 /* 配乐栏里弹出的小卡片（生成音乐的输入卡、失败原因）：白色浮起卡片，不用共用浮层的毛玻璃。
    两个条件压过浮层自带的边框、底色和阴影 */
-:is(.wf-generate, .wf-song-details)[data-state] {
+:is(.wf-generate, .wf-music-details)[data-state] {
   border: 0;
   border-radius: var(--radius-md);
   background: var(--color-card);
@@ -3961,7 +4202,7 @@
   box-shadow: 0 0 0 0.5px var(--color-hairline);
 }
 
-/* ---- 元素栏、模板栏：搜索、分类小块，下面两列卡片 ---- */
+/* ---- 元素栏、模板栏：搜索，分类小块和右边的「品牌」筛选小块，下面两列卡片 ---- */
 
 .wf-items {
   display: flex;
@@ -3970,31 +4211,23 @@
   flex-direction: column;
 }
 
-/* 两列卡片：上面封面（不压字），下面名字、时长一行，再下面分类 */
+/* 两列卡片：上面圆角封面（不压字），下面名字、时长一行；不套卡片框 */
 .wf-item-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 10px;
+  gap: 12px 10px;
 }
 
-/* 卡片材质见 wf-card；指针停上去时浮起一点 */
 .wf-item {
   position: relative;
+  display: flex;
   min-width: 0;
-  gap: 0;
-  overflow: hidden;
-  padding: 0;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: var(--radius-md);
   text-align: left;
   user-select: none;
-  transition:
-    translate var(--dur-s) var(--ease),
-    box-shadow var(--dur-s) var(--ease);
-}
-
-.wf-item:hover:not(.is-lifting) {
-  translate: 0 -2px;
-  box-shadow: var(--shadow-float);
 }
 
 /* 焦点框画在整张卡片外面：选择按钮被封面盖着，它自己的焦点框看不见 */
@@ -4030,7 +4263,7 @@
   pointer-events: none;
 }
 
-/* 封面：深色底（同时间线上元素、模板片段的卡底），预览图铺满 */
+/* 封面：圆角，深色底（同时间线上元素、模板片段的卡底），预览图铺满 */
 .wf-item-thumb {
   position: relative;
   display: grid;
@@ -4038,6 +4271,7 @@
   aspect-ratio: 16 / 9;
   place-items: center;
   overflow: hidden;
+  border-radius: var(--radius-md);
   background: var(--wf-clip-component);
   color: color-mix(in srgb, var(--color-on-scrim) 40%, transparent);
 }
@@ -4067,7 +4301,7 @@
   opacity: 0;
 }
 
-/* 封面右下角的「+」：指针停在卡片上时才出来，白底深色加号（封面不分深浅色，它也不随主题换），停在它自己上时
+/* 封面右下角的「+」：按意图显露（见 .wf-reveal），白底深色加号（封面不分深浅色，它也不随主题换），停在它自己上时
    换成主色 */
 .wf-item .wf-item-add {
   position: absolute;
@@ -4079,19 +4313,7 @@
   background: color-mix(in srgb, var(--color-on-scrim) 94%, transparent);
   box-shadow: var(--shadow-2);
   color: var(--color-scrim);
-  opacity: 0;
   pointer-events: auto;
-  scale: 0.86;
-  transition:
-    background-color var(--dur-s) var(--ease),
-    color var(--dur-s) var(--ease),
-    opacity var(--dur-s) var(--ease),
-    scale var(--dur-s) var(--ease);
-}
-
-.wf-item:hover:not(.is-lifting) .wf-item-add {
-  opacity: 1;
-  scale: 1;
 }
 
 .wf-item .wf-item-add:hover {
@@ -4099,40 +4321,32 @@
   color: var(--color-on-primary);
 }
 
-/* 封面下面：名字在左、时长在右，下一行是分类 */
+/* 封面下面：名字在左、时长在右 */
 .wf-item-meta {
-  display: grid;
+  display: flex;
+  min-width: 0;
   align-items: baseline;
-  column-gap: 6px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 0 2px;
 }
 
 .wf-item-name {
   overflow: hidden;
+  min-width: 0;
+  flex: 1;
   color: var(--color-on-surface);
-  font-size: var(--text-label);
-  font-weight: 600;
-  line-height: var(--text-label--line-height);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .wf-item-duration {
-  color: var(--color-on-surface-muted);
+  flex: none;
+  color: var(--color-on-surface-faint);
   font-family: var(--font-mono);
-  font-size: var(--text-caption);
+  font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
-}
-
-.wf-item-category {
-  grid-column: 1 / -1;
-  overflow: hidden;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---- 工作台顶栏右侧：保存状态、外观切换与导出（通过顶栏挂点渲染，位于 .wf-editor 之外） ---- */
@@ -5214,7 +5428,7 @@
   box-shadow: none;
 }
 
-/* ---- 「镜头」页签：顶部入轨筛选与统计、中部可滚动镜头组卡片列表及底部浮动选区操作条 ---- */
+/* ---- 「镜头」页签：顶部「全部 / 未用 / 已用」筛选、中部可滚动的镜头组和出片列表、底部浮出的选区汇总栏 ---- */
 
 .wf-side-body.is-shots {
   display: flex;
@@ -5239,7 +5453,7 @@
   padding: 10px 14px 4px;
 }
 
-/* 「镜头」页签内的分段控件（入轨筛选与版本切换）附加外圈细线，与工作台顶栏分段一致；
+/* 「镜头」页签内的分段控件（筛选与版本切换）附加外圈细线，与工作台顶栏分段一致；
    与通用 .wf-editor .wf-seg 同优先级并置于其后，以覆盖默认阴影 */
 .wf-materials .wf-seg {
   box-shadow:
@@ -5247,16 +5461,9 @@
     inset 0 0 0 1px var(--color-panel-line);
 }
 
-/* 入轨状态分段筛选（「全部 / 未入轨 / 已入轨」，复用 .wf-seg） */
+/* 「全部 / 未用 / 已用」分段筛选（复用 .wf-seg） */
 .wf-materials-filter {
   display: inline-flex;
-}
-
-.wf-materials-count {
-  color: var(--color-on-surface-faint);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  white-space: nowrap;
 }
 
 /* 列表底部渐隐遮罩，柔化滚出视口的卡片截断边缘 */
@@ -5281,18 +5488,17 @@
 .wf-material-group-body {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-/* 镜头组头部：整行为折叠/展开触发按钮，左侧为竖条与组名，右侧为出片数与折叠箭头（折叠态箭头旋向右侧） */
+/* 镜头组头部：整行为折叠/展开触发按钮，左边加粗的组名，右边只有折叠箭头（折叠态箭头旋向右侧） */
 .wf-material-group-head {
   display: flex;
-  height: 24px;
+  height: 28px;
   align-items: center;
   gap: 4px;
   border-radius: var(--radius-xs);
   color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
 }
 
 .wf-material-group-head:hover {
@@ -5308,54 +5514,26 @@
 }
 
 .wf-material-group-title {
-  display: inline-flex;
   flex: 1;
-  align-items: center;
-  gap: 6px;
   color: var(--color-on-surface);
-  font-size: var(--text-label);
+  font-size: var(--text-body);
   font-weight: 600;
+  text-align: left;
 }
 
-.wf-material-group-title::before {
-  content: '';
-  width: 3px;
-  height: 12px;
-  border-radius: var(--radius-full);
-  background: var(--color-tone-slate);
-}
-
-.wf-material-group-head > .wf-take-in-track {
-  margin-right: 4px;
-}
-
-/* 原作白色卡片（顶栏见 .wf-take-head，下方为镜头条）；素材预览激活态描深色外框 */
+/* 一条出片：不套卡片框，标题行（见 .wf-take-head）下面是镜头条；素材预览在看它时镜头条描深色外框 */
 .wf-take {
   position: relative;
-  padding: 6px;
-  border-radius: var(--radius-md);
-  background: var(--color-card);
-  box-shadow: var(--shadow-panel-card), var(--shadow-specular);
-  transition: box-shadow var(--dur-s) var(--ease);
 }
 
-.wf-take:hover {
-  box-shadow:
-    var(--shadow-panel-card),
-    0 0 0 1px var(--color-panel-line-strong),
-    var(--shadow-specular);
+.wf-take.is-previewing .wf-take-strip {
+  box-shadow: 0 0 0 1.5px var(--color-on-surface);
 }
 
-.wf-take.is-previewing {
-  box-shadow:
-    0 0 0 1.5px var(--color-on-surface),
-    var(--shadow-panel-card);
-}
-
-/* 卡片顶栏：出片名、版本、「● 已入轨」与右侧统计及「+」；版本溢出时仅版本分段收缩并内部横向滚动 */
+/* 出片的标题行：出片名、版本分段，右边悬停露出的「+」、常驻的「✓ 已用」和时长；版本溢出时仅版本分段收缩并内部横向滚动 */
 .wf-take-head {
   display: flex;
-  height: 20px;
+  height: 26px;
   align-items: center;
   gap: 6px;
   margin-bottom: 6px;
@@ -5367,29 +5545,14 @@
   flex: none;
 }
 
-/* 固定「出片 A」最小宽度，使各卡片的版本控件纵向左对齐 */
+/* 固定「出片 A」最小宽度，使各条出片的版本控件纵向左对齐 */
 .wf-take-name {
   min-width: 40px;
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  font-weight: 600;
-}
-
-/* 单版本「V1」标签：与紧凑分段保持同高与同圆角，配极淡中性底 */
-.wf-take-version {
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  padding: 0 6px;
-  border-radius: var(--wf-radius-seg-compact);
-  background: var(--wf-wash);
   color: var(--color-on-surface-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  font-weight: 500;
+  font-size: var(--text-ui);
 }
 
-/* 多版本紧凑分段选择器（复用 .wf-seg.is-compact）：溢出时自身横向滚动 */
+/* 多版本行内分段选择器（复用 .wf-seg.is-compact）：溢出时自身横向滚动 */
 .wf-take-versions {
   display: flex;
   min-width: 0;
@@ -5399,7 +5562,7 @@
   scrollbar-width: none;
 }
 
-/* 已入轨状态圆点（用于「● 已入轨」、非当前已入轨版本与折叠镜头组头） */
+/* 没在看、但在时间线上的版本旁的小圆点 */
 .wf-take-dot {
   width: 5px;
   height: 5px;
@@ -5408,45 +5571,23 @@
   background: var(--color-primary);
 }
 
-.wf-take-in-track {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  font-weight: 500;
-}
-
-.wf-take-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-caption);
-}
-
-/* 按「00.0s」预留 5ch 等宽右对齐，使各卡片右侧「+」按钮纵向对齐 */
+/* 按「00.0s」预留 5ch 等宽右对齐，使各条出片的时长纵向对齐 */
 .wf-take-duration {
   min-width: 5ch;
-  color: var(--color-on-surface-muted);
+  color: var(--color-on-surface-faint);
   font-family: var(--font-mono);
-  font-weight: 500;
+  font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
-/* 整条加入轨道「+」按钮（基于 Tool 覆盖为 20px 紧凑圆角方块，按下轻微缩放反馈） */
-.wf-take-add {
-  width: 20px;
-  height: 20px;
-  border-radius: var(--radius-xs);
-  background-color: var(--color-surface);
-  box-shadow: inset 0 0 0 1px var(--color-panel-line);
-  color: var(--color-on-surface-muted);
-}
-
-.wf-take-add:hover {
+/* 整条加入轨道「+」（基于 Tool）：浅底圆角方块，推到右边；按意图显露（见 .wf-reveal） */
+.wf-take-head .wf-take-add {
+  width: 26px;
+  height: 26px;
+  margin-left: auto;
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface-container-high);
   color: var(--color-on-surface);
 }
 
@@ -5467,8 +5608,8 @@
    与 .wf-tracks 一致禁用文本选中，避免 Shift 连选触发浏览器文本选区导致后续拖拽退化为原生拖拽 */
 .wf-take-strip {
   position: relative;
-  height: 54px;
-  border-radius: var(--radius-sm);
+  height: 60px;
+  border-radius: var(--radius-md);
   background: var(--color-scrim);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--color-scrim) 14%, transparent);
   user-select: none;
@@ -5497,11 +5638,11 @@
 }
 
 .wf-shot:first-of-type {
-  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
 }
 
 .wf-shot:last-of-type {
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
 /* 悬停镜头微亮叠层：因 .wf-shot 未创建独立层叠上下文，此伪元素与 .wf-take-marks 及 .wf-pick 共享层叠上下文，
@@ -5693,17 +5834,9 @@
   pointer-events: none;
 }
 
-/* 底部浮动选区操作条（选区汇总、清空与加入轨道）：外圆角与内部按钮保持同心 */
+/* 底部浮出的选区汇总栏（「已选 N 段 · 时长」、清空与加入轨道），底条样子见 .wf-tab-dock */
 .wf-pick-dock {
-  display: flex;
-  flex: none;
-  align-items: center;
   gap: 4px;
-  margin: 0 14px 12px;
-  padding: 6px 6px 6px 12px;
-  border-radius: var(--wf-radius-dock);
-  background: var(--color-card);
-  box-shadow: var(--shadow-float), var(--shadow-specular);
 }
 
 .wf-pick-dock-info {
@@ -5723,15 +5856,6 @@
   font-family: var(--font-mono);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-}
-
-.wf-pick-dock-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  margin-right: 2px;
-  border-radius: var(--radius-full);
-  background: var(--color-tertiary-fixed-dim);
 }
 
 /* 「清空」按钮对齐主操作高度与字号并弱化文字色；通过 :where() 保持与 .wf-chip-btn 同优先级，保留悬停加深 */

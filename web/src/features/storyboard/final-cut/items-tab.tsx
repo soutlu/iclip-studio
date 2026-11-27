@@ -13,13 +13,14 @@ import { hoverPreviewOf } from './hover-preview'
 import { ItemHoverPreview } from './item-hover-preview'
 import { previewRuntimeSrc } from './preview-document'
 import {
-  categoryLabel,
   filterItems,
   ITEM_KIND_LABEL,
+  itemBrands,
   itemChips,
   type ItemFilter,
   type ItemKind,
 } from './items'
+import { SelectChip } from './select-chip'
 
 /** 照参照的工作台：指针停够这么久才在卡片里播预览，划过时不播。 */
 export const HOVER_PREVIEW_DELAY_MS = 300
@@ -62,7 +63,10 @@ export function ItemsTab({
   const label = ITEM_KIND_LABEL[kind]
   const chips = itemChips(catalog, kind)
   const chip = chips.find((candidate) => candidate.value === filter.chip) ?? chips[0]
-  const items = chip === undefined ? [] : filterItems(catalog, chip, filter.query)
+  const brands = itemBrands(catalog, kind)
+  // 记着的品牌目录里已经没有了时当作没选
+  const brand = filter.brand !== null && brands.includes(filter.brand) ? filter.brand : null
+  const items = chip === undefined ? [] : filterItems(catalog, chip, filter.query, brand)
   const runtimeSrc = previewRuntimeSrc(catalog, origin)
 
   // 预览只在停着的那一张卡上跑
@@ -85,26 +89,38 @@ export function ItemsTab({
           aria-label={`搜索${label}`}
           leadingIcon="final-cut-search"
           onChange={(event) => onFilterChange({ ...filter, query: event.currentTarget.value })}
-          placeholder="搜索名称或分类"
+          placeholder="搜索"
           type="search"
           value={filter.query}
           wrapperClassName="wf-field wf-search"
         />
-        <ChipGroup
-          aria-label={`${label}分类`}
-          className="wf-filters"
-          onValueChange={(value) => {
-            if (value !== '') onFilterChange({ ...filter, chip: value })
-          }}
-          type="single"
-          value={chip?.value ?? ''}
-        >
-          {chips.map((item) => (
-            <FilterChip className="wf-filter" key={item.value} value={item.value}>
-              {item.label}
-            </FilterChip>
-          ))}
-        </ChipGroup>
+        <div className="wf-item-filters">
+          <ChipGroup
+            aria-label={`${label}分类`}
+            className="wf-filters"
+            onValueChange={(value) => {
+              if (value !== '') onFilterChange({ ...filter, chip: value })
+            }}
+            type="single"
+            value={chip?.value ?? ''}
+          >
+            {chips.map((item) => (
+              <FilterChip className="wf-filter" key={item.value} value={item.value}>
+                {item.label}
+              </FilterChip>
+            ))}
+          </ChipGroup>
+          {brands.length === 0 ? null : (
+            <SelectChip
+              className="wf-item-brand"
+              columns={2}
+              noun="品牌"
+              onChange={(picked) => onFilterChange({ ...filter, brand: picked ?? null })}
+              options={brands.map((each) => ({ id: each, label: each }))}
+              value={brand ?? undefined}
+            />
+          )}
+        </div>
       </div>
       {items.length === 0 ? (
         <EmptyNote icon={KIND_ICON[kind]}>暂无符合条件的{label}，请更换关键词或分类</EmptyNote>
@@ -213,7 +229,7 @@ function ItemCard({
   return (
     <div
       aria-label={name}
-      className={cn('wf-item wf-card', lifting && 'is-lifting')}
+      className={cn('wf-item wf-reveal-host', lifting && 'is-lifting')}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') onHoverStart()
       }}
@@ -251,7 +267,7 @@ function ItemCard({
         )}
         {/* 整张卡已能用 Enter 加入，「+」不再占一个 Tab 停靠点 */}
         <IconButton
-          className="wf-item-add"
+          className="wf-item-add wf-reveal"
           label="加到播放头"
           name="final-cut-add"
           onClick={onAdd}
@@ -266,7 +282,6 @@ function ItemCard({
             {durationText(item.duration)}
           </span>
         )}
-        <span className="wf-item-category">{categoryLabel(catalog, item)}</span>
       </span>
     </div>
   )
