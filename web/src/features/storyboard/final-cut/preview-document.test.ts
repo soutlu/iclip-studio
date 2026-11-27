@@ -165,6 +165,39 @@ describe('预览按语言放人声', () => {
     expect(sounds(document)).toEqual(['v1', 'o1', 'm1'])
     expect(document.getElementById('v1')?.hasAttribute('muted')).toBe(false)
   })
+
+  describe('原文下的配音：属于视频片段的句子（看字幕场景）和旁白句', () => {
+    // 原文下给 cap-a1（属于 v1）配的音和旁白 cap-n（手动加的）
+    const withSource = (modes: string) =>
+      root(modes).replace(
+        '</div>\n</body>',
+        `<audio id="s1" class="clip audio" data-start="0.5" data-duration="1" src="s.m4a" data-dub-of="cap-a1" data-dub-text="一" data-dub-voice="original"></audio>\n` +
+          `<audio id="n1" class="clip audio" data-start="2" data-duration="1" src="n.m4a" data-dub-of="cap-n" data-dub-voice="v-1"></audio>\n` +
+          `</div>\n</body>`,
+      )
+    const SCENE =
+      `<template><div data-composition-id="captions">` +
+      `<div id="cap-a1" class="clip caption" data-start="0.5" data-duration="1" data-var-text="cap_a1" data-caption-of="v1">一</div>` +
+      `<div id="cap-n" class="clip caption" data-start="2" data-duration="1" data-var-text="cap_n">旁白</div>` +
+      `</div></template>`
+    const sourcePage = (modes: string) =>
+      new DOMParser().parseFromString(
+        previewDocument(withSource(modes), 'https://preview.test/', undefined, SCENE),
+        'text/html',
+      )
+
+    it('原文配音：视频静音、分离出来的原声不在，原文下的配音都在', () => {
+      const document = sourcePage('{"_source":{"mode":"dub","voice":null}}')
+      expect(sounds(document)).toEqual(['v1', 'm1', 's1', 'n1'])
+      expect(document.getElementById('v1')?.getAttribute('muted')).toBe('true')
+    })
+
+    it('原文原声：原声照常，只有旁白', () => {
+      const document = sourcePage('{"en":{"mode":"dub","voice":null}}')
+      expect(sounds(document)).toEqual(['v1', 'o1', 'm1', 'n1'])
+      expect(document.getElementById('v1')?.hasAttribute('muted')).toBe(false)
+    })
+  })
 })
 
 describe('隐藏的片段不进预览', () => {

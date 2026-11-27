@@ -369,7 +369,12 @@ describe('字幕跟着它的视频片段走', () => {
 
 describe('配音片段跟着它配的那句字幕走', () => {
   const dub = (id: string, locale: string, of: string, start: number) =>
-    audio({ id, start, duration: 1_000, dub: { locale, caption: of, trimmed: false, voice: null } })
+    audio({
+      id,
+      start,
+      duration: 1_000,
+      dub: { locale, caption: of, trimmed: false, text: null, voice: null, speed: 1 },
+    })
   const before: FilmClip[] = [
     captionClip({ id: 'a1', start: 500, duration: 1_000, owner: 'v1' }),
     captionClip({ id: 'b2', start: 2_000, duration: 1_000, owner: 'v1' }),
@@ -446,7 +451,7 @@ describe('配音片段跟着它配的那句字幕走', () => {
 
 describe('选中的片段在「字幕」里对应什么', () => {
   const dubOf = (id: string, of: string, locale: string | null) =>
-    audio({ id, dub: { locale, caption: of, trimmed: false, voice: null } })
+    audio({ id, dub: { locale, caption: of, trimmed: false, text: null, voice: null, speed: 1 } })
   const texted = new Set(['title-1'])
 
   it('选中字幕：标出这一句，切到「字幕」', () => {

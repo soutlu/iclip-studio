@@ -31,7 +31,6 @@ import {
   languageChoice,
   ownLineVoice,
   PICKER_TRAITS,
-  voiceBusy,
   voiceLocaleTag,
   voicePickerFilter,
   type PickerLocale,
@@ -235,7 +234,7 @@ type TargetVoicePickerProps = {
 
 /**
  * 按选给谁配好选音面板：整体音色照人声卡常用音色的规则（`languageChoice`）选；单句照单句菜单的规则只改这一句（`onLine`），
- * 「原声」是这句用原声；旁白只换旁白要用的音色，没有「原声」，语种默认「全部」。选用后都回到首页。
+ * 「原声」是这句用原声；选用都只记下、不合成。旁白只换旁白要用的音色，没有「原声」，语种默认「全部」。选用后都回到首页。
  */
 export function TargetVoicePicker({
   pick,
@@ -268,7 +267,7 @@ export function TargetVoicePicker({
   if (pick.target === 'line') {
     const { caption } = pick
     const own = ownLineVoice(voice, caption)
-    const blocked = voiceBusy(voice) ?? voice.lineBlocked.get(caption)
+    const blocked = voice.lines.get(caption)?.chooseBlocked
     const ownOriginal = own !== undefined && 'voice' in own && own.voice === null
     return (
       <VoicePicker
@@ -296,7 +295,7 @@ export function TargetVoicePicker({
   return (
     <VoicePicker
       {...shared}
-      blockedFor={(id) => languageChoice(voice, id).blocked}
+      blockedFor={() => undefined}
       defaultLocale={defaultLocale}
       onUse={(audio) => {
         languageChoice(voice, audio.id).pick()
@@ -304,7 +303,7 @@ export function TargetVoicePicker({
       }}
       original={{
         pressed: original.picked,
-        blocked: original.blocked,
+        blocked: undefined,
         onUse: () => {
           if (!original.picked) original.pick()
           onDone()

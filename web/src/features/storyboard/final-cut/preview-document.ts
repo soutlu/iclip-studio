@@ -1,9 +1,9 @@
-import { isCaptionsHost } from './composition/captions'
+import { CAPTION_OWNER, isCaptionsHost } from './composition/captions'
 import type { ComponentCatalog } from './composition/catalog'
 import { variableValuesOf } from './composition/film'
 import { escapeAttribute } from './composition/html'
 import { LOCALE_BINDINGS, localeBindingsOf, localizedHostValues } from './composition/locale-text'
-import { localizedVoices, VOICE_MODES, voiceModesOf } from './composition/voices'
+import { localizedVoices, ownedCaptions, VOICE_MODES, voiceModesOf } from './composition/voices'
 import { SOURCE_SHOWN, type Language, type LocaleValues, type ShownLocale } from './locales'
 import { withPreviewMediaTags } from './preview-media'
 
@@ -113,10 +113,29 @@ export function withLocalizedHosts(html: string, values: LocaleValues | null): s
 }
 
 /**
- * 按显示着的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（别的语言的配音片段去掉，AI 配音时
- * 原声和原文的旁白关掉）。没有要改的时原样返回。
+ * 主文件 `html` 里属于视频片段的字幕（见 `ownedCaptions`）：各句和它们写的视频片段从字幕场景 `scene` 里读，
+ * 视频片段按主文件根下的（隐藏的也算）。没有场景时是空的。
  */
-function withLocalizedVoices(html: string, locale: Language): string {
+function ownedCaptionsIn(html: string, scene: string | null): ReadonlySet<string> {
+  if (scene === null) return new Set()
+  const videos = [...(parse(html).querySelector('[data-composition-id]')?.children ?? [])]
+    .filter((child) => child.localName === 'video' && child.id !== '')
+    .map((child) => child.id)
+  const source = parse(scene)
+  const lines = (source.querySelector('template')?.content ?? source.body).querySelectorAll(
+    '[data-var-text]',
+  )
+  return ownedCaptions(
+    [...lines].map((line) => ({ id: line.id, owner: line.getAttribute(CAPTION_OWNER) || null })),
+    videos,
+  )
+}
+
+/**
+ * 按显示着的语言 `locale`（原文是 null）放人声：规则见 `localizedVoices`（不出声的配音片段去掉，配音时原声
+ * 关掉），`owned` 是属于视频片段的字幕（见 `ownedCaptionsIn`）。没有要改的时原样返回。
+ */
+function withLocalizedVoices(html: string, locale: Language, owned: ReadonlySet<string>): string {
   const film = parse(html)
   const root = film.querySelector('[data-composition-id]')
   if (root === null) return html
@@ -128,6 +147,7 @@ function withLocalizedVoices(html: string, locale: Language): string {
     })),
     voiceModesOf(root.getAttribute(VOICE_MODES) ?? undefined),
     locale,
+    owned,
   )
   if (changes.length === 0) return html
   for (const change of changes) {
@@ -188,6 +208,7 @@ export const previewDocument = (
             locale.values,
           ),
           locale.code,
+          ownedCaptionsIn(html, captionsScene),
         ),
       ),
       baseHref,

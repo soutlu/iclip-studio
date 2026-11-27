@@ -15,12 +15,12 @@ const MUSIC = audio({ id: 'music', label: '配乐' })
 const NARRATION = audio({
   id: 'narration',
   label: '旁白',
-  dub: { locale: null, caption: 'cap-a1', trimmed: false, voice: 'voice-1' },
+  dub: { locale: null, caption: 'cap-a1', trimmed: false, text: null, voice: 'voice-1', speed: 1 },
 })
 const ENGLISH_DUB = audio({
   id: 'en-a1',
   label: '英文配音',
-  dub: { locale: 'en', caption: 'cap-a1', trimmed: false, voice: null },
+  dub: { locale: 'en', caption: 'cap-a1', trimmed: false, text: null, voice: null, speed: 1 },
 })
 
 /** 和编辑器一样：片段由外面记着，「属性」里隐藏、静音改的是外面这一份。 */

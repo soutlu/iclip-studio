@@ -939,7 +939,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
         src: `https://media.test/${id}.m4a`,
         start,
         duration: 500,
-        dub: { locale, caption, trimmed: false, voice: null },
+        dub: { locale, caption, trimmed: false, text: null, voice: null, speed: 1 },
       })
     await putFilm(
       [
@@ -1074,7 +1074,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
         src: `https://media.test/${id}.m4a`,
         start,
         duration: 500,
-        dub: { locale, caption, trimmed: false, voice: null },
+        dub: { locale, caption, trimmed: false, text: null, voice: null, speed: 1 },
       })
     await putFilm(
       [

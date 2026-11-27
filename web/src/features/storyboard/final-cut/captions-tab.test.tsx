@@ -18,7 +18,7 @@ const TITLE = host({ id: 'title-1', start: 1000 })
 const DUB = audio({
   id: 'en-b2',
   start: 3000,
-  dub: { locale: 'en', caption: 'cap-b2', trimmed: false, voice: null },
+  dub: { locale: 'en', caption: 'cap-b2', trimmed: false, text: null, voice: null, speed: 1 },
 })
 const CLIPS: readonly FilmClip[] = [FIRST, SECOND, TITLE, DUB]
 

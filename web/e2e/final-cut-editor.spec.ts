@@ -3167,7 +3167,7 @@ test('翻译：加上 English 后点「翻译」，字幕和元素里随语言�
   await expect.poll(shown).toEqual({ caption: '[EN] 新字幕', host: '[EN] 示例文字' })
 })
 
-test('AI 配音：English 下点音色「原声」，配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来、配音片段不显示；选资料库的音色重新生成；原文下没有配音', async ({
+test('AI 配音：English 下点音色「原声」只记下，点「生成配音」后配音行出现和字幕对齐的配音片段，预览里视频静音、配音在；保留原声时原声回来、配音片段不显示；选资料库的音色后「重配 N 句」；原文下没有配音', async ({
   page,
 }) => {
   test.setTimeout(120_000)
@@ -3211,8 +3211,18 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
     'true',
   )
   const voices = tab.getByRole('radiogroup', { name: '常用音色' })
-  const dubbed = mainSavedWith(page, (html) => (html.match(/data-dub-of=/g) ?? []).length === 2)
+  // 选音色只记下（切到配音），不发起
+  const chosen = mainSavedWith(
+    page,
+    (html) =>
+      (jsonAttribute(html, 'data-voice-modes') as { en?: { mode?: string } } | undefined)?.en
+        ?.mode === 'dub',
+  )
   await voices.getByRole('radio', { name: '原声', exact: true }).click()
+  await chosen
+  expect(dubbingRequests).toEqual([])
+  const dubbed = mainSavedWith(page, (html) => (html.match(/data-dub-of=/g) ?? []).length === 2)
+  await voice.getByRole('button', { name: '生成配音' }).click()
   const html = htmlOf(await dubbed)
   const dubs = [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)].map(([tag]) => ({
     start: Number(/ data-start="([\d.]+)"/.exec(tag)?.[1]),
@@ -3282,10 +3292,14 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 
-  // 在选音面板里选资料库的一个音色：用它重新生成，换掉原来的配音，主文件记着这个音色，回到首页
+  // 在选音面板里选资料库的一个音色：只记下、回到首页；两句都过期，「重配 2 句」用它重配，换掉原来的配音，
+  // 配音片段记着这个音色
   await voice.getByRole('button', { name: '更换音色' }).click()
   const picker = tab.getByRole('region', { name: '选择音色' })
   await expect(picker.getByRole('button', { name: '语种：English' })).toBeVisible()
+  await picker.getByRole('button', { name: '选用：Emma' }).click()
+  await expect(picker).toHaveCount(0)
+  expect(dubbingRequests).toHaveLength(requested)
   const asked = page.waitForRequest(
     (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
   )
@@ -3295,11 +3309,9 @@ test('AI 配音：English 下点音色「原声」，配音行出现和字幕对
     page,
     (saved) =>
       referenceId !== null &&
-      saved.includes(referenceId) &&
-      (saved.match(/data-dub-of=/g) ?? []).length === 2,
+      (saved.match(new RegExp(`data-dub-voice="${referenceId}"`, 'g')) ?? []).length === 2,
   )
-  await picker.getByRole('button', { name: '选用：Emma' }).click()
-  await expect(picker).toHaveCount(0)
+  await voice.getByRole('button', { name: '重配 2 句' }).click()
   const reference = ((await asked).postDataJSON() as { reference: unknown }).reference
   expect(reference).toMatchObject({ kind: 'reference_audio' })
   referenceId = (reference as { referenceId: string }).referenceId
@@ -3352,6 +3364,10 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
     .getByRole('radiogroup', { name: '常用音色' })
     .getByRole('radio', { name: '原声', exact: true })
     .click()
+  await tab
+    .getByRole('group', { name: '人声设置' })
+    .getByRole('button', { name: '生成配音' })
+    .click()
   await dubbed
   const dubRow = editor.getByRole('group', { name: '配音', exact: true })
   await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
@@ -3400,7 +3416,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 })
 
-test('逐句配音：English 下给第二句选资料库的音色，只发这一句、带这个音色，主文件记着这句的选择；给第一句选「不配音」，它的配音片段没了，撤销后回来', async ({
+test('逐句配音：English 下给第二句选资料库的音色只记下，「重配 1 句」只发这一句、带这个音色；给第一句选「不配音」，它的配音片段没了，撤销后回来', async ({
   page,
 }) => {
   test.setTimeout(120_000)
@@ -3431,10 +3447,12 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
   await translated
   const dubTags = (html: string) => [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
   const dubbed = mainSavedWith(page, (html) => dubTags(html).length === 2)
+  const voice = tab.getByRole('group', { name: '人声设置' })
   await tab
     .getByRole('radiogroup', { name: '常用音色' })
     .getByRole('radio', { name: '原声', exact: true })
     .click()
+  await voice.getByRole('button', { name: '生成配音' }).click()
   // 两句的配音片段配的字幕，按开始排
   const captions = dubTags(htmlOf(await dubbed))
     .map(([tag]) => ({
@@ -3454,23 +3472,28 @@ test('逐句配音：English 下给第二句选资料库的音色，只发这一
       .getByRole('button', { name: /^本句配音：/ })
   await expect(lineChip(1)).toHaveAccessibleName('本句配音：原声，跟随整体音色')
 
-  // 第二句选 Emma：只发这一句（最后一句，不带上限），参考是这个音色
+  // 第二句选 Emma：只记下这句的选择；「重配 1 句」只发这一句（最后一句，不带上限），参考是这个音色
+  const lineChosen = mainSavedWith(page, (html) => {
+    const modes = jsonAttribute(html, 'data-voice-modes') as
+      { en?: { lines?: Record<string, unknown> } } | undefined
+    return modes?.en?.lines?.[second] !== undefined
+  })
+  await lineChip(1).click()
+  await page.getByRole('menuitemradio', { name: 'Emma' }).click()
+  await lineChosen
+  await expect(lineChip(1)).toHaveAccessibleName('本句配音：Emma')
   const asked = page.waitForRequest(
     (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
   )
   let referenceId: string | null = null
-  const lineVoiced = mainSavedWith(page, (html) => {
-    const modes = jsonAttribute(html, 'data-voice-modes') as
-      { en?: { lines?: Record<string, unknown> } } | undefined
-    const wanted = JSON.stringify({ [second]: { voice: referenceId } })
-    return (
+  const lineVoiced = mainSavedWith(
+    page,
+    (html) =>
       referenceId !== null &&
       dubTags(html).length === 2 &&
-      JSON.stringify(modes?.en?.lines) === wanted
-    )
-  })
-  await lineChip(1).click()
-  await page.getByRole('menuitemradio', { name: 'Emma' }).click()
+      html.includes(`data-dub-voice="${referenceId}"`),
+  )
+  await voice.getByRole('button', { name: '重配 1 句' }).click()
   const body = (await asked).postDataJSON() as {
     lines: { startMs: number; slotEndMs?: number }[]
     reference: { kind: string; referenceId?: string }
@@ -3568,6 +3591,7 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   const tag = narrationTag(htmlOf(await saved)) ?? ''
   expect(tag).not.toContain('data-locale')
   expect(tag).toContain(`data-dub-voice="${referenceId}"`)
+  expect(tag).toContain('data-dub-text="欢迎来到新品发布会"')
   const caption = / data-dub-of="([^"]+)"/.exec(tag)?.[1] ?? ''
   const scene = savedFileOf(await sceneSaved, CAPTIONS_FILE) ?? ''
   expect(scene).toContain(`id="${caption}"`)
@@ -3628,19 +3652,18 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   // 先用「原声」配好：素材片两句和旁白一句
   const englishDubs = (html: string) => (html.match(/<audio [^>]*data-locale="en"/g) ?? []).length
   const dubbed = mainSavedWith(page, (html) => englishDubs(html) === 3)
+  const voice = tab.getByRole('group', { name: '人声设置' })
   await tab
     .getByRole('radiogroup', { name: '常用音色' })
     .getByRole('radio', { name: '原声', exact: true })
     .click()
+  await voice.getByRole('button', { name: '生成配音' }).click()
   await dubbed
 
   const asked = page.waitForRequest(
     (request) => request.method() === 'POST' && request.url().endsWith('/api/generations/dubbings'),
   )
-  await tab
-    .getByRole('group', { name: '人声设置' })
-    .getByRole('button', { name: '重新生成' })
-    .click()
+  await voice.getByRole('button', { name: '重新生成' }).click()
   const body = (await asked).postDataJSON() as { lines: { startMs: number; slotEndMs?: number }[] }
   expect(body.lines).toEqual([
     expect.objectContaining({ startMs: 300, slotEndMs: 2_400 }),

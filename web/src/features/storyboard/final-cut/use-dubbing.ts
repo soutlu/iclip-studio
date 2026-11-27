@@ -4,10 +4,9 @@ import { ApiError, errorMessageOf } from '@/shared/api/client'
 import { isRunningStatus } from '../shots'
 import type { DubbingLine } from '@/shared/api/generated/types.gen'
 import type { GenerationJob } from '../storyboard.api'
-import type { VoiceSetting } from './composition/voices'
 import type { DubbingRequest, DubLine, NarrationLine } from './dubbing'
 import { dubbingJobsQuery, speechJobsQuery, submitDubbing, submitSpeech } from './final-cut.api'
-import { SOURCE_LOCALE, type Language, type LocaleCode } from './locales'
+import { SOURCE_LOCALE, type Language } from './locales'
 
 /** 一次请求的结果：配好的记录，或者失败了和原因。 */
 export type DubbingOutcome =
@@ -16,35 +15,34 @@ export type DubbingOutcome =
 /** 要发的一次配音请求：素材片、音色、要配的各句和素材片对上的生成记录。 */
 export type DubbingTarget = DubbingRequest & { sourceJobId: string }
 
-/** 一次生成要发的：各条素材片的配音请求和旁白的各句（每句一次按文字合成）。 */
+/** 一次生成要发的：各条素材片的配音请求和旁白句的各句（每句一次按文字合成）。 */
 export type DubbingWork = {
   takes: readonly DubbingTarget[]
   narrations: readonly NarrationLine[]
 }
 
-/** 配好以后这种语言的人声设置怎么改（整种语言换音色、改一句的选择……），由发起的一方给。 */
-export type VoiceUpdate = (setting: VoiceSetting) => VoiceSetting
-
 /** 发起一次请求的结果：记录的编号，或者发起不了的原因。 */
 type Submitted = { job: string } | { failed: string }
 
-/**
- * 一次生成：哪种语言、要发的、配好以后人声设置怎么改；`submitted` 和要发的一一对应，还在发起时是 null。
- */
+/** 一次生成：哪种语言、要发的；`submitted` 和要发的一一对应，还在发起时是 null。 */
 type Run = {
   locale: Language
   work: DubbingWork
-  update: VoiceUpdate
   submitted: { takes: readonly Submitted[]; narrations: readonly Submitted[] } | null
 }
 
-/** 结束了的一次生成：哪种语言、人声设置怎么改、每次素材片的请求和旁白的每句和它们的结果。 */
+/** 结束了的一次生成：哪种语言、每次素材片的请求和旁白句的每句和它们的结果。 */
 export type DubbingDone = {
   locale: Language
-  update: VoiceUpdate
   results: readonly { target: DubbingTarget; outcome: DubbingOutcome }[]
   narrations: readonly { line: NarrationLine; outcome: DubbingOutcome }[]
 }
+
+/**
+ * 正在跑的一批：哪种语言，`lines` 是这批要配的句子（字幕编号；写进工程以前都算在合成），`remaining` 是还没有结果的
+ * 句数（「旁白配音」新加的、还没有字幕的旁白也算）。
+ */
+export type DubbingRunning = { locale: Language; lines: ReadonlySet<string>; remaining: number }
 
 const READ_FAILED_TEXT = '读取配音记录失败，请重试'
 const FAILED_TEXT = '配音生成失败，请重试'
@@ -65,9 +63,10 @@ const sourcesOf = (targets: readonly DubbingTarget[]) => [
 
 /** 一次请求的结果（`records` 是读到的它那一类记录）；还在配时是 undefined。 */
 const outcomeOf = (
-  sent: Submitted,
+  sent: Submitted | undefined,
   records: UseQueryResult<GenerationJob[]> | undefined,
 ): DubbingOutcome | undefined => {
+  if (sent === undefined) return undefined
   if ('failed' in sent) return { kind: 'failed', message: sent.failed }
   if (records?.data === undefined)
     return records?.isError === true ? { kind: 'failed', message: READ_FAILED_TEXT } : undefined
@@ -78,7 +77,7 @@ const outcomeOf = (
     : { kind: 'failed', message: job.errorMessage?.trim() || FAILED_TEXT }
 }
 
-/** `items` 各自的结果（`sent` 和它一一对应）；还有在配的时是 undefined。 */
+/** `items` 各自的结果（`sent` 和它一一对应，还在发起时是空的）；还有在配的时是 undefined。 */
 const outcomesOf = <T>(
   items: readonly T[],
   sent: readonly Submitted[],
@@ -86,8 +85,7 @@ const outcomesOf = <T>(
 ): { item: T; outcome: DubbingOutcome }[] | undefined => {
   const done: { item: T; outcome: DubbingOutcome }[] = []
   for (const [index, item] of items.entries()) {
-    const each = sent[index]
-    const outcome = each === undefined ? undefined : outcomeOf(each, recordsOf(item))
+    const outcome = outcomeOf(sent[index], recordsOf(item))
     if (outcome === undefined) return undefined
     done.push({ item, outcome })
   }
@@ -100,12 +98,15 @@ const sentLine = ({ startMs, endMs, text, slotEndMs }: DubLine): DubbingLine =>
     ? { startMs, endMs, text }
     : { startMs, endMs, text, slotEndMs }
 
+/** 原文不声明语言：请求里不写 `locale`。 */
+const localeField = (locale: Language) => (locale === SOURCE_LOCALE ? {} : { locale })
+
 /**
- * 「AI 配音」和旁白配音的生成：给一种语言发几次配音请求（每次一条素材片、一个音色：参考音频库里的音色，null 是从
- * 素材片的原声里取）和旁白的每句一次按文字合成（原文下不声明语言；原文下只有旁白，`work.takes` 不发）；付费的发起
- * 只在 `start` 里做。轮询各条素材片的配音记录和这段对话的合成记录（照生成记录的写法），全部有了结果后调一次
- * `onDone`（语言、人声设置怎么改、每次请求和结果）。发起时接口答错（比如 422 没开通）的那次算失败，原因是接口
- * 给的说明。生成中再调 `start` 不做任何事。
+ * 配音的生成：给一种语言（原文也行）发几次配音请求（每次一条素材片、一个音色：参考音频库里的音色，null 是从
+ * 素材片的原声里取）和旁白句的每句一次按文字合成，原文下都不声明语言；付费的发起只在 `start` 里做。轮询各条素材片
+ * 的配音记录和这段对话的合成记录（照生成记录的写法），全部有了结果后调一次 `onDone`（语言、每次请求和结果）。
+ * 发起时接口答错（比如 422 没开通）的那次算失败，原因是接口给的说明。同一时间只跑一批：生成中再调 `start` 不做
+ * 任何事。
  */
 export function useDubbing(conversationId: string, onDone: (done: DubbingDone) => void) {
   const queryClient = useQueryClient()
@@ -123,14 +124,14 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
   })
 
   const submitTake = async (
-    locale: LocaleCode,
+    locale: Language,
     { sourceJobId, voice, lines, spans }: DubbingTarget,
   ): Promise<Submitted> => {
     try {
       const job = await submitDubbing({
         conversationId,
         sourceJobId,
-        locale,
+        ...localeField(locale),
         lines: lines.map(sentLine),
         reference:
           voice === null
@@ -152,7 +153,7 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
       const job = await submitSpeech({
         conversationId,
         text: line.text,
-        ...(locale === SOURCE_LOCALE ? {} : { locale }),
+        ...localeField(locale),
         reference: { kind: 'reference_audio', referenceId: line.voice },
         ...(line.maxMs === undefined ? {} : { maxDurationMs: line.maxMs }),
       })
@@ -166,27 +167,18 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
     }
   }
 
-  const start = async (locale: Language, work: DubbingWork, update: VoiceUpdate) => {
-    const takes = locale === SOURCE_LOCALE ? [] : work.takes
-    if (busyRef.current || takes.length + work.narrations.length === 0) return
+  const start = async (locale: Language, work: DubbingWork) => {
+    if (busyRef.current || work.takes.length + work.narrations.length === 0) return
     busyRef.current = true
-    const sent = { takes, narrations: work.narrations }
-    setRun({ locale, work: sent, update, submitted: null })
+    setRun({ locale, work, submitted: null })
     const [takeResults, narrationResults] = await Promise.all([
-      Promise.all(
-        locale === SOURCE_LOCALE ? [] : takes.map((target) => submitTake(locale, target)),
-      ),
+      Promise.all(work.takes.map((target) => submitTake(locale, target))),
       Promise.all(work.narrations.map((line) => submitNarration(locale, line))),
     ])
-    setRun({
-      locale,
-      work: sent,
-      update,
-      submitted: { takes: takeResults, narrations: narrationResults },
-    })
+    setRun({ locale, work, submitted: { takes: takeResults, narrations: narrationResults } })
   }
 
-  // 全部有了结果：这次生成结束，结果交给下面的副作用调 `onDone`
+  // 各次请求的结果（还没有的是 undefined）；全部有了时这次生成结束，结果交给下面的副作用调 `onDone`
   const [finished, setFinished] = useState<DubbingDone | null>(null)
   const records = new Map(
     watched.flatMap((sourceJobId, index) => {
@@ -196,18 +188,19 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
   )
   const spoken = speaking ? results[watched.length] : undefined
   const takesDone =
-    run === null || submitted === null
+    run === null
       ? undefined
-      : outcomesOf(run.work.takes, submitted.takes, (target) => records.get(target.sourceJobId))
+      : outcomesOf(run.work.takes, submitted?.takes ?? [], (target) =>
+          records.get(target.sourceJobId),
+        )
   const narrationsDone =
-    run === null || submitted === null
+    run === null
       ? undefined
-      : outcomesOf(run.work.narrations, submitted.narrations, () => spoken)
+      : outcomesOf(run.work.narrations, submitted?.narrations ?? [], () => spoken)
   if (run !== null && takesDone !== undefined && narrationsDone !== undefined) {
     setRun(null)
     setFinished({
       locale: run.locale,
-      update: run.update,
       results: takesDone.map(({ item, outcome }) => ({ target: item, outcome })),
       narrations: narrationsDone.map(({ item, outcome }) => ({ line: item, outcome })),
     })
@@ -220,11 +213,31 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
     if (finished !== null) deliver(finished)
   }, [finished])
 
+  const running: DubbingRunning | null =
+    run === null
+      ? null
+      : {
+          locale: run.locale,
+          lines: new Set([
+            ...run.work.takes.flatMap(({ lines }) => lines.map((line) => line.caption)),
+            ...run.work.narrations.flatMap(({ caption }) => (caption === null ? [] : [caption])),
+          ]),
+          remaining:
+            run.work.takes.reduce(
+              (total, target, index) =>
+                outcomeOf(submitted?.takes[index], records.get(target.sourceJobId)) === undefined
+                  ? total + target.lines.length
+                  : total,
+              0,
+            ) +
+            run.work.narrations.filter(
+              (_, index) => outcomeOf(submitted?.narrations[index], spoken) === undefined,
+            ).length,
+        }
+
   return {
-    /** 正在给几条素材片配音；没在配时是 0。 */
-    generating: run === null ? 0 : sourcesOf(run.work.takes).length,
-    /** 正在合成几句旁白；没在合成时是 0。 */
-    narrating: run === null ? 0 : run.work.narrations.length,
+    /** 正在跑的一批（见 `DubbingRunning`）；没在跑时是 null。 */
+    running,
     start,
   }
 }

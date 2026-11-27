@@ -36,7 +36,7 @@ const dubbed = (id: string, locale: string, track: number, start: number) =>
     start,
     duration: 1_000,
     track,
-    dub: { locale, caption: id, trimmed: false, voice: null },
+    dub: { locale, caption: id, trimmed: false, text: null, voice: null, speed: 1 },
   })
 
 const layout = (film: readonly FilmClip[]) =>

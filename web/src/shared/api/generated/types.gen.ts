@@ -1996,10 +1996,10 @@ export type DubbedLine = {
 /**
  * DubbingIn
  *
- * 给一条素材片配一种外语的受理输入：每句译文按 ``lines`` 的时间放，用参考音频的声音合成。
+ * 给一条素材片配音的受理输入：每句的字按 ``lines`` 的时间放，用参考音频的声音合成。
  *
- * ``lines`` 按开始时间排好、互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与
- * ``userName`` 的规则同字幕识别。
+ * ``locale`` 不给时不声明用哪种语言念（final-cut 的原文没有声明语言）。``lines`` 按开始时间排好、
+ * 互不重叠，都在素材片的时长之内（时长在受理时核对）。归属参数与 ``userName`` 的规则同字幕识别。
  */
 export type DubbingIn = {
   /**
@@ -2015,7 +2015,7 @@ export type DubbingIn = {
   /**
    * Locale
    */
-  locale: 'zh' | 'en' | 'de' | 'es' | 'fr'
+  locale?: 'zh' | 'en' | 'de' | 'es' | 'fr' | null
   /**
    * Metadata
    */

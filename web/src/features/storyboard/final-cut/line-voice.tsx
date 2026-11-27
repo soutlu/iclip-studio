@@ -14,13 +14,7 @@ import {
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
 import type { LineVoice } from './composition/voices'
-import {
-  ORIGINAL_VOICE_NAME,
-  ownLineVoice,
-  voiceBusy,
-  voiceNameOf,
-  type VoiceControl,
-} from './voice-choices'
+import { ORIGINAL_VOICE_NAME, ownLineVoice, voiceNameOf, type VoiceControl } from './voice-choices'
 
 const FOLLOW = 'follow'
 const ORIGINAL = 'original'
@@ -58,7 +52,7 @@ type LineVoiceChipProps = {
 /**
  * 译文语言下单句字幕右上的配音标签：保留原声时是只读的「原声」；AI 配音时跟随整体的写「跟随 · 音色名」（灰），
  * 单独设过的写「单句 · 音色名」或「单句 · 不配音」。点开是单选菜单：跟随整体音色、原声、常用音色（再加这句自己选的那个）、
- * 不配音，最后「更多音色…」。不可配音或生成中置灰并说明原因。
+ * 不配音，最后「更多音色…」；选了只记下，不合成。这句不能选音色时置灰并说明原因。
  */
 export function LineVoiceChip({ caption, voice, library, common, onMore }: LineVoiceChipProps) {
   const [open, setOpen] = useState(false)
@@ -73,7 +67,7 @@ export function LineVoiceChip({ caption, voice, library, common, onMore }: LineV
         ? ORIGINAL_VOICE_NAME
         : voiceNameOf(chosen.voice, library)
   const label = `本句配音：${name}${own === undefined ? '，跟随整体音色' : ''}`
-  const blocked = voiceBusy(voice) ?? voice.lineBlocked.get(caption)
+  const blocked = voice.lines.get(caption)?.chooseBlocked
   const chip = (
     <button
       aria-disabled={blocked === undefined ? undefined : true}

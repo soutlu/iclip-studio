@@ -12,7 +12,12 @@ import {
   localizedHostValues,
 } from '../../web/src/features/storyboard/final-cut/composition/locale-text'
 import {
+  CAPTION_OWNER,
+  isCaptionsHost,
+} from '../../web/src/features/storyboard/final-cut/composition/captions'
+import {
   localizedVoices,
+  ownedCaptions,
   VOICE_MODES,
   voiceModesOf,
 } from '../../web/src/features/storyboard/final-cut/composition/voices'
@@ -175,21 +180,55 @@ const withLeadingSpace = (html: string, from: number, to: number) => {
   return { from: start, to }
 }
 
+const attributesOf = (element: Element): Record<string, string> =>
+  Object.fromEntries(element.attrs.map((attr) => [attr.name, attr.value]))
+
+/** 主文件 `main` 的字幕宿主挂载的字幕场景文件的内容；没有宿主或工程里没有这个文件时是 null。 */
+function captionsSceneIn(files: readonly ProjectFile[], main: string): string | null {
+  const root = compositionRootOf(parse(main))
+  const host = root?.childNodes.find(
+    (node): node is Element => 'tagName' in node && isCaptionsHost(attributesOf(node)),
+  )
+  const path = host === undefined ? undefined : attributesOf(host)['data-composition-src']
+  return files.find((file) => file.path === path)?.content ?? null
+}
+
+/** 字幕场景 `scene` 里的各句：编号和它写的视频片段（`data-caption-of`，没写是 null）。 */
+const captionOwnersIn = (scene: string | null) =>
+  scene === null
+    ? []
+    : [...elementsOf(parse(scene))].flatMap((element) => {
+        const { id, [CAPTION_OWNER]: owner } = attributesOf(element)
+        return id === undefined || !element.attrs.some((attr) => attr.name === 'data-var-text')
+          ? []
+          : [{ id, owner: owner === undefined || owner === '' ? null : owner }]
+      })
+
 /**
  * 按目标语言 `locale`（原文为 null）改写主文件中的人声轨道：规则见 `localizedVoices`（与预览共用），
- * 移除其他语言的配音片段，AI 配音模式下关闭原声与原文旁白；仅修改涉及元素，其余内容保持不变。
+ * 移除不出声的配音片段，配音模式下关闭原声；仅修改涉及元素，其余内容保持不变。`scene` 是字幕场景文件的
+ * 内容（没有时是 null），用来分出旁白（不属于视频片段的字幕的原文配音）。
  */
-export function withLocalizedVoices(html: string, locale: ExportLocale | null): string {
+export function withLocalizedVoices(
+  html: string,
+  locale: ExportLocale | null,
+  scene: string | null,
+): string {
   const root = compositionRootOf(parse(html, { sourceCodeLocationInfo: true }))
   if (root === undefined) return html
   const children = root.childNodes.filter((node): node is Element => 'tagName' in node)
+  const elements = children.map((child) => ({
+    tag: child.tagName,
+    attributes: attributesOf(child),
+  }))
+  const videos = elements.flatMap(({ tag, attributes }) =>
+    tag === 'video' && attributes['id'] !== undefined ? [attributes['id']] : [],
+  )
   const changes = localizedVoices(
-    children.map((child) => ({
-      tag: child.tagName,
-      attributes: Object.fromEntries(child.attrs.map((attr) => [attr.name, attr.value])),
-    })),
+    elements,
     voiceModesOf(root.attrs.find((attr) => attr.name === VOICE_MODES)?.value),
     locale,
+    ownedCaptions(captionOwnersIn(scene), videos),
   )
   const edits: SourceEdit[] = []
   for (const change of changes) {
@@ -238,11 +277,12 @@ export function localizeProject(
   locale: ExportLocale | null,
 ): Checked<LocalizedProject> {
   const main = files.find((file) => file.path === MAIN_FILE)?.content ?? ''
+  const scene = captionsSceneIn(files, main)
   if (locale === null)
     return {
       ok: true,
       value: {
-        files: withMain(files, withLocalizedVoices(main, null)),
+        files: withMain(files, withLocalizedVoices(main, null, scene)),
         variables: null,
         dropped: 0,
       },
@@ -261,7 +301,7 @@ export function localizeProject(
   return {
     ok: true,
     value: {
-      files: withMain(files, withLocalizedVoices(localizedMain, locale)),
+      files: withMain(files, withLocalizedVoices(localizedMain, locale, scene)),
       variables: values,
       dropped,
     },

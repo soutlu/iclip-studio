@@ -1,18 +1,25 @@
 /**
- * 按语言放人声。原文用原声，加上原文的旁白（原文下的配音片段，见 `film.ts` 的 `AudioDub`）；加的每种语言有一个
- * 人声设置，记在主文件根上的 `data-voice-modes`：
- * - 保留原声（`original`）：和原文一样，这种语言的配音片段不出声；
- * - AI 配音（`dub`）：这种语言的配音片段出声，原视频的声音（视频片段的原声、分离出来的原声片段）和原文的旁白
- *   都不出声。
+ * 按语言放人声。原文和加的每种语言各有一个人声设置，记在主文件根上的 `data-voice-modes`（原文的键是
+ * `SOURCE_VOICES`，不会和语言代码撞）：
+ * - 原声（`original`）：视频片段的原声、分离出来的原声片段照常出声；原文的配音片段里只有旁白出声，别的语言的
+ *   配音片段都不出声；
+ * - 配音（`dub`）：只有这种语言（原文就是原文下的）的配音片段出声，视频片段的原声、分离出来的原声片段不出声。
+ * 旁白是不属于任何视频片段的字幕（见 `ownedCaptions`）在原文下的配音。
  * 每种语言还记着配音用的音色：参考音频库里一个音色的编号，或者从素材片的原声里取（null）；各句可以有自己的
  * 选择（按字幕编号记）：用某个音色（null 是原声的音色），或者不配音，没记的句子跟着这种语言的音色。写法是
- * `{ "<语言>": { "mode": "dub" | "original", "voice": "<音色>" | null,
+ * `{ "<语言>" | "_source": { "mode": "dub" | "original", "voice": "<音色>" | null,
  *   "lines": { "<字幕编号>": { "voice": "<音色>" | null } | { "dub": false } } } }`，`lines` 空着时不写；没写的语言、
- * 写法不对的语言都是保留原声、原声的音色，写法不对的句子当没选过。
- * 配音片段是带 `data-dub-of` 的普通 `<audio>`，其它语言的带 `data-locale`，旁白不带（见 `film.ts` 的 `AudioDub`）。
+ * 写法不对的语言都是原声、原声的音色，写法不对的句子当没选过。
+ * 配音片段是带 `data-dub-of` 的普通 `<audio>`，其它语言的带 `data-locale`，原文的不带（见 `film.ts` 的 `AudioDub`）。
  * 预览和按语言导出都用 `localizedVoices` 按这条规则改主文件。
  */
 export const VOICE_MODES = 'data-voice-modes'
+
+/** `data-voice-modes` 里原文的键：原文没有语言代码，下划线开头的和语言代码撞不上。 */
+export const SOURCE_VOICES = '_source'
+
+/** 语言 `locale`（原文是 null）在 `data-voice-modes` 里的键。 */
+export const voiceKeyOf = (locale: string | null): string => locale ?? SOURCE_VOICES
 
 export type VoiceMode = 'original' | 'dub'
 
@@ -25,7 +32,7 @@ export type LineVoices = Readonly<Record<string, LineVoice>>
 /** 一种语言的人声设置：出不出配音，配音用哪个音色（null 是从原声里取），各句自己的选择。 */
 export type VoiceSetting = { mode: VoiceMode; voice: string | null; lines: LineVoices }
 
-/** 各语言的人声设置；没有的语言是保留原声、原声的音色。 */
+/** 各语言的人声设置（键见 `voiceKeyOf`）；没有的语言是原声、原声的音色。 */
 export type VoiceModes = Readonly<Record<string, VoiceSetting>>
 
 const NO_MODES: VoiceModes = {}
@@ -75,11 +82,13 @@ export function voiceModesOf(json: string | undefined): VoiceModes {
   )
 }
 
-/** 语言 `locale` 的人声设置；原文（null）总是保留原声、原声的音色。 */
-export const voiceSettingOf = (modes: VoiceModes, locale: string | null): VoiceSetting =>
-  (locale === null || !Object.hasOwn(modes, locale) ? undefined : modes[locale]) ?? DEFAULT_SETTING
+/** 语言 `locale`（原文是 null）的人声设置；没写过的是原声、原声的音色。 */
+export const voiceSettingOf = (modes: VoiceModes, locale: string | null): VoiceSetting => {
+  const key = voiceKeyOf(locale)
+  return (Object.hasOwn(modes, key) ? modes[key] : undefined) ?? DEFAULT_SETTING
+}
 
-/** 语言 `locale` 出不出配音；原文（null）总是保留原声。 */
+/** 语言 `locale`（原文是 null）出不出配音。 */
 export const voiceModeOf = (modes: VoiceModes, locale: string | null): VoiceMode =>
   voiceSettingOf(modes, locale).mode
 
@@ -143,14 +152,28 @@ export type VoiceChange =
   | { index: number; remove: true }
   | { index: number; remove: false; attributes: Readonly<Record<string, string | null>> }
 
-const named = (value: string | undefined) => value !== undefined && value !== ''
+const named = (value: string | undefined): value is string => value !== undefined && value !== ''
+
+/**
+ * 属于视频片段的字幕：`captions` 是字幕场景里的各句（编号和 `data-caption-of` 写的视频片段，没写是 null），
+ * `videos` 是主文件里视频片段的编号；写的视频片段不在了的不算。别的字幕（手动加的）在原文下的配音是旁白。
+ */
+export function ownedCaptions(
+  captions: Iterable<{ id: string; owner: string | null }>,
+  videos: Iterable<string>,
+): ReadonlySet<string> {
+  const present = new Set(videos)
+  return new Set(
+    [...captions].flatMap(({ id, owner }) => (owner !== null && present.has(owner) ? [id] : [])),
+  )
+}
 
 /**
  * 按语言放人声（规则见文件头）：`elements` 是主文件根下的元素（按文件里的先后），`modes` 是根上的人声设置，
- * `locale` 是要放的语言（原文是 null）。答复要改的元素，按文件里的先后：
- * - 其它语言的配音片段：别的语言的、原文下的、这种语言保留原声时的都去掉；
- * - 旁白：AI 配音时去掉；
- * - AI 配音时：原声开着的视频片段关掉原声（照编辑器的写法加 `muted`、去掉 `data-has-audio`），分离出来的
+ * `locale` 是要放的语言（原文是 null），`owned` 是属于视频片段的字幕（见 `ownedCaptions`）。答复要改的元素，
+ * 按文件里的先后：
+ * - 配音片段：别的语言的都去掉；原文下的在原文配音时都留着，别的时候只留旁白；这种语言的只在配音时留着；
+ * - 配音时：原声开着的视频片段关掉原声（照编辑器的写法加 `muted`、去掉 `data-has-audio`），分离出来的
  *   原声片段（带 `data-sync-origin` 的 `<audio>`）去掉。
  * 别的元素不动。
  */
@@ -158,13 +181,18 @@ export function localizedVoices(
   elements: readonly VoiceElement[],
   modes: VoiceModes,
   locale: string | null,
+  owned: ReadonlySet<string>,
 ): VoiceChange[] {
   const dubbing = voiceModeOf(modes, locale) === 'dub'
   return elements.flatMap(({ tag, attributes }, index): VoiceChange[] => {
-    if (tag === 'audio' && named(attributes['data-dub-of'])) {
+    const caption = attributes['data-dub-of']
+    if (tag === 'audio' && named(caption)) {
+      const narration = !owned.has(caption)
       const spoken = named(attributes['data-locale'])
         ? dubbing && attributes['data-locale'] === locale
-        : !dubbing
+        : locale === null
+          ? dubbing || narration
+          : !dubbing && narration
       return spoken ? [] : [{ index, remove: true }]
     }
     if (!dubbing) return []

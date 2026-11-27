@@ -201,9 +201,10 @@ def create_generations_router(service: GenerationService, *, act_as: ActAs) -> A
         body: DubbingIn,
         principal: Annotated[Principal, require_permission("generation:submit")],
     ) -> GenerationEnvelope:
-        """给一条素材片配一种外语，另起一条配音记录（种类 ``dubbing``）。
+        """给一条素材片配音，另起一条配音记录（种类 ``dubbing``）。
 
-        用参考音频的声音把 ``lines`` 每句译文合成出来，放在这句的开始，能占到下一句开始（最后一句
+        用参考音频的声音把 ``lines`` 每句的字合成出来（给了 ``locale`` 时用这种语言念，不给时不声明
+        语言，final-cut 的原文就是这样），放在这句的开始，能占到下一句开始（最后一句
         到视频结尾），写了 ``slotEndMs`` 的不超过它；合成出来更长时先加速，最多 1.25 倍，还放不下
         就截掉尾巴并淡出；没占到的地方是静音。拼成一条和
         素材片等长的音轨，地址在 ``outputUrl``，每句的倍数和是否截掉在 ``dubbedLines``。参考音频是
