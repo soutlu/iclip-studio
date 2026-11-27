@@ -62,9 +62,9 @@ import {
   type FilmClip,
   type MediaClip,
 } from './composition/film'
+import type { DubLook } from './dub-look'
 import { useEditorEscape, useEditorRoot } from './editor-keys'
 import type { EditTool } from './editor-toolbar'
-import { SOURCE_NAME } from './locales'
 import type { AttributeChanges } from './original-sound'
 import {
   namedRows,
@@ -125,8 +125,17 @@ export type DropGhost = { row: RowTarget; start: number; duration: number; guide
 type FilmTimelineProps = {
   /** final-cut 里所有的片段。 */
   clips: readonly FilmClip[]
-  /** 显示着其它语言时还没翻的字幕：片段上写的是原文，右边标一个「原文」。 */
-  untranslated: ReadonlySet<string>
+  /** 显示着的语言下没字的字幕（没翻的、空着的）：片段上写「待输入字幕」。 */
+  blankCaptions: ReadonlySet<string>
+  /** 各配音片段顶行的样子（见 `dubLooksOf`），按片段编号。 */
+  dubLooks: ReadonlyMap<string, DubLook>
+  /**
+   * 还没有配音行时，在声音区最上面（配音行生成后在的地方）占一行写的引导；不用引导时是 null。
+   * 它下面的位置拖得进片段时，拖到它上面就在那里新开一行。
+   */
+  dubHint: string | null
+  /** 显示着的语言在配音：视频片段的原声不出声。 */
+  dubbing: boolean
   /** 元素或模板片段在当前展示语言下的正文内容，用于悬停提示拼接为「名称 · 正文」；无文本时省略。 */
   hostTexts: ReadonlyMap<string, string>
   /** 片段的链接名：链接的片段一起切。 */
@@ -198,8 +207,8 @@ type FilmTimelineProps = {
 
 const seconds = (ms: number) => (ms / 1000).toFixed(1)
 
-/** 其它语言里还没翻的字幕：片段上写的是原文，标出来。 */
-const SOURCE_TEXT_BADGE: SoundBadge = { text: SOURCE_NAME, tone: 'muted' }
+/** 当前语言下没字（没翻、空着）的字幕片段上写的字。 */
+const BLANK_CAPTION = '待输入字幕'
 
 /**
  * 静音（隐藏）音频片段的角标：配乐行显示「已静音」，配音显示「静音」（分离原声由 `soundBadgeOf` 负责）；静音片段仅展示此角标。
@@ -209,14 +218,10 @@ const mutedBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
     ? { text: isDubClip(clip) ? '静音' : '已静音', tone: 'muted' }
     : undefined
 
-/** 配音片段角标：合成时被截短尾部时标注「截短」。 */
-const dubBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
-  isDubClip(clip) && clip.dub.trimmed ? { text: '截短', tone: 'offset' } : undefined
+/** 自动避让开启态角标：音频片段顶行画成压低图标加「自动避让」，视频片段上只画图标（文字写进无障碍名称）。 */
+const CARVE_BADGE: SoundBadge = { text: '自动避让', tone: 'linked' }
 
-/** 自动压低开启态角标：片段上以压低图标呈现，文字仅写入无障碍名称。 */
-const CARVE_BADGE: SoundBadge = { text: '自动压低', tone: 'linked' }
-
-/** 开启自动压低的有声片段角标；静音（隐藏）片段不出声，不展示。 */
+/** 开启自动避让的有声片段角标；静音（隐藏）片段不出声，不展示。 */
 const carveBadgeOf = (clip: FilmClip): SoundBadge | undefined =>
   canCarve(clip) && !clip.hidden && carveOf(clip)?.enabled === true ? CARVE_BADGE : undefined
 
@@ -249,8 +254,11 @@ const INSET = { left: 8, right: 6 }
 
 const rowKeyOf = (clip: FilmClip): RowKey => ({ zone: zoneOf(clip), track: clip.track })
 
-/** 一条行在屏幕上的上下边；`insertAt` 是待新开的那一行在第几行的位置，已有的行是 null。 */
-type Lane = { top: number; bottom: number; insertAt: number | null }
+/**
+ * 一条行在屏幕上的上下边；`insertAt` 是待新开的那一行在第几行的位置，已有的行是 null；`hint` 是配音行的引导那一行
+ * （它顶着的位置不是让出来的）。
+ */
+type Lane = { top: number; bottom: number; insertAt: number | null; hint: boolean }
 
 /**
  * 别处让出了一行（`opened`）时，各行按没让出来的样子摆回去：它下面的行往上挪回它占的高度，
@@ -269,7 +277,13 @@ const withoutOpening = (lanes: readonly Lane[], opened: Lane): Lane[] => {
   const height = opened.bottom - opened.top
   return [
     ...restored,
-    { top: last.bottom + shift - height, bottom: last.bottom + shift, insertAt: restored.length },
+    {
+      top: last.bottom + shift - height,
+      bottom: last.bottom + shift,
+      // 已有的行有几行，最下面那条空行就在第几行的位置（配音行的引导不是一行）
+      insertAt: restored.filter((lane) => lane.insertAt === null).length,
+      hint: false,
+    },
   ]
 }
 
@@ -382,12 +396,22 @@ const movePlan = (
   }
 }
 
-/** 片段状态角标：分离原声、静音、截短及译文未译字幕以文字标签呈现，自动压低以图标呈现。 */
-function ClipBadge({ badge }: { badge: SoundBadge }) {
-  return badge === CARVE_BADGE ? (
+/**
+ * 片段状态角标：分离原声、静音以文字标签呈现；自动避让在音频片段顶行是压低图标加文字，在视频片段上只有图标
+ * （`iconOnly`）。
+ */
+function ClipBadge({ badge, iconOnly = false }: { badge: SoundBadge; iconOnly?: boolean }) {
+  if (badge !== CARVE_BADGE)
+    return (
+      <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
+        {badge.text}
+      </span>
+    )
+  return iconOnly ? (
     <Icon className="wf-clip-duck" decorative name="final-cut-duck" size="xs" />
   ) : (
     <span aria-hidden="true" className="wf-clip-badge" data-tone={badge.tone}>
+      <Icon decorative name="final-cut-duck" size="xs" />
       {badge.text}
     </span>
   )
@@ -395,14 +419,16 @@ function ClipBadge({ badge }: { badge: SoundBadge }) {
 
 /**
  * 渲染时间线片段主体内容：画面类片段不叠加文字（视频平铺抽帧且未分离原声时底部叠加细原声波形；元素与模板片段平铺封面帧条，名称与文本由悬停提示展示）；
- * 字幕渲染为含正文胶囊；音频顶部展示名称与状态角标、下方绘制贴底波形；「其他」片段仅展示名称。
- * 自动压低图标分别位于视频片段右上角与音频片段标题条右端。
+ * 字幕渲染为写着正文的胶囊（当前语言下没字时写「待输入字幕」）；音频顶行写名字（配音片段是音色的小图标、音色名和
+ * 加速倍数）和状态角标，下面是贴底波形；「其他」片段仅展示名称。
  */
 function ClipContent({
   clip,
   timing,
   cover,
   badge,
+  blank,
+  dub,
   keyframes,
   withSound,
   peaks,
@@ -413,6 +439,10 @@ function ClipContent({
   timing: Timing
   cover: string | null
   badge: SoundBadge | undefined
+  /** 字幕片段在当前语言下没字。 */
+  blank: boolean
+  /** 配音片段顶行的样子；别的片段是 undefined。 */
+  dub: DubLook | undefined
   /** 是否存在音量关键帧：音频片段在标题条内标注（视频片段直接通过包络曲线体现）。 */
   keyframes: boolean
   /** 视频片段是否仍保留原声（未分离）：为真时底部叠加原声波形。 */
@@ -426,12 +456,7 @@ function ClipContent({
   const name = <span className="wf-clip-name">{clip.label}</span>
   if (clip.kind === 'other') return name
   if (clip.kind === 'caption')
-    return (
-      <>
-        {name}
-        {badge === undefined ? null : <ClipBadge badge={badge} />}
-      </>
-    )
+    return blank ? <span className="wf-clip-name is-blank">{BLANK_CAPTION}</span> : name
   if (clip.kind === 'host')
     return cover === null ? null : (
       // 片段宽度随缩放动态变化，使用 background-repeat 横向平铺封面图避免手动计算张数
@@ -448,7 +473,28 @@ function ClipContent({
     return (
       <>
         <span className="wf-clip-label">
-          {name}
+          {dub === undefined ? (
+            name
+          ) : (
+            <>
+              <Icon
+                className="wf-clip-voice"
+                decorative
+                name={dub.glyph ?? 'final-cut-voice'}
+                size="xs"
+              />
+              <span className="wf-clip-name">{dub.voice}</span>
+              {dub.speed === undefined ? null : (
+                <span
+                  aria-hidden="true"
+                  className="wf-clip-badge"
+                  data-tone={dub.trimmed ? 'offset' : 'muted'}
+                >
+                  {dub.speed}
+                </span>
+              )}
+            </>
+          )}
           {badge === undefined ? null : <ClipBadge badge={badge} />}
           {keyframes ? (
             <span aria-hidden="true" className="wf-clip-badge wf-clip-keyframes">
@@ -472,7 +518,7 @@ function ClipContent({
           <Wave bars="bottom" level={wave.level} part={part} state={peaks} />
         </span>
       ) : null}
-      {badge === undefined ? null : <ClipBadge badge={badge} />}
+      {badge === undefined ? null : <ClipBadge badge={badge} iconOnly />}
     </>
   )
 }
@@ -527,8 +573,14 @@ type TimelineClipProps = {
   trimmable: boolean
   /** 拖这个片段挪动或裁 `kind` 这一端时一起动的片段，含它自己和跟着动的联动伙伴。 */
   groupFor: (kind: Gesture['kind']) => ReadonlySet<string>
-  /** 片段状态角标（分离原声、配音、自动压低或未译字幕，见 `ClipBadge`）；无角标时为 `undefined`。 */
+  /** 片段状态角标（分离原声、静音或自动避让，见 `ClipBadge`）；无角标时为 `undefined`。 */
   badge: SoundBadge | undefined
+  /** 字幕片段在当前语言下没字（没翻、空着）。 */
+  blank: boolean
+  /** 配音片段顶行的样子（见 `DubLook`）；别的片段是 undefined。 */
+  dub: DubLook | undefined
+  /** 显示着的语言在配音：视频片段的原声不出声，底部的原声波形画暗。 */
+  dubbing: boolean
   /** 别的片段正带着一组片段拖动时，跟着动的片段的样子；没有时是 null。 */
   following: Following | null
   pps: number
@@ -604,6 +656,9 @@ function TimelineClip({
   trimmable,
   groupFor,
   badge,
+  blank,
+  dub,
+  dubbing,
   following,
   pps,
   contentRef,
@@ -660,12 +715,18 @@ function TimelineClip({
   const levelAt = media === null ? null : clipLevel(media, durationSec, envelopePoints)
   const wave: ClipWave = {
     level: (fraction) => (silent ? SILENT_LEVEL : (levelAt?.(fraction * durationSec) ?? 1)),
-    silent,
+    // 配音时视频的原声不出声：波形照常高低，只画暗
+    silent: silent || (dubbing && clip.kind === 'video'),
     envelope: saved !== null,
   }
   // 音频片段隐藏就是静音，小标上已经写着
-  const state = badge === undefined ? (clip.hidden ? '，已隐藏' : '') : `，${badge.text}`
-  const name = `${clip.label}，${seconds(timing.duration)} 秒${state}`
+  const states = [
+    badge === undefined ? (clip.hidden ? '已隐藏' : null) : badge.text,
+    blank ? BLANK_CAPTION : null,
+    dub?.speed ?? null,
+    dub?.stale === true ? '需重配' : null,
+  ].filter((each) => each !== null)
+  const name = [clip.label, `${seconds(timing.duration)} 秒`, ...states].join('，')
 
   const timeAt = (clientX: number) =>
     pxToMs(clientX - (contentRef.current?.getBoundingClientRect().left ?? 0), pps)
@@ -821,6 +882,7 @@ function TimelineClip({
             `is-${clip.kind}`,
             selected && 'is-selected',
             clip.hidden && 'is-hidden',
+            dub?.stale === true && 'is-stale',
             preview?.kind === 'move' && 'is-lifted',
           )}
           data-clip-id={clip.id}
@@ -863,7 +925,9 @@ function TimelineClip({
             >
               <ClipContent
                 badge={badge}
+                blank={blank}
                 clip={clip}
+                dub={dub}
                 cover={cover}
                 keyframes={saved !== null && !silent}
                 peaks={peaks}
@@ -1026,13 +1090,73 @@ function FilmPlayhead({
 }
 
 /**
+ * 悬停游标：指针在时间尺和各行上移动（没按着键）时，一条细虚线跟着它往下穿过各行，时间尺上一个小气泡写这个位置的
+ * 时间（写法同播放条的时间码）；切开工具下（`razor`）画成实线切分线。只是显示：不定位、不挡点选和拖动。
+ * `place` 把指针下的时间换成画在哪（开着吸附时吸上去；切开工具下就是会切开的地方），不画时答 null；`quiet`
+ * 时（拖片段、框选、拖播放头）不画。自己听时间区的指针事件、自己记位置，指针动时只重画它自己。
+ */
+function Skimmer({
+  contentRef,
+  pps,
+  razor,
+  quiet,
+  place,
+}: {
+  contentRef: RefObject<HTMLDivElement | null>
+  pps: number
+  razor: boolean
+  quiet: boolean
+  place: (ms: number) => number | null
+}) {
+  const [at, setAt] = useState<number | null>(null)
+  const follow = useEffectEvent((event: globalThis.PointerEvent) => {
+    const content = contentRef.current
+    // 按着键是在拖东西（片段、播放头、时间尺、框选）；触摸没有悬停
+    if (content === null || event.buttons !== 0 || event.pointerType === 'touch') setAt(null)
+    else setAt(place(pxToMs(event.clientX - content.getBoundingClientRect().left, pps)))
+  })
+  useEffect(() => {
+    const content = contentRef.current
+    if (content === null) return
+    const hide = () => setAt(null)
+    const move = (event: globalThis.PointerEvent) => follow(event)
+    content.addEventListener('pointermove', move)
+    content.addEventListener('pointerdown', hide)
+    content.addEventListener('pointerleave', hide)
+    return () => {
+      content.removeEventListener('pointermove', move)
+      content.removeEventListener('pointerdown', hide)
+      content.removeEventListener('pointerleave', hide)
+    }
+  }, [contentRef])
+  if (at === null || quiet) return null
+  const left = msToPx(at, pps)
+  return (
+    <>
+      <span
+        aria-hidden="true"
+        className={cn('wf-skimmer', razor && 'is-razor')}
+        data-testid="timeline-skimmer"
+        style={{ left }}
+      />
+      <span aria-hidden="true" className="wf-skimmer-time" style={{ left }}>
+        {timeLabel(at / 1000)}
+      </span>
+    </>
+  )
+}
+
+/**
  * 时间线：final-cut 里的片段按行排开，画面区的行在上、有字幕时中间一行「字幕」、声音区的行在下，最下面是一条
  * 可以新开一行的空行。
  * 片段可以选中一个或几个（在空白处拖出框来框选）、在自己的区里挪动、裁两端；上面是时间尺和播放头。
  */
 export function FilmTimeline({
   clips,
-  untranslated,
+  blankCaptions,
+  dubLooks,
+  dubHint,
+  dubbing,
   hostTexts,
   links,
   tool,
@@ -1101,6 +1225,14 @@ export function FilmTimeline({
   const shown = namedRows<Row>(rows.length === 0 ? [{ zone: 'visual', track: 0, clips: [] }] : rows)
   // 要在别的位置新开一行时，最下面那条空行挪到那里去：总高度不变，上面的行不动、下面的行往下让
   const openedAt = opening !== null && opening < rows.length ? opening : null
+  // 配音行的引导占在声音区最上面（生成的配音行就在那里），还没有声音区的行时在最后一行下面
+  const firstAudio = rows.findIndex((row) => row.zone === 'audio')
+  const hintAt =
+    dubHint === null || rows.length === 0 ? null : firstAudio === -1 ? rows.length : firstAudio
+  // 引导在两行之间时，在它那个位置新开的行由它自己顶上（见 `hintLane`）；在最后一行下面时只是写着字
+  const hintTakesOpening = hintAt !== null && hintAt < rows.length
+  /** 第 `at` 行的位置要不要另画一条让出来的新行（引导顶上的那一处不另画）。 */
+  const openingAt = (at: number) => openedAt === at && !(hintTakesOpening && at === hintAt)
 
   useLayoutEffect(() => {
     const viewport = scrollRef.current
@@ -1133,12 +1265,15 @@ export function FilmTimeline({
     if (viewport === null || rulerBar === null) return undefined
     const top = viewport.getBoundingClientRect().top + viewport.clientTop
     if (clientY < top || clientY > top + viewport.clientHeight) return undefined
+    // 配音行的引导：顶着一处新开行的位置时和最下面那条空行一样算（指针在它上面就在那里新开一行），只写着字的不算
     const measured: Lane[] = [
       ...(contentRef.current?.querySelectorAll<HTMLElement>('.wf-lane') ?? []),
-    ].map((lane) => {
+    ].flatMap((lane) => {
       const { top, bottom } = lane.getBoundingClientRect()
       const insertAt = lane.dataset['insertAt']
-      return { top, bottom, insertAt: insertAt === undefined ? null : Number(insertAt) }
+      const hint = lane.dataset['hint'] !== undefined
+      if (hint && insertAt === undefined) return []
+      return [{ top, bottom, insertAt: insertAt === undefined ? null : Number(insertAt), hint }]
     })
     // 指针在时间尺上：第一行露着（没滚到时间尺底下）就算在最上面新开一行，不然哪一行都不算
     const rulerBottom = rulerBar.getBoundingClientRect().bottom
@@ -1150,8 +1285,10 @@ export function FilmTimeline({
     }
     const near = (lane: Lane) =>
       clientY >= lane.top - ROW_REACH_PX && clientY <= lane.bottom + ROW_REACH_PX
-    // 已经让出来的那一行：指针还在它上面就还是它
-    const opened = measured.find((lane) => lane.insertAt !== null && lane.insertAt < rows.length)
+    // 已经让出来的那一行：指针还在它上面就还是它（引导顶上的那一处没有让，不算）
+    const opened = measured.find(
+      (lane) => lane.insertAt !== null && lane.insertAt < rows.length && !lane.hint,
+    )
     if (opened?.insertAt != null && near(opened)) return { insertAt: opened.insertAt }
     const lanes = opened === undefined ? measured : withoutOpening(measured, opened)
     // 最下面那条空行：指针在它上面就在那里新开一行
@@ -1300,13 +1437,6 @@ export function FilmTimeline({
   // 框选中途按 Esc：只取消这次框选，原来的选中不变
   useEditorEscape(marquee !== null, dropFraming)
 
-  // 剃刀下指针在各行上时，一条竖线跟着它（不吸附）；换工具时收起，等指针再动
-  const [razorAt, setRazorAt] = useState<number | null>(null)
-  const [razorTool, setRazorTool] = useState(tool)
-  if (razorTool !== tool) {
-    setRazorTool(tool)
-    setRazorAt(null)
-  }
   const razor = tool === 'razor'
   // 换成切开工具时把手不画了：焦点原来在把手上的话随它丢到页面上，快捷键就收不到了，交还编辑器的根节点
   const editorRoot = useEditorRoot()
@@ -1348,9 +1478,6 @@ export function FilmTimeline({
     onClickCapture: (event: MouseEvent<HTMLDivElement>) => {
       if (inLanes(event)) event.stopPropagation()
     },
-    onPointerMove: (event: PointerEvent<HTMLDivElement>) =>
-      setRazorAt(inLanes(event) ? timeAt(event.clientX) : null),
-    onPointerLeave: () => setRazorAt(null),
   }
 
   const pressLanes = (event: PointerEvent<HTMLDivElement>) => {
@@ -1394,14 +1521,18 @@ export function FilmTimeline({
   }
 
   /**
-   * 拖拽播放头或时间尺定位至 `ms`：开启吸附时优先吸附至片段端点，其次吸附配乐节拍并绘制吸附线（排除播放头自身）；
-   * 键盘定位不经由此处且不触发吸附。
+   * 指针拖着播放头或时间尺落在 `ms` 时定位到哪：夹在 final-cut 的长度里，开启吸附时优先吸附至片段端点，其次吸附配乐
+   * 节拍（排除播放头自身）。悬停游标的读数也按它，和按下去会定到的地方一样。
    */
-  const scrubTo = (ms: number) => {
+  const pointerSeekAt = (ms: number) => {
     const at = Math.max(0, Math.min(totalMs, ms))
-    const snapped = snap
+    return snap
       ? snapEdgeToBeats(at, snapTargets(clips, null), beatsToSnap(snapBeats, NOTHING), pps)
       : { ms: at, guideMs: null }
+  }
+  /** 拖拽播放头或时间尺定位至 `ms`（吸附规则见 `pointerSeekAt`，吸上时画吸附线）；键盘定位不经由此处且不触发吸附。 */
+  const scrubTo = (ms: number) => {
+    const snapped = pointerSeekAt(ms)
     setClipGuideMs(snapped.guideMs)
     onSeek(snapped.ms)
   }
@@ -1487,17 +1618,41 @@ export function FilmTimeline({
       !gesturing && event.pointerType !== 'touch' && inLanes(event) && onPlayheadLine(event),
     )
 
+  /** 配音行的引导那一行的行头：配音行的图标，没有开关。 */
+  const hintHead =
+    hintAt === null ? null : (
+      <span className="wf-track-head" data-kind="dub">
+        <RowSign kind="dub" name="配音" ordinal={null} />
+      </span>
+    )
+
+  /** 配音行的引导那一行；有片段拖到它上面要在那里新开一行时，它自己换成新开的那一行（不另让出一行）。 */
+  const hintLane = (at: number) => {
+    const opened = openedAt === at
+    return (
+      <div
+        className={cn('wf-lane is-hint', opened && 'is-new is-opening')}
+        data-hint=""
+        data-insert-at={hintTakesOpening ? at : undefined}
+      >
+        {opened ? (
+          (newRowGhost(at) ?? <span className="wf-lane-hint">新开一行</span>)
+        ) : (
+          <span className="wf-lane-hint">{dubHint}</span>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="wf-tracks" ref={scrollRef}>
       <div className="wf-track-inner">
         <div className="wf-track-heads" ref={headsRef}>
-          <span className="wf-track-corner">
-            <span className="sr-only">总时长 </span>
-            {timeLabel(totalMs / 1000)}
-          </span>
+          <span aria-hidden="true" className="wf-track-corner" />
           {shown.map((row, at) => (
             <Fragment key={keyOf(row)}>
-              {openedAt === at ? (
+              {at === hintAt ? hintHead : null}
+              {openingAt(at) ? (
                 <span aria-hidden="true" className="wf-track-head is-opening" />
               ) : null}
               <span className="wf-track-head" data-kind={row.kind} data-zone={row.zone}>
@@ -1513,6 +1668,7 @@ export function FilmTimeline({
               </span>
             </Fragment>
           ))}
+          {hintAt === shown.length ? hintHead : null}
         </div>
         <div
           className="wf-track-content"
@@ -1531,11 +1687,25 @@ export function FilmTimeline({
               onSeekEnd={endScrub}
               scale={contentWidth / pps}
               tickScale={scale.viewSeconds}
-              timeBubble={false}
+              clockTicks
+              hoverGuide={false}
               total={totalMs / 1000}
               viewportRef={scrollRef}
             />
             <FilmPlayhead clock={clock} dragging={scrubbing} pps={pps} totalMs={totalMs} />
+            <Skimmer
+              contentRef={contentRef}
+              place={(ms) =>
+                totalMs <= 0
+                  ? null
+                  : razor
+                    ? Math.max(0, Math.min(totalMs, ms))
+                    : pointerSeekAt(ms).ms
+              }
+              pps={pps}
+              quiet={gesturing || scrubbing}
+              razor={razor}
+            />
           </div>
           <div
             className={cn('wf-lanes', razor && 'is-razor')}
@@ -1557,7 +1727,8 @@ export function FilmTimeline({
           >
             {shown.map((row, at) => (
               <Fragment key={keyOf(row)}>
-                {openedAt === at ? (
+                {at === hintAt ? hintLane(at) : null}
+                {openingAt(at) ? (
                   <div aria-hidden="true" className="wf-lane is-new is-opening" data-insert-at={at}>
                     {newRowGhost(at) ?? <span className="wf-lane-hint">新开一行</span>}
                   </div>
@@ -1585,12 +1756,11 @@ export function FilmTimeline({
                           following={following}
                           groupFor={(kind) => editGroup(clip, selected, clips, kind)}
                           badge={
-                            soundBadgeOf(clip, clips) ??
-                            mutedBadgeOf(clip) ??
-                            dubBadgeOf(clip) ??
-                            carveBadgeOf(clip) ??
-                            (untranslated.has(clip.id) ? SOURCE_TEXT_BADGE : undefined)
+                            soundBadgeOf(clip, clips) ?? mutedBadgeOf(clip) ?? carveBadgeOf(clip)
                           }
+                          blank={blankCaptions.has(clip.id)}
+                          dub={dubLooks.get(clip.id)}
+                          dubbing={dubbing}
                           key={clip.id}
                           onFollow={setFollowing}
                           gesturing={gesturing}
@@ -1662,7 +1832,8 @@ export function FilmTimeline({
                 </ContextMenuRoot>
               </Fragment>
             ))}
-            {clips.length === 0 || openedAt !== null ? null : (
+            {hintAt === shown.length ? hintLane(hintAt) : null}
+            {clips.length === 0 || (openedAt !== null && openingAt(openedAt)) ? null : (
               <div
                 aria-label="新的一行"
                 className="wf-lane is-new"
@@ -1675,14 +1846,6 @@ export function FilmTimeline({
               </div>
             )}
           </div>
-          {razorAt === null ? null : (
-            <span
-              aria-hidden="true"
-              className="wf-razor-line"
-              data-testid="razor-line"
-              style={{ left: msToPx(razorAt, pps) }}
-            />
-          )}
           {guideMs === null ? null : (
             <span
               aria-hidden="true"

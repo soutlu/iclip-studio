@@ -61,8 +61,9 @@ import {
 } from './clip-edit'
 import { useComponentCatalog, type ComponentCatalog } from './component-catalog'
 import type { CatalogItem } from './composition/catalog'
-import type { CaptionClip, FilmClip } from './composition/film'
+import { isDubClip, type CaptionClip, type FilmClip } from './composition/film'
 import { textHosts, type LocaleBindings } from './composition/locale-text'
+import { dubLooksOf } from './dub-look'
 import { shownIn } from './dubbing'
 import { isEditorKeyTarget, onCanvasLayer, useEditorEscape, useEditorRoot } from './editor-keys'
 import { EditorRoot } from './editor-root'
@@ -336,10 +337,13 @@ function EditorBody({
   )
   // 显示着的语言：字幕页签、「属性」、时间线上的字幕和预览都按它
   const locale = film?.locale ?? SOURCE_SHOWN
-  const untranslated = useMemo(
+  // 时间线上写「待输入字幕」的字幕：显示着的语言下没字的（没翻的、空着的）
+  const blankCaptions = useMemo(
     () =>
       new Set(
-        captions.filter((caption) => captionIn(locale, caption).untranslated).map((c) => c.id),
+        captions
+          .filter((caption) => captionIn(locale, caption).text.trim() === '')
+          .map((c) => c.id),
       ),
     [captions, locale],
   )
@@ -1167,9 +1171,21 @@ function EditorBody({
     notice,
     beforeEdit: leaveMaterial,
   })
-  // 原文下「旁白配音」展开着时也要读资料库的音色
+  // 原文下「旁白配音」展开着时、时间线上有用资料库音色配的配音片段时（顶行写音色名）也要读资料库的音色
   const [narrationOpen, setNarrationOpen] = useState(false)
-  const libraryVoices = useLibraryVoices(target !== undefined || narrationOpen)
+  const libraryVoices = useLibraryVoices(
+    target !== undefined ||
+      narrationOpen ||
+      clips.some((clip) => isDubClip(clip) && clip.dub.voice !== null),
+  )
+  const dubLooks = dubLooksOf(clips, voice, libraryVoices.data)
+  // 时间线上还没有配音行时，在配音行的位置写一句去哪里配
+  const dubHint =
+    voice === undefined || captions.length === 0 || clips.some(isDubClip)
+      ? null
+      : voice.mode === 'original'
+        ? '当前语言保留原声；在「字幕」页签切到「配音」可生成配音'
+        : '当前语言还没有配音；在「字幕」页签点击「生成配音」'
   const voicesProblem = libraryVoices.isError
     ? {
         message: errorMessageOf(libraryVoices.error, '读取音色失败'),
@@ -1698,7 +1714,10 @@ function EditorBody({
         />
         <FilmTimeline
           clips={clips}
-          untranslated={untranslated}
+          blankCaptions={blankCaptions}
+          dubLooks={dubLooks}
+          dubHint={dubHint}
+          dubbing={film?.voiceMode === 'dub'}
           hostTexts={hostTexts}
           links={links}
           onSplit={split}

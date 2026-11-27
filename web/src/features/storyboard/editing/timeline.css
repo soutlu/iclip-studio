@@ -30,6 +30,27 @@
   translate: -100% 0;
 }
 
+/* 时钟写法刻度（clockTicks）之间的副刻度：贴着时间尺底边的细竖线，标字的那道最长最深，正中那道次之 */
+.timeline-notch {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  translate: -50% 0;
+  background: color-mix(in srgb, var(--color-on-surface) 12%, transparent);
+  pointer-events: none;
+}
+
+.timeline-notch.is-half {
+  height: 4px;
+  background: color-mix(in srgb, var(--color-on-surface) 18%, transparent);
+}
+
+.timeline-notch.is-major {
+  height: 6px;
+  background: color-mix(in srgb, var(--color-on-surface) 28%, transparent);
+}
+
 .timeline-buffered {
   position: absolute;
   top: calc(100% + 2px);

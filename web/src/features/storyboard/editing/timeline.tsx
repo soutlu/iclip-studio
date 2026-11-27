@@ -26,6 +26,16 @@ import './timeline.css'
 
 const TICK_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60]
 
+/** 时钟写法的刻度之间分几格画副刻度（按刻度间隔，秒）；没列的（更长的整分钟）分 4 格。 */
+const NOTCH_DIVISIONS: Readonly<Record<number, number>> = { 1: 4, 2: 4, 5: 5, 10: 5, 15: 3, 30: 6 }
+
+/** 时钟写法的刻度字：`00:05`、`01:30`。 */
+const clockTick = (seconds: number) => {
+  const whole = Math.round(seconds)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(Math.floor(whole / 60))}:${pad(whole % 60)}`
+}
+
 type TimelineRulerProps = {
   scale: number
   tickScale?: number | undefined
@@ -37,8 +47,13 @@ type TimelineRulerProps = {
   clockAt: (clientX: number) => number
   onSeek: (clock: number) => void
   onScrub: () => void
-  /** 悬停、按住拖动时在时间尺上方出不出写着时间的气泡；不出时悬停照样画虚线。默认出。 */
-  timeBubble?: boolean | undefined
+  /** 悬停、按住拖动时出不出写着时间的气泡和悬停虚线；不出时由编辑器自己画悬停的位置（final-cut）。默认出。 */
+  hoverGuide?: boolean | undefined
+  /**
+   * 刻度按时钟写（`00:05`），只标整秒，两个刻度之间再画几道更细的副刻度（final-cut）；不给时按 `5s` 写、
+   * 没有副刻度（编辑视频）。
+   */
+  clockTicks?: boolean | undefined
   /** 给了时按住拖动定位改调它（可以吸附），键盘定位照旧调 `onSeek`。 */
   onPointerSeek?: ((clock: number) => void) | undefined
   /** 按住拖动定位松手或被取消。 */
@@ -56,7 +71,8 @@ export function TimelineRuler({
   clockAt,
   onSeek,
   onScrub,
-  timeBubble = true,
+  hoverGuide = true,
+  clockTicks = false,
   onPointerSeek,
   onSeekEnd,
 }: TimelineRulerProps) {
@@ -98,9 +114,15 @@ export function TimelineRuler({
     })
     return time
   }
+  // 时钟写法只标整秒：不用 0.5 秒一格
   const tickStep =
-    TICK_STEPS.find((step) => step >= tickScale / 8) ?? Math.ceil(tickScale / 8 / 60) * 60
+    TICK_STEPS.find((step) => step >= tickScale / 8 && (!clockTicks || step >= 1)) ??
+    Math.ceil(tickScale / 8 / 60) * 60
   const ticks = Array.from({ length: Math.floor(scale / tickStep) + 1 }, (_, at) => at * tickStep)
+  const divisions = NOTCH_DIVISIONS[tickStep] ?? 4
+  const notches = clockTicks
+    ? Array.from({ length: Math.floor((scale / tickStep) * divisions) + 1 }, (_, at) => at)
+    : []
   const boundedTime = Math.max(0, Math.min(total, currentTime))
   const seekPointer = (event: PointerEvent<HTMLInputElement>) => {
     const seek = onPointerSeek ?? onSeek
@@ -128,8 +150,21 @@ export function TimelineRuler({
             key={time}
             style={{ left: `${(time / scale) * 100}%` }}
           >
-            {roundSeconds(time)}s
+            {clockTicks ? clockTick(time) : <>{roundSeconds(time)}s</>}
           </span>
+        ))}
+        {notches.map((at) => (
+          <span
+            aria-hidden="true"
+            className={cn(
+              'timeline-notch',
+              at % divisions === 0
+                ? 'is-major'
+                : divisions % 2 === 0 && at % (divisions / 2) === 0 && 'is-half',
+            )}
+            key={at}
+            style={{ left: `${((at * tickStep) / divisions / scale) * 100}%` }}
+          />
         ))}
         {buffered.map(({ start, end }) => (
           <span
@@ -189,7 +224,7 @@ export function TimelineRuler({
           type="range"
           value={boundedTime}
         />
-        {preview === null || !timeBubble
+        {preview === null || !hoverGuide
           ? null
           : createPortal(
               <span
@@ -203,7 +238,7 @@ export function TimelineRuler({
               document.body,
             )}
       </div>
-      {preview !== null && !seeking ? (
+      {hoverGuide && preview !== null && !seeking ? (
         <span
           aria-hidden="true"
           className="timeline-hover-guide"
