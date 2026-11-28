@@ -3654,9 +3654,12 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   const caption = / data-dub-of="([^"]+)"/.exec(tag)?.[1] ?? ''
   const scene = savedFileOf(await sceneSaved, CAPTIONS_FILE) ?? ''
   expect(scene).toContain(`id="${caption}"`)
-  await expect(editor.getByRole('group', { name: '配音', exact: true })).toContainText(
-    '旁白 · 欢迎来到新品发布会',
-  )
+  // 配音行上多一个这段文案的旁白片段，顶行写合成它用的音色名
+  await expect(
+    editor
+      .getByRole('group', { name: '配音', exact: true })
+      .getByRole('group', { name: /^旁白 · 欢迎来到新品发布会/ }),
+  ).toContainText('Emma')
 })
 
 test('素材片的句子配音不压到后面的旁白上：English 下「重新生成」，素材片最后一句的上限是后面那句旁白字幕的开始', async ({
