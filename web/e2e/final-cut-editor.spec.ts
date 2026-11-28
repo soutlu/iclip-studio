@@ -798,13 +798,13 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   const soundRow = editor.getByRole('group', { name: '配乐', exact: true })
   const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
   await expect(music).toBeVisible()
-  await expect(guitar.getByRole('img', { name: '使用中' })).toBeVisible()
+  await expect(guitar.getByText('已用', { exact: true })).toBeVisible()
   await expect(guitar.getByRole('button', { name: /^放入配乐行：/ })).toHaveCount(0)
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
 
-  // 点「使用中」的那一行：选中它对应的片段，不再加一个，侧栏跟着切到「属性」；再点回「配乐」，选中不变
-  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，使用中' }).click()
+  // 点「已用」的那一行：选中它对应的片段，不再加一个，侧栏跟着切到「属性」；再点回「配乐」，选中不变
+  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已用' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -858,7 +858,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   expect(savedAudio(htmlOf(await undone))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
-  await expect(uploaded).not.toContainText('使用中')
+  await expect(uploaded).not.toContainText('已用')
 })
 
 /** 存下来的主文件里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */

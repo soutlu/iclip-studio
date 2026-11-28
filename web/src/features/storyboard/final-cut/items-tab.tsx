@@ -112,6 +112,7 @@ export function ItemsTab({
           </ChipGroup>
           {brands.length === 0 ? null : (
             <SelectChip
+              align="end"
               className="wf-item-brand"
               columns={2}
               noun="品牌"

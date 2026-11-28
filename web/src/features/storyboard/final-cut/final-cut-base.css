@@ -344,23 +344,25 @@
   border-color: var(--color-error);
 }
 
-/* 侧栏页签顶部搜索栏（外边距由所属页签头部控制） */
+/* 侧栏页签顶部搜索栏：整块浅灰实底、不画内细线，比一般输入框高一档（外边距由所属页签头部控制）；聚焦时同 wf-field */
 .wf-editor .wf-search {
   width: auto;
-  height: 30px;
+  height: var(--control-height-md);
   flex: none;
-  gap: 6px;
-  padding: 0 8px;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--color-surface-container);
+  box-shadow: none;
 }
 
 .wf-search svg {
-  width: 14px;
-  height: 14px;
-  color: var(--color-on-surface-faint);
+  width: 16px;
+  height: 16px;
+  color: var(--color-on-surface-muted);
 }
 
 .wf-search input {
-  font-size: var(--text-label);
+  font-size: var(--text-ui);
 }
 
 /* 浮层菜单：白底大圆角、浮层阴影与顶部高光，选中项配中性浅底；

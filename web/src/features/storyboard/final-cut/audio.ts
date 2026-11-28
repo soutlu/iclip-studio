@@ -1,6 +1,11 @@
 import { z } from 'zod'
 import type { MediaUpload } from '@/shared/api/media-upload'
-import type { ReferenceAudio } from '@/shared/api/reference-audios'
+import {
+  AUDIO_KIND_FILTERS,
+  type AudioFilterKey,
+  type AudioTraitFilter,
+  type ReferenceAudio,
+} from '@/shared/api/reference-audios'
 import { formatDateTime } from '@/shared/lib/date-time'
 import type { GenerationJob } from '../storyboard.api'
 import type { AudioClip, FilmClip } from './composition/film'
@@ -67,6 +72,18 @@ export const libraryAudio = (audio: ReferenceAudio): LibraryAudio => ({
   createdAt: audio.createdAt,
   reference: audio,
 })
+
+/** 「音频库」里能看的子类：配乐或音效。 */
+export type LibraryKind = 'bgm' | 'sfx'
+
+/** 「音频库」当前看的子类和它的属性筛选（只放这个子类能筛的几项）。 */
+export type LibraryScope = { kind: LibraryKind; traits: AudioTraitFilter }
+
+/** 每个子类在页签上能筛的属性，按显示的先后：配乐是曲风、情绪。 */
+export const LIBRARY_FILTERS: Readonly<Record<LibraryKind, readonly AudioFilterKey[]>> = {
+  bgm: ['genre', 'mood'],
+  sfx: AUDIO_KIND_FILTERS.sfx,
+}
 
 /** 生成的和上传的合成一张表，新的在前。 */
 export const conversationAudio = (

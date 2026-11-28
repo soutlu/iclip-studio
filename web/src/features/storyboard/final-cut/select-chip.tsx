@@ -14,6 +14,8 @@ type SelectChipProps = {
   onChange: (value: string | undefined) => void
   /** 选项排成两列（选项都很短时，如品牌）。 */
   columns?: 1 | 2
+  /** 弹层和小块哪边对齐：小块靠右放时用 `end`，弹层往左展开。 */
+  align?: 'start' | 'end'
   className?: string | undefined
 }
 
@@ -27,6 +29,7 @@ export function SelectChip({
   value,
   onChange,
   columns = 1,
+  align = 'start',
   className,
 }: SelectChipProps) {
   const [open, setOpen] = useState(false)
@@ -48,7 +51,7 @@ export function SelectChip({
           </button>
         </PopupTrigger>
         <PopupSurface
-          align="start"
+          align={align}
           aria-label={`选择${noun}`}
           className="wf-menu wf-select-chip-menu"
           collisionPadding={12}

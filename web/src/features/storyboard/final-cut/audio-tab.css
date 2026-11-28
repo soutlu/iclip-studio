@@ -39,11 +39,11 @@
   margin: 6px var(--wf-tab-inset) 0;
 }
 
-/* 列表的行之间不留缝，靠行自己的内边距和底色分开 */
+/* 列表的行之间只留一点缝，靠行自己的内边距和底色分开 */
 .wf-audio-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding-inline: 8px;
 }
 

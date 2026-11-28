@@ -40,9 +40,17 @@ import { useStableValue } from '../editing/use-stable-value'
 import { filmViewQuery } from '../film/film.api'
 import { isRunningStatus } from '../shots'
 import type { GenerationJob } from '../storyboard.api'
-import { filterAudio, firstAudioClipOf, type ConversationAudio, type LibraryAudio } from './audio'
+import {
+  filterAudio,
+  firstAudioClipOf,
+  LIBRARY_FILTERS,
+  type ConversationAudio,
+  type LibraryAudio,
+  type LibraryKind,
+  type LibraryScope,
+} from './audio'
 import { AudioRowWave, RowClock, TabAuditionBar } from './audio-card'
-import { AudioLibrary, LIBRARY_FILTERS, type LibraryKind, type LibraryScope } from './audio-library'
+import { AudioLibrary } from './audio-library'
 import type { CarryPoint } from './items-tab'
 import type { FilmClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
@@ -372,7 +380,7 @@ export function AudioTab({
     <div className={cn('wf-audio', drop.dragOver && 'is-over')} {...drop.dragHandlers}>
       <div className="wf-tab-head">
         {top}
-        {items.length === 0 ? null : search}
+        {search}
       </div>
       {music.isError ? (
         <div className="wf-audio-alert">
@@ -604,7 +612,6 @@ function AudioRow({
         (addsOnClick && !used ? (
           // 整行已能用 Enter 加入，「+」不再占一个 Tab 停靠点
           <IconButton
-            className="wf-media-add"
             label={`放入配乐行：${title}`}
             name="final-cut-add"
             onClick={onAdd}

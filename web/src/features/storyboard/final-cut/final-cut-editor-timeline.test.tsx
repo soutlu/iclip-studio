@@ -258,44 +258,42 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
     await shot(/^出片 A 镜头 1，0\.0–1\.5 秒/)
   }
 
-  it('顶上写全部的组数和条数；入了轨的出片按「全部 / 未入轨 / 已入轨」筛，一条不剩的组不显示', async () => {
+  it('出片按「全部 / 未用 / 已用」筛，一条不剩的组不显示；不写组数和条数', async () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
-    expect(screen.getByText('2 组 · 3 条')).toBeVisible()
+    expect(screen.queryByText(/\d+ 组 · \d+ 条/)).toBeNull()
     expect(filterButton('全部')).toHaveAttribute('aria-pressed', 'true')
     expect(takesIn(1)).toEqual(['出片 A', '出片 B'])
     expect(takesIn(2)).toEqual(['出片 A'])
 
-    await user.click(filterButton('未入轨'))
-    expect(filterButton('未入轨')).toHaveAttribute('aria-pressed', 'true')
+    await user.click(filterButton('未用'))
+    expect(filterButton('未用')).toHaveAttribute('aria-pressed', 'true')
     expect(takesIn(1)).toEqual(['出片 B'])
     expect(takesIn(2)).toEqual(['出片 A'])
 
-    await user.click(filterButton('已入轨'))
+    await user.click(filterButton('已用'))
     expect(takesIn(1)).toEqual(['出片 A'])
     expect(screen.queryByRole('group', { name: '镜头组 2' })).toBeNull()
-    // 总数照旧写全部的
-    expect(screen.getByText('2 组 · 3 条')).toBeVisible()
   })
 
-  it('没有一条入了轨时，「已入轨」下说明暂无', async () => {
+  it('没有一条用上时，「已用」下说明暂无', async () => {
     const user = userEvent.setup()
     await openEditor(records)
-    await user.click(filterButton('已入轨'))
-    expect(screen.getByText('暂无已入轨的出片')).toBeVisible()
+    await user.click(filterButton('已用'))
+    expect(screen.getByText('暂无已用的出片')).toBeVisible()
     expect(screen.queryByRole('group', { name: /^镜头组/ })).toBeNull()
   })
 
-  it('点组头收起这组的出片，收起时写有几条已入轨；再点展开', async () => {
+  it('点组头收起这组的出片，组头只有组名；再点展开', async () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
     const head = within(group(1)).getByRole('button', { name: /^镜头组 1/ })
     expect(head).toHaveAttribute('aria-expanded', 'true')
-    expect(head).toHaveTextContent(/^镜头组 12 条出片$/)
+    expect(head).toHaveTextContent(/^镜头组 1$/)
 
     await user.click(head)
     expect(head).toHaveAttribute('aria-expanded', 'false')
-    expect(head).toHaveTextContent(/^镜头组 1已用 12 条出片$/)
+    expect(head).toHaveTextContent(/^镜头组 1$/)
     expect(within(group(1)).queryByRole('article')).toBeNull()
     expect(within(group(2)).getByRole('article', { name: '出片 A' })).toBeVisible()
 
@@ -304,28 +302,29 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
     expect(within(group(1)).getAllByRole('article')).toHaveLength(2)
   })
 
-  it('有几个版本时是一排分段，点一下直接切：没在看的版本入了轨时标着，看的这版入了轨时写「已入轨」', async () => {
+  it('有几个版本时是一排分段，点一下直接切：没在看的版本用上了时标着，看的这版用上了时常驻「已用」；不写镜头数', async () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
     const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A 的版本' })
-    const original = within(versions).getByRole('button', { name: 'V1 原片，已入轨' })
+    const original = within(versions).getByRole('button', { name: 'V1 原片，已用' })
     const edited = within(versions).getByRole('button', { name: 'V2' })
     expect(edited).toHaveAttribute('aria-pressed', 'true')
     expect(original).toHaveAttribute('aria-pressed', 'false')
-    expect(within(card(1, 'A')).queryByText('已入轨')).toBeNull()
-    expect(card(1, 'A')).toHaveTextContent(/2 镜3\.0s/)
+    expect(within(card(1, 'A')).queryByText('已用')).toBeNull()
+    expect(within(card(1, 'A')).getByText('3.0s')).toBeVisible()
+    expect(card(1, 'A')).not.toHaveTextContent(/\d+ 镜/)
 
     await user.click(original)
     expect(original).toHaveAttribute('aria-pressed', 'true')
     expect(edited).toHaveAttribute('aria-pressed', 'false')
-    expect(within(card(1, 'A')).getByText('已入轨')).toBeVisible()
-    expect(card(1, 'A')).toHaveTextContent(/3 镜6\.0s/)
+    expect(within(card(1, 'A')).getByText('已用')).toBeVisible()
+    expect(within(card(1, 'A')).getByText('6.0s')).toBeVisible()
     expect(await shot(/^出片 A 镜头 3，4\.5–6\.0 秒/)).toBeVisible()
 
-    // 只有一个版本时只写版本号，不是分段
+    // 只有一个版本时不写版本
     expect(within(card(1, 'B')).queryByRole('group')).toBeNull()
-    expect(within(card(1, 'B')).getByText('V1')).toBeVisible()
-    expect(within(card(1, 'B')).queryByText('已入轨')).toBeNull()
+    expect(within(card(1, 'B')).queryByText('V1')).toBeNull()
+    expect(within(card(1, 'B')).queryByText('已用')).toBeNull()
   })
 
   it('卡片上的「+」把显示着的版本整条接在末尾、一个镜头一个片段，别的出片上的选区不动', async () => {
@@ -343,7 +342,7 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
     expect(added.find((clip) => clip.includes('data-label="B · 镜头 2"'))).toMatch(
       /data-start="3.5" data-duration="1.5"[^>]* data-media-start="1.5"/,
     )
-    expect(within(card(1, 'B')).getByText('已入轨')).toBeVisible()
+    expect(within(card(1, 'B')).getByText('已用')).toBeVisible()
     expect(screen.getByRole('group', { name: '已选 1 段 · 1.5s' })).toBeVisible()
   })
 })

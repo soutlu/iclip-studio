@@ -86,7 +86,7 @@
 .wf-material-group-title {
   flex: 1;
   color: var(--color-on-surface);
-  font-size: var(--text-body);
+  font-size: var(--text-title);
   font-weight: 600;
   text-align: left;
 }
@@ -151,18 +151,11 @@
   text-align: right;
 }
 
-/* 整条加入轨道「+」（基于 Tool）：浅底圆角方块，推到右边；按意图显露（见 .wf-reveal） */
+/* 整条加入轨道「+」（基于 Tool）：同配乐行的「+」，平时只有一个加号、不垫底，推到右边；按意图显露（见 .wf-reveal） */
 .wf-take-head .wf-take-add {
-  width: 26px;
-  height: 26px;
+  width: var(--control-height-xs);
+  height: var(--control-height-xs);
   margin-left: auto;
-  border-radius: var(--radius-sm);
-  background-color: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-}
-
-.wf-take-add:active:not([aria-disabled='true']) {
-  scale: 0.92;
 }
 
 /* 镜头条横向滚动容器：长素材最小宽度由组件按时长设定，隐藏滚动条；
@@ -299,31 +292,29 @@
   backdrop-filter: saturate(0.75);
 }
 
-/* 选区框：暖金色描边与胶囊把手，拖拽主体平移（按下切换 grabbing）；划选草稿（.is-draft）复用同外观但不拦截指针 */
+/* 选区：不画框，靠选区外压暗（.wf-take-dim）和两端里侧的白色细把手看出选了哪段；拖拽主体平移（按下切换 grabbing）。
+   透明边框只为保持把手的落点和命中区不变。划选草稿（.is-draft）复用同外观但不拦截指针 */
 .wf-pick {
   position: absolute;
   top: 0;
   bottom: 0;
   z-index: var(--z-local-2);
-  border: 2px solid var(--color-tertiary-fixed-dim);
+  border: 2px solid transparent;
   border-radius: var(--radius-sm);
-  box-shadow:
-    0 3px 12px color-mix(in srgb, var(--color-scrim) 36%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--color-tertiary-fixed) 42%, transparent);
   cursor: grab;
   touch-action: none;
 }
 
-/* 达到最小长度阈值的选区左上角时长角标 */
+/* 达到最小长度阈值的选区左上角时长角标（让开左边的把手） */
 .wf-pick-time {
   position: absolute;
   top: 4px;
-  left: 6px;
+  left: 10px;
   padding: 0 4px;
   border-radius: var(--radius-xs);
   background: color-mix(in srgb, var(--color-scrim) 76%, transparent);
   backdrop-filter: blur(6px);
-  color: var(--color-tertiary-fixed);
+  color: var(--color-on-scrim);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
   font-weight: 600;
@@ -340,21 +331,18 @@
 }
 
 .wf-pick.is-lifting {
-  background: color-mix(in srgb, var(--color-tertiary-fixed-dim) 18%, transparent);
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
 }
 
-/* 双类选择器覆盖共用裁剪把手外观：金色胶囊配中央深色握痕，悬停与按下时提亮拉长；
-   点击热区收窄至 18px，确保 1 秒短镜头（宽不足 30px）仍留出选区主体与邻近镜头的可点击区域 */
+/* 双类选择器覆盖共用裁剪把手外观：把手盒子本身透明（大小、落点同原来，点击热区收窄至 18px，确保 1 秒短镜头
+   宽不足 30px 时仍留出选区主体与邻近镜头的可点击区域），看得见的是往选区里侧挪进去的白色细胶囊（::after），
+   悬停、按下时拉长，键盘聚焦时外面加一圈焦点色 */
 .wf-pick .timeline-handle {
   width: 9px;
   height: 26px;
   border: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-tertiary-fixed-dim);
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--color-scrim) 45%, transparent);
-  transition:
-    height var(--dur-s) var(--ease),
-    background var(--dur-s) var(--ease);
+  background: transparent;
+  box-shadow: none;
 }
 
 .wf-pick .timeline-handle::before {
@@ -362,28 +350,34 @@
 }
 
 .wf-pick .timeline-handle::after {
-  width: 1.5px;
-  height: 10px;
-  background: color-mix(in srgb, var(--color-on-tertiary-fixed) 65%, transparent);
+  width: 3px;
+  height: 22px;
+  background: var(--color-on-scrim);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-scrim) 55%, transparent);
+  transition: height var(--dur-s) var(--ease);
 }
 
-.wf-pick .timeline-handle:is(:hover, :active, .is-pressed) {
-  height: 30px;
-  background: var(--color-tertiary-fixed);
+.wf-pick .timeline-handle.is-start::after {
+  translate: 6px 0;
+}
+
+.wf-pick .timeline-handle.is-end::after {
+  translate: -6px 0;
+}
+
+.wf-pick .timeline-handle:is(:hover, :active, :focus-visible, .is-pressed) {
+  background: transparent;
 }
 
 .wf-pick .timeline-handle:is(:hover, :active, .is-pressed)::after {
-  background: color-mix(in srgb, var(--color-on-tertiary-fixed) 65%, transparent);
-}
-
-/* 键盘聚焦态切换为纯白胶囊，与悬停态清晰区分 */
-.wf-pick .timeline-handle:focus-visible {
   height: 30px;
   background: var(--color-on-scrim);
 }
 
 .wf-pick .timeline-handle:focus-visible::after {
-  background: color-mix(in srgb, var(--color-scrim) 65%, transparent);
+  height: 30px;
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
 /* 拖拽区间时的浮动读数气泡（起止与时长），沿用提示气泡反色外观 */

@@ -58,37 +58,68 @@ describe('组件、块页签 · 列出和筛选', () => {
     expect(cardNames()).toEqual(['测试叠加，4 秒', '测试可填项，5 秒', '测试点穿，4 秒'])
   })
 
-  it('块页签的卡片：封面、时长、名字、分类', async () => {
+  it('块页签的卡片：封面、名字和时长，不写分类', async () => {
     await renderTab('block')
     expect(screen.getByRole('list', { name: '模板' })).toBeInTheDocument()
     expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒', '测试旁挂文件，2 秒'])
     const scene = card('测试画面，6 秒')
     expect(within(scene).getByText('6s')).toBeInTheDocument()
     expect(within(scene).getByText('测试画面')).toBeInTheDocument()
-    expect(within(scene).getByText('通用')).toBeInTheDocument()
+    expect(within(scene).queryByText('通用')).toBeNull()
     expect(scene.querySelector('img')).toHaveAttribute(
       'src',
       '/hyperframes/test-fixtures/thumbnails/fixture-scene.svg',
     )
   })
 
-  it('分类只列这种条目里有的；点分类只看这一类，「品牌」是带品牌的条目', async () => {
+  it('分类只列这种条目里有的，品牌不在分类里；点分类只看这一类', async () => {
     const user = userEvent.setup()
     await renderTab('block')
     const chips = screen.getByRole('radiogroup', { name: '模板分类' })
     const chipNames = within(chips)
       .getAllByRole('radio')
       .map((element) => element.textContent)
-    expect(chipNames).toEqual(['全部', '品牌', '通用'])
+    expect(chipNames).toEqual(['全部', '通用'])
     expect(within(chips).getByRole('radio', { name: '全部' })).toHaveAttribute(
       'aria-checked',
       'true',
     )
-    await user.click(within(chips).getByRole('radio', { name: '品牌' }))
-    expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
+    await user.click(within(chips).getByRole('radio', { name: '通用' }))
+    expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒', '测试旁挂文件，2 秒'])
   })
 
-  it('组件页签的分类：没有带品牌的组件就没有「品牌」', async () => {
+  it('「品牌 ⌄」筛选：菜单里列目录里的品牌，选一个只看它的条目、小块写成品牌名；点 × 清掉，焦点回到小块上', async () => {
+    const user = userEvent.setup()
+    await renderTab('block')
+    const brand = () => screen.getByRole('button', { name: /^品牌：/ })
+    expect(brand()).toHaveAccessibleName('品牌：品牌')
+    expect(screen.queryByRole('button', { name: '清除品牌筛选' })).toBeNull()
+
+    await user.click(brand())
+    const menu = await screen.findByRole('radiogroup', { name: '品牌' })
+    expect(
+      within(menu)
+        .getAllByRole('radio')
+        .map((each) => each.textContent),
+    ).toEqual(['示例品牌'])
+    await user.click(within(menu).getByRole('radio', { name: '示例品牌' }))
+    expect(screen.queryByRole('radiogroup', { name: '品牌' })).toBeNull()
+    expect(brand()).toHaveAccessibleName('品牌：示例品牌')
+    expect(brand()).toHaveTextContent('示例品牌')
+    expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
+
+    // 分类和品牌叠加
+    const chips = screen.getByRole('radiogroup', { name: '模板分类' })
+    await user.click(within(chips).getByRole('radio', { name: '通用' }))
+    expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
+
+    await user.click(screen.getByRole('button', { name: '清除品牌筛选' }))
+    expect(brand()).toHaveAccessibleName('品牌：品牌')
+    expect(brand()).toHaveFocus()
+    expect(cardNames()).toEqual(['测试画面，6 秒', '示例品牌 片尾，3 秒', '测试旁挂文件，2 秒'])
+  })
+
+  it('组件页签的分类：没有带品牌的组件就没有「品牌」筛选', async () => {
     const user = userEvent.setup()
     await renderTab('component')
     const chips = screen.getByRole('radiogroup', { name: '元素分类' })
@@ -96,6 +127,7 @@ describe('组件、块页签 · 列出和筛选', () => {
       .getAllByRole('radio')
       .map((element) => element.textContent)
     expect(chipNames).toEqual(['全部', '效果', '文字效果'])
+    expect(screen.queryByRole('button', { name: /^品牌：/ })).toBeNull()
     await user.click(within(chips).getByRole('radio', { name: '效果' }))
     expect(cardNames()).toEqual(['测试叠加，4 秒', '测试点穿，4 秒'])
   })
@@ -104,7 +136,7 @@ describe('组件、块页签 · 列出和筛选', () => {
     const user = userEvent.setup()
     await renderTab('component')
     const search = screen.getByRole('searchbox', { name: '搜索元素' })
-    expect(search).toHaveAttribute('placeholder', '搜索名称或分类')
+    expect(search).toHaveAttribute('placeholder', '搜索')
     await user.type(search, '圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
     await user.clear(search)

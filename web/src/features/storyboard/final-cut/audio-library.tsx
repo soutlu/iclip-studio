@@ -1,29 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import {
-  AUDIO_KIND_FILTERS,
-  type AudioFilterKey,
-  type AudioTraitFilter,
-} from '@/shared/api/reference-audios'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { LoadMoreFooter } from '@/shared/ui/list-state'
-import { libraryAudio, type LibraryAudio } from './audio'
+import { libraryAudio, type LibraryAudio, type LibraryKind, type LibraryScope } from './audio'
 import { EmptyNote } from './empty-note'
 import { useLibraryAudios } from './final-cut.api'
 
 const SEARCH_DEBOUNCE_MS = 300
-
-/** 「音频库」里能看的子类：配乐或音效。 */
-export type LibraryKind = 'bgm' | 'sfx'
-
-/** 「音频库」当前看的子类和它的属性筛选（只放这个子类能筛的几项）。 */
-export type LibraryScope = { kind: LibraryKind; traits: AudioTraitFilter }
-
-/** 每个子类在页签上能筛的属性，按显示的先后：配乐是曲风、情绪。 */
-export const LIBRARY_FILTERS: Readonly<Record<LibraryKind, readonly AudioFilterKey[]>> = {
-  bgm: ['genre', 'mood'],
-  sfx: AUDIO_KIND_FILTERS.sfx,
-}
 
 const KIND_LABELS: Readonly<Record<LibraryKind, string>> = { bgm: '配乐', sfx: '音效' }
 
