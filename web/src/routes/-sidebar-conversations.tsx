@@ -577,7 +577,8 @@ function ConversationFilter({
   return (
     <ChipGroup
       aria-label="任务筛选"
-      className="h-7 gap-0.5 bg-transparent p-0"
+      // 有意不用分段的凹槽：没有槽底和内阴影，当前项是一块平的灰底
+      className="h-7 gap-0.5 rounded-sm bg-transparent p-0 shadow-none dark:bg-transparent"
       onValueChange={(next) => {
         if (isSidebarFilter(next)) onChange(next)
       }}
@@ -587,7 +588,7 @@ function ConversationFilter({
     >
       {FILTER_OPTIONS.map((option) => (
         <FilterChip
-          className="rounded-sm text-on-surface-muted hover:text-on-surface data-[state=on]:bg-state-active data-[state=on]:shadow-none"
+          className="gap-1 rounded-sm px-1 font-normal text-on-surface-muted [--color-state-hover:inherit] [--color-state-pressed:inherit] hover:text-on-surface segment-current:bg-state-active segment-current:font-medium segment-current:shadow-none dark:segment-current:bg-state-active"
           key={option}
           value={option}
           variant="segmented"

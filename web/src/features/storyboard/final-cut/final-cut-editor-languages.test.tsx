@@ -38,7 +38,7 @@ afterEach(tearDownEditorCase)
 
 describe('final-cut 编辑器 · 语言', () => {
   const EN_FILE = 'final-cut/locales/en.json'
-  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const languages = () => within(toolbar()).getByRole('radiogroup', { name: '语言' })
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
@@ -73,14 +73,14 @@ describe('final-cut 编辑器 · 语言', () => {
     const user = await open()
     expect(
       within(languages())
-        .getAllByRole('button')
-        .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
+        .getAllByRole('radio')
+        .map((radio) => [radio.textContent, radio.getAttribute('aria-checked')]),
     ).toEqual([
       ['原文', 'true'],
       ['EN', 'false'],
-      ['', null],
     ])
-    await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
+    expect(within(toolbar()).getByRole('button', { name: '添加语言' })).toBeVisible()
+    await user.click(within(toolbar()).getByRole('button', { name: '添加语言' }))
     const menu = await screen.findByRole('menu')
     expect(
       within(menu)
@@ -89,10 +89,7 @@ describe('final-cut 编辑器 · 语言', () => {
     ).toEqual(['中文（ZH）', 'Deutsch（DE）', 'Español（ES）', 'Français（FR）'])
     await user.click(within(menu).getByRole('menuitem', { name: '中文（ZH）' }))
     await waitFor(() =>
-      expect(within(languages()).getByRole('button', { name: '中文（ZH）' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      ),
+      expect(within(languages()).getByRole('radio', { name: '中文（ZH）' })).toBeChecked(),
     )
     expect(mockWorkspaceFile(CONVERSATION, 'final-cut/locales/zh.json')?.content).toBe('{}\n')
   })
@@ -104,9 +101,10 @@ describe('final-cut 编辑器 · 语言', () => {
     await openEditor()
     expect(
       within(languages())
-        .getAllByRole('button')
-        .map((button) => button.textContent),
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
     ).toEqual(['原文', 'ZH', 'EN', 'DE', 'ES', 'FR'])
+    expect(within(toolbar()).queryByRole('button', { name: '添加语言' })).toBeNull()
   })
 
   it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的在时间线上写「待输入字幕」，不能加字幕；切回原文都回来', async () => {
@@ -114,7 +112,7 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(previewValues()).toBeUndefined()
     await user.click(within(side()).getByRole('tab', { name: /^字幕/ }))
 
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one' }))
     const first = within(panel()).getByRole('textbox', { name: '字幕文字 00:00.00 – 00:01.00' })
     const second = within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' })
@@ -142,7 +140,7 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(savedVariableTexts()).toEqual(['字幕 a1', '字幕 b2'])
     await waitFor(() => expect(previewValues()).toEqual({ cap_a1: 'Line one', cap_b2: 'Line two' }))
 
-    await user.click(within(languages()).getByRole('button', { name: '原文' }))
+    await user.click(within(languages()).getByRole('radio', { name: '原文' }))
     await waitFor(() => expect(previewValues()).toBeUndefined())
     expect(
       within(panel()).getByRole('textbox', { name: '字幕文字 00:01.00 – 00:02.00' }),
@@ -183,7 +181,7 @@ describe('final-cut 编辑器 · 语言', () => {
     await waitFor(() => expect(bodies).toEqual([{ locale: null }]))
     await waitFor(() => expect(exportButton()).not.toHaveAttribute('aria-disabled'))
 
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     // 两句字幕 English 翻了一句
     await user.hover(exportButton())
     expect(await screen.findByRole('tooltip')).toHaveTextContent(
@@ -197,7 +195,7 @@ describe('final-cut 编辑器 · 语言', () => {
 
 describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
   const EN_FILE = 'final-cut/locales/en.json'
-  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const languages = () => within(toolbar()).getByRole('radiogroup', { name: '语言' })
   const side = () =>
     screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
@@ -263,16 +261,16 @@ describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
 
   it('「字幕」页签上面切换「字幕」「画面文字」，各带个数；「画面文字」每个元素一块、每个文字字段一行，没加语言时不显示「固定 / 随语言」，改的是原文', async () => {
     const user = await open()
-    const views = within(panel()).getByRole('group', { name: '字幕或画面文字' })
+    const views = within(panel()).getByRole('radiogroup', { name: '字幕或画面文字' })
     expect(
       within(views)
-        .getAllByRole('button')
-        .map((button) => [button.textContent, button.getAttribute('aria-pressed')]),
+        .getAllByRole('radio')
+        .map((radio) => [radio.textContent, radio.getAttribute('aria-checked')]),
     ).toEqual([
       ['字幕 0', 'true'],
       ['画面文字 2', 'false'],
     ])
-    await user.click(within(views).getByRole('button', { name: '画面文字 2' }))
+    await user.click(within(views).getByRole('radio', { name: '画面文字 2' }))
     expect(
       within(texts())
         .getAllByRole('listitem')
@@ -294,17 +292,17 @@ describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
   it('加上 English：文字字段都随语言（西文的也一样）；其它语言下随语言的框里写英文存进值表、预览里那个元素是英文；改成固定的只读；点「随语言」改成固定', async () => {
     const user = await open()
     await user.click(
-      within(within(panel()).getByRole('group', { name: '字幕或画面文字' })).getByRole('button', {
-        name: '画面文字 2',
-      }),
+      within(within(panel()).getByRole('radiogroup', { name: '字幕或画面文字' })).getByRole(
+        'radio',
+        {
+          name: '画面文字 2',
+        },
+      ),
     )
-    await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
+    await user.click(within(toolbar()).getByRole('button', { name: '添加语言' }))
     await user.click(await screen.findByRole('menuitem', { name: 'English（EN）' }))
     await waitFor(() =>
-      expect(within(languages()).getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      ),
+      expect(within(languages()).getByRole('radio', { name: 'English（EN）' })).toBeChecked(),
     )
     expect(within(texts()).getAllByRole('button', { name: '文字：随语言' })).toHaveLength(2)
     await waitSaved(() => expect(savedHost('zh').bindings).toEqual({ text: 'txt_zh_text' }))
@@ -351,7 +349,7 @@ describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
     const toggle = within(inspector()).getByRole('button', { name: '文字：随语言' })
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toHaveValue('新品上市')
 
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     const field = within(inspector()).getByRole('textbox', { name: '文字' })
     expect(field).toHaveValue('')
     await user.type(field, 'New in')
@@ -383,18 +381,21 @@ describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
     expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
     expect(await tipOf('季标')).toBe('季标 · NEW IN · AW26')
 
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
     await user.click(
-      within(within(panel()).getByRole('group', { name: '字幕或画面文字' })).getByRole('button', {
-        name: '画面文字 2',
-      }),
+      within(within(panel()).getByRole('radiogroup', { name: '字幕或画面文字' })).getByRole(
+        'radio',
+        {
+          name: '画面文字 2',
+        },
+      ),
     )
     await user.type(within(texts()).getByRole('textbox', { name: '中文标题 文字' }), 'New in')
     await waitSaved(() => expect(savedEnglish()).toEqual({ txt_zh_text: 'New in' }))
     expect(await tipOf('中文标题')).toBe('中文标题 · New in')
 
-    await user.click(within(languages()).getByRole('button', { name: '原文' }))
+    await user.click(within(languages()).getByRole('radio', { name: '原文' }))
     expect(await tipOf('中文标题')).toBe('中文标题 · 新品上市')
   })
 })
@@ -402,7 +403,7 @@ describe('final-cut 编辑器 · 元素、模板的文字分语言', () => {
 describe('final-cut 编辑器 · 翻译', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const TRANSLATIONS_URL = '*/api/conversations/:conversationId/final-cut/translations'
-  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const languages = () => within(toolbar()).getByRole('radiogroup', { name: '语言' })
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const translateButton = () => within(panel()).getByRole('button', { name: /^(翻译|翻译中…)$/ })
   const savedEnglish = (): unknown =>
@@ -465,7 +466,7 @@ describe('final-cut 编辑器 · 翻译', () => {
   }
 
   const toEnglish = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     await waitFor(() => expect(translateButton()).toBeVisible())
   }
 

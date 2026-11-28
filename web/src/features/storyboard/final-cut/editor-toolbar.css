@@ -79,7 +79,7 @@
 }
 
 /* 工具条上的图标按钮：方圆角，图标用中性色，删除悬停时变红。开关开着时：吸附是琥珀色浅底加细框（设计系统的
-   提示色），波纹编辑是中性浅底加细框；选择、切开两个工具见下面的分段 */
+   提示色），波纹编辑是中性浅底加细框；选择、切开两个工具是共用分段（ChipGroup segmented），不走这里 */
 .wf-toolbar .wf-tool {
   width: 28px;
   height: 28px;
@@ -91,7 +91,7 @@
   color: var(--color-on-surface);
 }
 
-.wf-toolbar .wf-tool.is-pressed:not(.wf-seg-item) {
+.wf-toolbar .wf-tool.is-pressed {
   background: var(--wf-control-soft);
   box-shadow: inset 0 0 0 1px var(--wf-control-ring);
   color: var(--color-on-surface);
@@ -111,23 +111,7 @@
   color: var(--color-error);
 }
 
-/* 选择、切开两个工具的分段：同右栏的分段（凹槽里当前项浮起白块），只把格子收成图标宽 */
-.wf-toolbar .wf-seg {
-  display: inline-flex;
-  flex: none;
-}
-
-.wf-toolbar .wf-seg .wf-tool {
-  width: 30px;
-  height: 26px;
-  padding: 0;
-}
-
-.wf-toolbar .wf-seg .wf-tool:not(.is-pressed) {
-  color: var(--color-on-surface-muted);
-}
-
-/* 分段右边的小箭头，点开三条剪辑命令 */
+/* 「选择 / 切开」分段右边的小箭头，点开三条剪辑命令 */
 .wf-toolbar .wf-tool.wf-tool-commands {
   width: 16px;
   color: var(--color-on-surface-muted);
@@ -137,7 +121,7 @@
   background: var(--color-state-active);
 }
 
-/* 语言切换（工具条右边、「字幕」页签顶行同一个样子）：一个分段（样子见 wf-seg），右边「+」。分段放不下时在
+/* 语言切换（工具条右边、「字幕」页签顶行同一个样子）：一个共用分段，右边「+」。分段放不下时在
    自己的滚动区里横向滚，不出滚动条，能滚的一侧渐隐（data-fade，规则见 storyboard-scroll-fade） */
 .wf-locales {
   --storyboard-fade: 20px;
@@ -156,11 +140,6 @@
   min-width: 48px;
   overflow-x: auto;
   scrollbar-width: none;
-}
-
-.wf-locales-scroll > .wf-seg {
-  display: inline-flex;
-  flex: none;
 }
 
 .wf-editor .wf-locale-add {

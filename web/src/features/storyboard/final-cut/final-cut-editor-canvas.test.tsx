@@ -61,10 +61,10 @@ describe('final-cut 编辑器 · 画面设置', () => {
       previewPages.latest().commands.findLast((command) => command.type === 'size')
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 720, height: 1280 }))
 
-    const landscape = (await openPanel(user)).getByRole('button', { name: '16:9' })
-    expect(landscape).toHaveAttribute('aria-pressed', 'false')
+    const landscape = (await openPanel(user)).getByRole('radio', { name: '16:9' })
+    expect(landscape).not.toBeChecked()
     await user.click(landscape)
-    expect(landscape).toHaveAttribute('aria-pressed', 'true')
+    expect(landscape).toBeChecked()
     expect(trigger()).toHaveAccessibleName('画面尺寸 16:9 · 1080P')
     await waitFor(() => expect(previewSize()).toMatchObject({ width: 1920, height: 1080 }))
     await waitSaved(() => expect(savedCanvas()).toBe('1920×1080'))
@@ -149,7 +149,7 @@ describe('final-cut 编辑器 · 画面设置', () => {
     ).toBeNull()
     expect(savedClips()).toHaveLength(1)
 
-    await user.click(panel().getByRole('button', { name: '1:1' }))
+    await user.click(panel().getByRole('radio', { name: '1:1' }))
     await user.keyboard('{Escape}')
     expect(screen.queryByRole('dialog', { name: '画面设置' })).toBeNull()
     expect(clipButton()).toHaveAttribute('aria-pressed', 'true')

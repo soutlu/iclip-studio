@@ -16,15 +16,34 @@ const LAYERED =
 // Esc、收起自己时也会标记它，那不算编辑器里的事用掉了这一下
 const claimed = new WeakSet<Event>()
 
+// 单选项（分段的选项）自己要用的键：方向键、Home / End、PageUp / PageDown 挪焦点，Space、Enter 选中
+const SEGMENT_KEYS = new Set([
+  'ArrowLeft',
+  'ArrowRight',
+  'ArrowUp',
+  'ArrowDown',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+  ' ',
+  'Enter',
+])
+
+/** 这一下按键归不归焦点所在的单选项（分段的选项）自己用；别的键照常是编辑器的快捷键。 */
+const ownedBySegment = (event: KeyboardEvent, target: HTMLElement) =>
+  SEGMENT_KEYS.has(event.key) && target.closest('[role="radio"]') !== null
+
 /**
  * 根节点 `root` 里按的键算不算编辑器的快捷键：按键的元素不在编辑器里弹出的对话框里，不是正在输入
- * 文字，也不在页签上。
+ * 文字，不在页签上，也不是单选项（分段的选项）自己要用的键。
  */
 export const isEditorKeyTarget = (event: KeyboardEvent, root: HTMLElement) =>
   event.target instanceof HTMLElement &&
   event.target.closest('[role="dialog"], [role="alertdialog"], [data-final-cut-editor]') === root &&
   !isTextEntry(event.target) &&
-  event.target.closest('[role="tab"]') === null
+  event.target.closest('[role="tab"]') === null &&
+  !ownedBySegment(event, event.target)
 
 /** 按键的元素在不在画面编辑层上（见 CanvasOverlay）：这时方向键挪画面上选中的片段，不挪播放头。 */
 export const onCanvasLayer = (target: EventTarget | null): boolean =>

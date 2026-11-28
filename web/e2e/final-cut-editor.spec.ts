@@ -1432,7 +1432,7 @@ test('编辑区变窄时只裁不换行：工具条和侧栏页签都排一行�
   )
   expect(card.width).toBeGreaterThan(sideBox.width)
   expect(card.x + card.width).toBeGreaterThan(sideBox.x + sideBox.width)
-  const filters = side.getByRole('group', { name: '素材筛选' }).getByRole('button')
+  const filters = side.getByRole('radiogroup', { name: '素材筛选' }).getByRole('radio')
   await expect(filters).toHaveCount(3)
   const filterTops = await Promise.all(
     (await filters.all()).map(async (each) => (await boxOf(each)).y),
@@ -1605,7 +1605,7 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   await expect(
     editor
       .getByRole('toolbar', { name: '剪辑工具' })
-      .getByRole('button', { name: '切开工具', pressed: true }),
+      .getByRole('radio', { name: '切开工具', checked: true }),
   ).toBeVisible()
   const back = row.getByRole('group').last()
   const box = await back.boundingBox()
@@ -2238,16 +2238,13 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
   await editor.getByRole('button', { name: '画面尺寸 9:16 · 1080P', exact: true }).click()
   const sizes = editor
     .getByRole('dialog', { name: '画面设置' })
-    .getByRole('group', { name: '画面比例' })
-  await expect(sizes.getByRole('button', { name: '9:16', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+    .getByRole('radiogroup', { name: '画面比例' })
+  await expect(sizes.getByRole('radio', { name: '9:16', exact: true })).toBeChecked()
 
   const saved = mainSavedWith(page, (html) =>
     /<div [^>]*id="film"[^>]*data-width="1920" data-height="1080"/.test(html),
   )
-  await sizes.getByRole('button', { name: '16:9', exact: true }).click()
+  await sizes.getByRole('radio', { name: '16:9', exact: true }).click()
   const html = htmlOf(await saved)
   expect(html).toContain('<meta name="viewport" content="width=1920, height=1080">')
 
@@ -2259,15 +2256,9 @@ test('新建工程后在画面右上角把画面尺寸改成横屏：存下的�
   await reloaded.getByRole('button', { name: '画面尺寸 16:9 · 1080P', exact: true }).click()
   const reloadedSizes = reloaded
     .getByRole('dialog', { name: '画面设置' })
-    .getByRole('group', { name: '画面比例' })
-  await expect(reloadedSizes.getByRole('button', { name: '16:9', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
-  await expect(reloadedSizes.getByRole('button', { name: '9:16', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  )
+    .getByRole('radiogroup', { name: '画面比例' })
+  await expect(reloadedSizes.getByRole('radio', { name: '16:9', exact: true })).toBeChecked()
+  await expect(reloadedSizes.getByRole('radio', { name: '9:16', exact: true })).not.toBeChecked()
 })
 
 test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变，导出带 720p，刷新后还是 720P；改成 3:4 后 480P、720P 置灰、1080P 亮，导出不带档位', async ({
@@ -2292,15 +2283,12 @@ test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变�
   await pill.click()
   // 第一段视频进来时画面跟着视频改过尺寸，先定成 1080×1920
   await settings
-    .getByRole('group', { name: '画面比例' })
-    .getByRole('button', { name: '9:16', exact: true })
+    .getByRole('radiogroup', { name: '画面比例' })
+    .getByRole('radio', { name: '9:16', exact: true })
     .click()
-  const tiers = settings.getByRole('group', { name: '导出分辨率' })
-  await tiers.getByRole('button', { name: '720P', exact: true }).click()
-  await expect(tiers.getByRole('button', { name: '720P', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  const tiers = settings.getByRole('radiogroup', { name: '导出分辨率' })
+  await tiers.getByRole('radio', { name: '720P', exact: true }).click()
+  await expect(tiers.getByRole('radio', { name: '720P', exact: true })).toBeChecked()
   await expect(pill).toHaveAccessibleName('画面尺寸 9:16 · 720P')
   await expect(settings.getByRole('textbox', { name: '宽' })).toHaveValue('1080')
   await expect(settings.getByRole('textbox', { name: '高' })).toHaveValue('1920')
@@ -2327,20 +2315,17 @@ test('导出分辨率：选 720P 后胶囊写「· 720P」、像素尺寸不变�
     /<div [^>]*id="film"[^>]*data-width="1080" data-height="1440"/.test(html),
   )
   await reopenedSettings
-    .getByRole('group', { name: '画面比例' })
-    .getByRole('button', { name: '3:4', exact: true })
+    .getByRole('radiogroup', { name: '画面比例' })
+    .getByRole('radio', { name: '3:4', exact: true })
     .click()
   await resized
-  const reopenedTiers = reopenedSettings.getByRole('group', { name: '导出分辨率' })
+  const reopenedTiers = reopenedSettings.getByRole('radiogroup', { name: '导出分辨率' })
   for (const name of ['480P', '720P'])
-    await expect(reopenedTiers.getByRole('button', { name, exact: true })).toHaveAttribute(
+    await expect(reopenedTiers.getByRole('radio', { name, exact: true })).toHaveAttribute(
       'aria-disabled',
       'true',
     )
-  await expect(reopenedTiers.getByRole('button', { name: '1080P', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(reopenedTiers.getByRole('radio', { name: '1080P', exact: true })).toBeChecked()
   await page.keyboard.press('Escape')
 
   const restarted = page.waitForRequest(
@@ -2368,7 +2353,7 @@ test('画面右上角的胶囊平时只露出参考线开关：鼠标移上去�
   await expect(pill).toBeVisible()
   await pill.click()
   await expect(settings).toBeVisible()
-  await settings.getByRole('group', { name: '画面比例' }).hover()
+  await settings.getByRole('radiogroup', { name: '画面比例' }).hover()
   // 等胶囊的过渡走完再看：要收起的话这时已经收了
   await pill.evaluate((button) =>
     Promise.all(
@@ -2807,15 +2792,15 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
   expect(variable).not.toBe('')
 
   // 「+」里选 English：建一份空的值表，切过去
-  const languages = editor.getByRole('group', { name: '语言' })
+  const languages = editor.getByRole('radiogroup', { name: '语言' })
   const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   expect(JSON.parse(savedFileOf(await created, ENGLISH_FILE) ?? '')).toEqual({})
-  await expect(languages.getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(languages.getByRole('radio', { name: 'English（EN）' })).toBeChecked()
 
   // 其它语言下框里是空的、占位字提示输入译文或点「翻译」，下面写着原文；加一句置灰
   const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
@@ -2845,7 +2830,7 @@ test('语言：加上 English 切过去，给一句字幕写英文，存下的 E
     })
   await expect.poll(captionText).toBe('Hello world')
 
-  await languages.getByRole('button', { name: '原文' }).click()
+  await languages.getByRole('radio', { name: '原文' }).click()
   await expect(field).toHaveValue('新字幕')
   await expect.poll(captionText).toBe('新字幕')
 })
@@ -2874,9 +2859,12 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
   )
   await tab.getByRole('button', { name: '在播放头处添加字幕' }).click()
   await sceneCreated
-  const languages = editor.getByRole('group', { name: '语言' })
+  const languages = editor.getByRole('radiogroup', { name: '语言' })
   const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   await created
   const field = tab.getByRole('textbox', { name: '字幕文字 00:00.00 – 00:02.00' })
@@ -2895,9 +2883,9 @@ test('其它语言下改一句的译文直接打进预览：不换播放器，�
   expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 
   // 同样的文件整份重新加载（切到原文再切回来）：显示的还是这句译文
-  await languages.getByRole('button', { name: '原文' }).click()
+  await languages.getByRole('radio', { name: '原文' }).click()
   await expect.poll(shownText).toBe('新字幕')
-  await languages.getByRole('button', { name: 'English（EN）' }).click()
+  await languages.getByRole('radio', { name: 'English（EN）' }).click()
   await expect.poll(shownText).toBe('Hello again')
 })
 
@@ -2906,8 +2894,11 @@ test('其它语言下挪一句、裁一句、改一句的字色直接打进预�
 }) => {
   await serveSavedCaptions(page)
   const { editor, side, row, second } = await openWithCaptions(page)
-  const languages = editor.getByRole('group', { name: '语言' })
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  const languages = editor.getByRole('radiogroup', { name: '语言' })
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   const translated = page.waitForRequest(
     (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
@@ -2980,9 +2971,9 @@ test('其它语言下挪一句、裁一句、改一句的字色直接打进预�
   expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(true)
 
   // 同样的文件整份重新加载（切到原文再切回来）：和直接打进去的一样
-  await languages.getByRole('button', { name: '原文' }).click()
+  await languages.getByRole('radio', { name: '原文' }).click()
   await expect.poll(async () => (await shownSecond())?.text).toBe('第二句')
-  await languages.getByRole('button', { name: 'English（EN）' }).click()
+  await languages.getByRole('radio', { name: 'English（EN）' }).click()
   await expect.poll(shownSecond).toEqual(live)
 })
 
@@ -3002,13 +2993,13 @@ test('按语言导出：切到 English 点「导出」，提示写导出 English
   await page.keyboard.press('Enter')
   await added
 
-  const languages = editor.getByRole('group', { name: '语言' })
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  const languages = editor.getByRole('radiogroup', { name: '语言' })
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
-  await expect(languages.getByRole('button', { name: 'English（EN）' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  )
+  await expect(languages.getByRole('radio', { name: 'English（EN）' })).toBeChecked()
 
   const exportButton = panel.getByRole('button', { name: '导出', exact: true })
   await exportButton.hover()
@@ -3055,9 +3046,11 @@ test('元素的文字随语言：加上 English 时主文件里宿主记着根�
   const variable = `txt_${id}_text`
 
   // 加上 English：没填的「文字」用的是条目的中文默认值，按默认规则随语言
-  const languages = editor.getByRole('group', { name: '语言' })
   const bound = mainSavedWith(page, (html) => html.includes(variable))
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   // 存下的主文件：宿主记着字段对应的根变量、取值照旧（没填），根上声明了这个变量、默认值是原文
   const saved = htmlOf(await bound)
@@ -3071,7 +3064,7 @@ test('元素的文字随语言：加上 English 时主文件里宿主记着根�
 
   await side.getByRole('tab', { name: '字幕' }).click()
   const tab = side.getByRole('tabpanel', { name: '字幕' })
-  await tab.getByRole('button', { name: '画面文字 1' }).click()
+  await tab.getByRole('radio', { name: '画面文字 1' }).click()
   await expect(tab.getByRole('button', { name: '文字：随语言' })).toBeVisible()
   const field = tab.getByRole('textbox', { name: '测试可填项 文字' })
   await expect(field).toHaveValue('')
@@ -3135,9 +3128,11 @@ test('翻译：加上 English 后点「翻译」，字幕和元素里随语言�
   // 原文时没有「翻译」
   await expect(tab.getByRole('button', { name: '翻译', exact: true })).toHaveCount(0)
 
-  const languages = editor.getByRole('group', { name: '语言' })
   const created = page.waitForRequest((request) => savedFileOf(request, ENGLISH_FILE) !== null)
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   await created
 
@@ -3194,11 +3189,14 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   await tab.getByRole('button', { name: '识别', exact: true }).click()
   await recognized
   // 原文下也有「原声 | 配音」，默认原声
-  const modes = tab.getByRole('group', { name: '原声或配音' })
-  await expect(modes.getByRole('button', { name: '原声' })).toHaveAttribute('aria-pressed', 'true')
+  const modes = tab.getByRole('radiogroup', { name: '原声或配音' })
+  await expect(modes.getByRole('radio', { name: '原声' })).toBeChecked()
 
-  const languages = editor.getByRole('group', { name: '语言' })
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  const languages = editor.getByRole('radiogroup', { name: '语言' })
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   const translated = page.waitForRequest(
     (request) => (savedFileOf(request, ENGLISH_FILE)?.match(/\[EN\]/g) ?? []).length === 2,
@@ -3207,7 +3205,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   await translated
 
   // AI 配音：每句一个配音片段，起点和字幕一样，从这句在素材里的开始放
-  await expect(modes.getByRole('button', { name: '原声' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(modes.getByRole('radio', { name: '原声' })).toBeChecked()
   // 切到配音只记下，不发起；默认音色是原片音色
   const chosen = mainSavedWith(
     page,
@@ -3215,7 +3213,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
       (jsonAttribute(html, 'data-voice-modes') as { en?: { mode?: string } } | undefined)?.en
         ?.mode === 'dub',
   )
-  await modes.getByRole('button', { name: '配音' }).click()
+  await modes.getByRole('radio', { name: '配音' }).click()
   await chosen
   expect(dubbingRequests).toEqual([])
   const dubbed = mainSavedWith(page, (html) => (html.match(/data-dub-of=/g) ?? []).length === 2)
@@ -3267,7 +3265,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
 
   // 切回原声：配音不出声（预览里没有配音音轨），时间线上也没有配音片段和配音行，原声回来
-  await modes.getByRole('button', { name: '原声' }).click()
+  await modes.getByRole('radio', { name: '原声' }).click()
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect(dubRow).toHaveCount(0)
@@ -3275,7 +3273,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   // 再切到「配音」：不重新生成，配音片段回来；撤销后又藏起来
   const requested = dubbingRequests.length
   expect(requested).toBeGreaterThan(0)
-  await modes.getByRole('button', { name: '配音' }).click()
+  await modes.getByRole('radio', { name: '配音' }).click()
   await expect(dubRow.getByRole('group', { name: /^配音 · \[EN\] / })).toHaveCount(2)
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
   expect(dubbingRequests).toHaveLength(requested)
@@ -3288,7 +3286,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
 
   // 撤销回到原声后再切到配音，点默认音色胶囊在同页浮层里选资料库的一个音色：只记下、收起；两句都过期，
   // 「重配 2 句」用它重配，换掉原来的配音，配音片段记着这个音色
-  await modes.getByRole('button', { name: '配音' }).click()
+  await modes.getByRole('radio', { name: '配音' }).click()
   // 浮层里按 Esc 只收起浮层，时间线上选中的字幕还选中着
   const caption = editor.getByRole('button', { name: /^选中：\[EN\] / }).first()
   await caption.click()
@@ -3325,7 +3323,7 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   await expect.poll(sounds).toEqual({ muted: true, dubs: 2 })
 
   // 原文：时间线和预览里都没有配音
-  await languages.getByRole('button', { name: '原文' }).click()
+  await languages.getByRole('radio', { name: '原文' }).click()
   await expect(editor.getByRole('group', { name: /^配音 · / })).toHaveCount(0)
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 })
@@ -3407,7 +3405,7 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   await tab.getByRole('button', { name: '识别', exact: true }).click()
   await recognized
   await editor
-    .getByRole('group', { name: '语言' })
+    .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '添加语言' })
     .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
@@ -3418,7 +3416,10 @@ test('配音片段调音直接打进预览：English 下 AI 配音，给一个�
   await translated
   const dubTags = (html: string) => [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
   const dubbed = mainSavedWith(page, (html) => dubTags(html).length === 2)
-  await tab.getByRole('group', { name: '原声或配音' }).getByRole('button', { name: '配音' }).click()
+  await tab
+    .getByRole('radiogroup', { name: '原声或配音' })
+    .getByRole('radio', { name: '配音' })
+    .click()
   await tab.getByRole('button', { name: '生成配音' }).click()
   await dubbed
   const dubRow = editor.getByRole('group', { name: '配音', exact: true })
@@ -3488,7 +3489,7 @@ test('逐句配音：English 下给第二句选资料库的音色只记下，「
   await tab.getByRole('button', { name: '识别', exact: true }).click()
   await recognized
   await editor
-    .getByRole('group', { name: '语言' })
+    .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '添加语言' })
     .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
@@ -3499,7 +3500,10 @@ test('逐句配音：English 下给第二句选资料库的音色只记下，「
   await translated
   const dubTags = (html: string) => [...html.matchAll(/<audio [^>]*data-dub-of="[^"]+"[^>]*>/g)]
   const dubbed = mainSavedWith(page, (html) => dubTags(html).length === 2)
-  await tab.getByRole('group', { name: '原声或配音' }).getByRole('button', { name: '配音' }).click()
+  await tab
+    .getByRole('radiogroup', { name: '原声或配音' })
+    .getByRole('radio', { name: '配音' })
+    .click()
   await tab.getByRole('button', { name: '生成配音' }).click()
   // 两句的配音片段配的字幕，按开始排
   const captions = dubTags(htmlOf(await dubbed))
@@ -3574,8 +3578,8 @@ test('逐句配音：English 下给第二句选资料库的音色只记下，「
   await (
     await openLinePicker(0)
   )
-    .getByRole('group', { name: '本句音色' })
-    .getByRole('button', { name: '不配音' })
+    .getByRole('radiogroup', { name: '本句音色' })
+    .getByRole('radio', { name: '不配音' })
     .click()
   expect(jsonAttribute(htmlOf(await unvoiced), 'data-voice-modes')).toMatchObject({
     en: { lines: { [first]: { dub: false } } },
@@ -3719,7 +3723,7 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   expect(narrationStart).toBeGreaterThan(lastOwned)
 
   await editor
-    .getByRole('group', { name: '语言' })
+    .getByRole('toolbar', { name: '剪辑工具' })
     .getByRole('button', { name: '添加语言' })
     .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
@@ -3731,7 +3735,10 @@ test('素材片的句子配音不压到后面的旁白上：English 下「重新
   // 先用原片音色配好：素材片两句和旁白一句（旁白用它自己选的 Emma）
   const englishDubs = (html: string) => (html.match(/<audio [^>]*data-locale="en"/g) ?? []).length
   const dubbed = mainSavedWith(page, (html) => englishDubs(html) === 3)
-  await tab.getByRole('group', { name: '原声或配音' }).getByRole('button', { name: '配音' }).click()
+  await tab
+    .getByRole('radiogroup', { name: '原声或配音' })
+    .getByRole('radio', { name: '配音' })
+    .click()
   await tab.getByRole('button', { name: '生成配音' }).click()
   await dubbed
 
@@ -4082,10 +4089,12 @@ test('其它语言下画面上挪元素：存下之前预览里已经挪过去�
   page,
 }) => {
   const { editor, layer } = await openWithCard(page)
-  const languages = editor.getByRole('group', { name: '语言' })
   // 加第一种语言时文字字段改成随语言，主文件变了，预览整份重新加载一次：等存下、新的播放器换上来、没有在加载的
   const bound = mainSavedWith(page, (html) => html.includes('data-locale-bindings'))
-  await languages.getByRole('button', { name: '添加语言' }).click()
+  await editor
+    .getByRole('toolbar', { name: '剪辑工具' })
+    .getByRole('button', { name: '添加语言' })
+    .click()
   await page.getByRole('menuitem', { name: 'English（EN）' }).click()
   await bound
   const player = await settledPlayer(editor)

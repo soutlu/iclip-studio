@@ -23,19 +23,6 @@
   padding: 10px 14px 4px;
 }
 
-/* 「镜头」页签内的分段控件（筛选与版本切换）附加外圈细线，与工作台顶栏分段一致；
-   与通用 .wf-editor .wf-seg 同优先级并置于其后，以覆盖默认阴影 */
-.wf-materials .wf-seg {
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
-}
-
-/* 「全部 / 未用 / 已用」分段筛选（复用 .wf-seg） */
-.wf-materials-filter {
-  display: inline-flex;
-}
-
 /* 列表底部渐隐遮罩，柔化滚出视口的卡片截断边缘 */
 .wf-materials-list {
   display: flex;
@@ -122,14 +109,17 @@
   font-size: var(--text-ui);
 }
 
-/* 多版本行内分段选择器（复用 .wf-seg.is-compact）：溢出时自身横向滚动 */
+/* 出片的版本分段（紧凑的共用分段，按内容宽排）：版本号用等宽字；放不下时可以收窄，在自己里面横向滚动 */
 .wf-take-versions {
-  display: flex;
-  min-width: 0;
-  flex: 0 1 auto;
   overflow-x: auto;
   font-family: var(--font-mono);
   scrollbar-width: none;
+}
+
+/* 槽自己就是滚动区，伸出格子的点按热区出不了槽：竖向被裁掉，横向（版本格比 48px 窄）还会撑出一截空滚，
+   所以这里不要伸出去的热区 */
+.wf-take-versions > .hit-48::after {
+  content: none;
 }
 
 /* 没在看、但在时间线上的版本旁的小圆点 */

@@ -254,7 +254,7 @@ function VoicePickerBody({
       <div className="wf-voice-pop-filters">
         <ChipGroup
           aria-label="语种"
-          className="wf-seg wf-voice-pop-locales"
+          className="wf-voice-pop-locales"
           onValueChange={(value) => {
             const next = locales.find((each) => each === value)
             if (next !== undefined) setLocale(next)
@@ -264,14 +264,13 @@ function VoicePickerBody({
           variant="segmented"
         >
           {locales.map((each) => (
-            <FilterChip className="wf-seg-item" key={each} value={each} variant="segmented">
+            <FilterChip key={each} value={each} variant="segmented">
               {localeTab(each)}
             </FilterChip>
           ))}
         </ChipGroup>
         <ChipGroup
           aria-label="性别"
-          className="wf-seg"
           onValueChange={(value) => {
             const next = PICKER_GENDERS.find((each) => each.value === value)
             if (next !== undefined) setGender(next.value)
@@ -281,12 +280,7 @@ function VoicePickerBody({
           variant="segmented"
         >
           {PICKER_GENDERS.map((each) => (
-            <FilterChip
-              className="wf-seg-item"
-              key={each.value}
-              value={each.value}
-              variant="segmented"
-            >
+            <FilterChip key={each.value} value={each.value} variant="segmented">
               {each.label}
             </FilterChip>
           ))}
@@ -388,19 +382,24 @@ function LineModes({
     { value: 'unvoiced', label: UNVOICED_NAME, line: { dub: false } },
   ] as const
   return (
-    <div aria-label="本句音色" className="wf-seg wf-voice-pop-modes" role="group">
+    <ChipGroup
+      aria-label="本句音色"
+      onValueChange={(value) => {
+        // 再点当前项报的是空值：照样当选了它（选完浮层收起）
+        const item = items.find((each) => each.value === (value === '' ? mode : value))
+        if (item !== undefined) onPick(item.line)
+      }}
+      type="single"
+      // 单句选了资料库里的音色时三项都不选中
+      value={mode ?? ''}
+      variant="segmented"
+    >
       {items.map((item) => (
-        <button
-          aria-pressed={mode === item.value}
-          className="wf-seg-item ui-state ui-focus"
-          key={item.value}
-          onClick={() => onPick(item.line)}
-          type="button"
-        >
+        <FilterChip key={item.value} value={item.value} variant="segmented">
           <span className="wf-voice-pop-mode">{item.label}</span>
-        </button>
+        </FilterChip>
       ))}
-    </div>
+    </ChipGroup>
   )
 }
 

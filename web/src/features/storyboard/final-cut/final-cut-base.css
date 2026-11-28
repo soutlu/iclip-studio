@@ -17,8 +17,6 @@
   --wf-shadow-action:
     0 1px 3px color-mix(in srgb, var(--color-shadow) 20%, transparent),
     inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
-  /* 紧凑分段容器外圆角：内项圆角 + 容器内边距，保持四角同心 */
-  --wf-radius-seg-compact: calc(var(--radius-xs) + 2px);
   /* 右栏底部汇总栏、试听条外圆角：内部按钮圆角 + 6px 内边距，保持四角同心 */
   --wf-radius-dock: calc(var(--radius-sm) + 6px);
   /* 右栏列表行、分类和筛选小块的底色：悬停很浅，选中 / 正在试听稍深 */
@@ -234,67 +232,6 @@
 
 .wf-select[data-state='open'] > svg {
   rotate: 180deg;
-}
-
-/* 分段切换控件：凹槽底配浮起白色激活项（「镜头」页签内附加外细线，见 .wf-materials）；
-   is-compact 为紧凑高度，供在 26px 高的标题行里行内排布（出片的版本分段） */
-.wf-editor .wf-seg {
-  gap: 2px;
-  padding: 2px;
-  border-radius: var(--radius-control);
-  background: var(--color-surface-container-high);
-  box-shadow: var(--shadow-control-well);
-}
-
-/* 悬停仅加深文字色：将 ui-state 叠层色置透明，保留过渡曲线 */
-.wf-editor .wf-seg-item {
-  --color-state-hover: transparent;
-  --color-state-pressed: transparent;
-
-  display: inline-flex;
-  height: 26px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wf-editor .wf-seg-item:hover {
-  color: var(--color-on-surface);
-}
-
-/* 三个选择器条件用于覆盖通用分段组件的双条件选中样式（类名 + 状态属性） */
-.wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
-  background: var(--color-card);
-  box-shadow: var(--shadow-pill), var(--shadow-specular);
-  color: var(--color-on-surface);
-  font-weight: 600;
-}
-
-/* 深色主题下压暗槽底并提亮激活项表面，保持浮起层次（与工作台顶栏分段页签一致） */
-.dark .wf-editor .wf-seg {
-  background: var(--color-control-well);
-}
-
-.dark .wf-editor .wf-seg-item:is([aria-pressed='true'], [data-state='on']) {
-  background: var(--color-surface-container-high);
-}
-
-.wf-editor .wf-seg.is-compact {
-  gap: 0;
-  border-radius: var(--wf-radius-seg-compact);
-}
-
-.wf-editor .wf-seg.is-compact .wf-seg-item {
-  height: 22px;
-  gap: 2px;
-  padding: 0 8px;
-  border-radius: var(--radius-xs);
 }
 
 /* 输入槽：往里输入或显示一个值的槽（输入框、文本域、搜索框、宽高框、生成音乐的描述框，属性里的下拉、颜色、步进胶囊、

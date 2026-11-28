@@ -1,6 +1,7 @@
 import { useId, type ReactNode } from 'react'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import type { KeyframeStates } from './material-media'
 import type { MaterialView } from './material-preview'
 import {
@@ -80,19 +81,24 @@ export function MaterialArea({
     <section aria-label="视频素材区" className="wf-materials">
       {listed ? (
         <div className="wf-materials-top">
-          <div aria-label="素材筛选" className="wf-seg wf-materials-filter" role="group">
+          <ChipGroup
+            aria-label="素材筛选"
+            // 「镜头」页签里的分段在槽内圈加一道细线，与工作台顶栏的分段一致
+            className="inset-ring inset-ring-panel-line"
+            onValueChange={(value) => {
+              const next = FILTERS.find((each) => each.value === value)
+              if (next !== undefined) onFilter(next.value)
+            }}
+            type="single"
+            value={filter}
+            variant="segmented"
+          >
             {FILTERS.map((each) => (
-              <button
-                aria-pressed={filter === each.value}
-                className="wf-seg-item ui-state ui-focus"
-                key={each.value}
-                onClick={() => onFilter(each.value)}
-                type="button"
-              >
+              <FilterChip key={each.value} value={each.value} variant="segmented">
                 {each.label}
-              </button>
+              </FilterChip>
             ))}
-          </div>
+          </ChipGroup>
         </div>
       ) : null}
       <div className="wf-materials-list">

@@ -84,6 +84,10 @@ const restoreInto = (composer: ComposerHandle, parts: readonly ComposerPart[]) =
     text: '',
   })
 
+// 「图生 / 编辑」的格子：不照共用分段的样子（选中项见 storyboard-bar-segment），保留悬停叠层、正文色和常规字重
+const MODE_SEGMENT_CLASS =
+  'storyboard-bar-segment gap-1 font-normal text-on-surface-variant [--color-state-hover:inherit] [--color-state-pressed:inherit] hover:not-aria-disabled:text-on-surface-variant segment-current:font-medium'
+
 function CardComposer({
   draft,
   onDraftChange,
@@ -213,7 +217,8 @@ function CardComposer({
           <>
             <ChipGroup
               aria-label="生成方式"
-              className="storyboard-bar-segmented"
+              // 有意不用分段的凹槽（外框见 storyboard-bar-segmented）：不要槽的间距和内阴影
+              className="storyboard-bar-segmented gap-0 shadow-none"
               disabled={sending}
               onValueChange={(next) => {
                 if (next === 'image' || next === 'edit') onModeChange(next)
@@ -222,10 +227,10 @@ function CardComposer({
               value={mode}
               variant="segmented"
             >
-              <FilterChip className="storyboard-bar-segment" value="image" variant="segmented">
+              <FilterChip className={MODE_SEGMENT_CLASS} value="image" variant="segmented">
                 图生
               </FilterChip>
-              <FilterChip className="storyboard-bar-segment" value="edit" variant="segmented">
+              <FilterChip className={MODE_SEGMENT_CLASS} value="edit" variant="segmented">
                 编辑
               </FilterChip>
             </ChipGroup>

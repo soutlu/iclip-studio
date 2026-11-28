@@ -11,6 +11,10 @@
    touch: 是它的补集，用来让这些控件在没有悬停的设备上常驻。 */
 @custom-variant touch (@media (hover: none));
 
+/* 分段切换的当前项：单选分段（ChipGroup）是 aria-checked，分段页签（Tabs）是 aria-selected。不看 data-state：
+   选项外面包着 Tooltip 时，它的触发器会改写 data-state。 */
+@custom-variant segment-current (&:is([aria-checked='true'], [aria-selected='true']));
+
 /* 唯一圆角标尺：同时驱动 CSS token 和 Tailwind rounded-* utilities。 */
 @theme {
   --radius-none: 0;

@@ -246,7 +246,7 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
   const card = (index: number, take: string) =>
     within(group(index)).getByRole('article', { name: `出片 ${take}` })
   const filterButton = (name: string) =>
-    within(screen.getByRole('group', { name: '素材筛选' })).getByRole('button', { name })
+    within(screen.getByRole('radiogroup', { name: '素材筛选' })).getByRole('radio', { name })
   const takesIn = (index: number) =>
     within(group(index))
       .getAllByRole('article')
@@ -262,12 +262,12 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
     expect(screen.queryByText(/\d+ 组 · \d+ 条/)).toBeNull()
-    expect(filterButton('全部')).toHaveAttribute('aria-pressed', 'true')
+    expect(filterButton('全部')).toBeChecked()
     expect(takesIn(1)).toEqual(['出片 A', '出片 B'])
     expect(takesIn(2)).toEqual(['出片 A'])
 
     await user.click(filterButton('未用'))
-    expect(filterButton('未用')).toHaveAttribute('aria-pressed', 'true')
+    expect(filterButton('未用')).toBeChecked()
     expect(takesIn(1)).toEqual(['出片 B'])
     expect(takesIn(2)).toEqual(['出片 A'])
 
@@ -305,24 +305,24 @@ describe('final-cut 编辑器 · 「镜头」页签', () => {
   it('有几个版本时是一排分段，点一下直接切：没在看的版本用上了时标着，看的这版用上了时常驻「已用」；不写镜头数', async () => {
     const user = userEvent.setup()
     await openWithOriginalInTrack()
-    const versions = within(card(1, 'A')).getByRole('group', { name: '出片 A 的版本' })
-    const original = within(versions).getByRole('button', { name: 'V1 原片，已用' })
-    const edited = within(versions).getByRole('button', { name: 'V2' })
-    expect(edited).toHaveAttribute('aria-pressed', 'true')
-    expect(original).toHaveAttribute('aria-pressed', 'false')
+    const versions = within(card(1, 'A')).getByRole('radiogroup', { name: '出片 A 的版本' })
+    const original = within(versions).getByRole('radio', { name: 'V1 原片，已用' })
+    const edited = within(versions).getByRole('radio', { name: 'V2' })
+    expect(edited).toBeChecked()
+    expect(original).not.toBeChecked()
     expect(within(card(1, 'A')).queryByText('已用')).toBeNull()
     expect(within(card(1, 'A')).getByText('3.0s')).toBeVisible()
     expect(card(1, 'A')).not.toHaveTextContent(/\d+ 镜/)
 
     await user.click(original)
-    expect(original).toHaveAttribute('aria-pressed', 'true')
-    expect(edited).toHaveAttribute('aria-pressed', 'false')
+    expect(original).toBeChecked()
+    expect(edited).not.toBeChecked()
     expect(within(card(1, 'A')).getByText('已用')).toBeVisible()
     expect(within(card(1, 'A')).getByText('6.0s')).toBeVisible()
     expect(await shot(/^出片 A 镜头 3，4\.5–6\.0 秒/)).toBeVisible()
 
     // 只有一个版本时不写版本
-    expect(within(card(1, 'B')).queryByRole('group')).toBeNull()
+    expect(within(card(1, 'B')).queryByRole('radiogroup')).toBeNull()
     expect(within(card(1, 'B')).queryByText('V1')).toBeNull()
     expect(within(card(1, 'B')).queryByText('已用')).toBeNull()
   })
@@ -1000,14 +1000,14 @@ describe('final-cut 编辑器 · 多选', () => {
       (await screen.findAllByText('尚未选中片段，无法缩放；请先选中一个片段')).length,
     ).toBeGreaterThan(0)
 
-    const tools = within(within(toolbar()).getByRole('group', { name: '编辑工具' }))
+    const tools = within(within(toolbar()).getByRole('radiogroup', { name: '编辑工具' }))
     expect(
       tools
-        .getAllByRole('button')
-        .map((button) => [
-          button.getAttribute('aria-label'),
-          button.getAttribute('aria-pressed'),
-          button.getAttribute('aria-keyshortcuts'),
+        .getAllByRole('radio')
+        .map((radio) => [
+          radio.getAttribute('aria-label'),
+          radio.getAttribute('aria-checked'),
+          radio.getAttribute('aria-keyshortcuts'),
         ]),
     ).toEqual([
       ['选择工具', 'true', 'V'],
@@ -1588,7 +1588,7 @@ describe('final-cut 编辑器 · 切开', () => {
   }
   /** 工具条分段里按下的那个工具（`name` 是「选择」或「切开」）。 */
   const currentTool = (name: string) =>
-    within(toolbar()).getByRole('button', { name: `${name}工具`, pressed: true })
+    within(toolbar()).getByRole('radio', { name: `${name}工具`, checked: true })
   const commands = () => within(toolbar()).getByRole('button', { name: '更多剪辑命令' })
   // 测试里时间线没有宽度，按一秒 100 像素排：横坐标 x 就是第 x × 10 毫秒
   const razorAt = (target: HTMLElement, x: number, shiftKey = false) =>
@@ -1687,16 +1687,31 @@ describe('final-cut 编辑器 · 切开', () => {
     await waitSaved(() => expect(savedClips()).toHaveLength(3))
   })
 
+  it('点过「选择 / 切开」后焦点留在分段上：B / V 照常换工具，Delete 照常删掉选中的片段', async () => {
+    const user = await open()
+    await user.click(body('B · 镜头 1'))
+    const select = within(toolbar()).getByRole('radio', { name: '选择工具' })
+    await user.click(select)
+    expect(select).toHaveFocus()
+
+    await user.keyboard('b')
+    expect(currentTool('切开')).toBeVisible()
+    expect(select).toHaveFocus()
+    await user.keyboard('v')
+    expect(currentTool('选择')).toBeVisible()
+
+    await user.keyboard('{Delete}')
+    await waitSaved(() => expect(savedClips()).toHaveLength(1))
+    expect(screen.queryByRole('button', { name: /^选中：B · 镜头 1/ })).toBeNull()
+  })
+
   it('B 换成切开工具：工具条的分段跟着换；点片段在点的地方切开、选中不变，点得太靠边夹进 0.1 秒', async () => {
     const user = await open()
     await user.click(body('B · 镜头 1'))
     editorRoot().focus()
     await user.keyboard('b')
     expect(currentTool('切开')).toBeVisible()
-    expect(within(toolbar()).getByRole('button', { name: '选择工具' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+    expect(within(toolbar()).getByRole('radio', { name: '选择工具' })).not.toBeChecked()
 
     // 指针在各行上时有一条切分线跟着它，时间尺上写着会切在哪（不吸附）；移出时间线就收起
     fireEvent.pointerMove(lanes(), { clientX: 50, clientY: 10 })

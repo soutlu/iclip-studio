@@ -1,5 +1,6 @@
 import { useEffect, useId, useState, type ComponentProps, type Ref } from 'react'
 import type { Audition } from '@/shared/ui/audition'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Textarea } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import {
@@ -182,40 +183,46 @@ export function CaptionsTab({
       <div className="wf-tab-head wf-captions-head">
         <div className="wf-captions-row">
           <LocaleBar {...locales} inPanel />
-          <div aria-label="字幕或画面文字" className="wf-seg wf-captions-views" role="group">
+          <ChipGroup
+            aria-label="字幕或画面文字"
+            className="auto-cols-auto"
+            onValueChange={(value) => {
+              const next = views.find((each) => each.value === value)
+              if (next !== undefined) setView(next.value)
+            }}
+            type="single"
+            value={view}
+            variant="segmented"
+          >
             {views.map((each) => (
-              <button
-                aria-pressed={view === each.value}
-                className="wf-seg-item ui-state ui-focus"
-                key={each.value}
-                onClick={() => setView(each.value)}
-                type="button"
-              >
+              <FilterChip key={each.value} value={each.value} variant="segmented">
                 {each.label} <span className="wf-captions-count">{each.count}</span>
-              </button>
+              </FilterChip>
             ))}
-          </div>
+          </ChipGroup>
         </div>
         {onCaptions ? (
           <div className="wf-captions-row">
             <div className="wf-captions-voice">
               {voice === undefined ? null : (
                 <>
-                  <div aria-label="原声或配音" className="wf-seg" role="group">
+                  <ChipGroup
+                    aria-label="原声或配音"
+                    onValueChange={(value) => {
+                      // 再点当前项报的是空值，不切换
+                      if ((value === 'original' || value === 'dub') && value !== voice.mode)
+                        voice.onMode(value)
+                    }}
+                    type="single"
+                    value={voice.mode}
+                    variant="segmented"
+                  >
                     {(['original', 'dub'] as const).map((mode) => (
-                      <button
-                        aria-pressed={voice.mode === mode}
-                        className="wf-seg-item ui-state ui-focus"
-                        key={mode}
-                        onClick={() => {
-                          if (voice.mode !== mode) voice.onMode(mode)
-                        }}
-                        type="button"
-                      >
+                      <FilterChip key={mode} value={mode} variant="segmented">
                         {mode === 'original' ? '原声' : '配音'}
-                      </button>
+                      </FilterChip>
                     ))}
-                  </div>
+                  </ChipGroup>
                   {dubbing ? (
                     <DefaultVoice
                       library={library}

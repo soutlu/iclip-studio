@@ -76,6 +76,33 @@ describe('final-cut 编辑器 · 播放', () => {
     expect(within(transport()).getByText('/ 00:03.50')).toBeVisible()
   })
 
+  it('焦点在分段的选项上（工具条「选择 / 切开」）：方向键在选项间挪焦点、不挪播放头，Space、Enter 选中这一项、不切换播放', async () => {
+    putMockProjectMain(CONVERSATION, twoVideos())
+    const user = userEvent.setup()
+    await openEditor()
+    await previewSettled()
+    const start = progress().getAttribute('aria-valuetext')
+    const tools = within(within(toolbar()).getByRole('radiogroup', { name: '编辑工具' }))
+
+    tools.getByRole('radio', { name: '选择工具' }).focus()
+    await user.keyboard('{ArrowRight}')
+    expect(tools.getByRole('radio', { name: '切开工具' })).toHaveFocus()
+    expect(progress()).toHaveAttribute('aria-valuetext', start)
+    await user.keyboard(' ')
+    expect(tools.getByRole('radio', { name: '切开工具' })).toBeChecked()
+    expect(within(transport()).getByRole('button', { name: '播放' })).toBeVisible()
+
+    await user.keyboard('{ArrowLeft}{Enter}')
+    expect(tools.getByRole('radio', { name: '选择工具' })).toBeChecked()
+    expect(progress()).toHaveAttribute('aria-valuetext', start)
+    expect(within(transport()).getByRole('button', { name: '播放' })).toBeVisible()
+
+    // 焦点回到编辑器上，Space 照常切换播放（前面的 Space 若被当成播放，这一下就成了暂停）
+    editorRoot().focus()
+    await user.keyboard(' ')
+    expect(await within(transport()).findByRole('button', { name: '暂停' })).toBeVisible()
+  })
+
   it('连着按方向键按几下走几步：预览晚报回来的上一次跳转的时刻不把播放头拉回去', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
@@ -721,9 +748,9 @@ describe('final-cut 编辑器 · 导出', () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
     await user.click(screen.getByRole('button', { name: /^画面尺寸/ }))
-    const tiers = within(screen.getByRole('group', { name: '导出分辨率' }))
-    expect(tiers.getByRole('button', { name: '1080P' })).toHaveAttribute('aria-disabled', 'true')
-    await user.click(tiers.getByRole('button', { name: '480P' }))
+    const tiers = within(screen.getByRole('radiogroup', { name: '导出分辨率' }))
+    expect(tiers.getByRole('radio', { name: '1080P' })).toHaveAttribute('aria-disabled', 'true')
+    await user.click(tiers.getByRole('radio', { name: '480P' }))
     await user.keyboard('{Escape}')
 
     await user.click(screen.getByRole('button', { name: '导出' }))

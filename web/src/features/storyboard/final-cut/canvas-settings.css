@@ -171,37 +171,8 @@
   flex: none;
 }
 
-.wf-canvas-ratios {
-  display: grid;
-  gap: 2px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-/* 比例预设按钮：缩略框与数值左对齐保证两行纵向齐平，激活项配高一级容器浅底 */
-.wf-canvas-ratio {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px 0 10px;
-  border-radius: var(--radius-sm);
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.wf-canvas-ratio:hover {
-  color: var(--color-on-surface);
-}
-
-.wf-canvas-ratio[aria-pressed='true'] {
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface);
-  font-weight: 600;
-}
-
-.wf-canvas-ratio[aria-pressed='true'] > .wf-ratio-glyph {
+/* 画面比例（两行三列的共用分段）：当前比例的缩略框不再变淡 */
+.wf-canvas-ratios [aria-checked='true'] > .wf-ratio-glyph {
   opacity: 1;
 }
 
@@ -286,23 +257,6 @@
     inset 0 0 0 1px color-mix(in srgb, var(--color-on-surface) 20%, transparent),
     0 0 0 1.5px var(--color-card),
     0 0 0 2.75px var(--color-on-surface);
-}
-
-/* 导出分辨率与构图网格三等分分段控件，高度较通用分段紧凑一档 */
-.wf-canvas-seg {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.wf-canvas-seg > .wf-seg-item {
-  height: 21px;
-  padding: 0 4px;
-  font-size: var(--text-caption);
-}
-
-/* 当前画幅不支持的导出档位：保持禁用文字色且悬停不加深（与 .wf-seg-item:hover 同优先级并置于其后） */
-.wf-canvas-seg > .wf-seg-item[aria-disabled='true'] {
-  color: var(--color-disabled-text);
 }
 
 /* 画布原地改字输入框：覆盖在隐藏的原文字上方，采用白色描边与半透明深底 */

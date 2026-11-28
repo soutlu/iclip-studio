@@ -68,12 +68,12 @@ describe('final-cut 编辑器 · 配音', () => {
   /** 时间线上还没有配音行时，配音行的位置写的引导：保留原声时、AI 配音还没生成时。 */
   const KEEP_ORIGINAL_HINT = '当前语言保留原声；在「字幕」页签切到「配音」可生成配音'
   const NOT_DUBBED_HINT = '当前语言还没有配音；在「字幕」页签点击「生成配音」'
-  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const languages = () => within(toolbar()).getByRole('radiogroup', { name: '语言' })
   type User = ReturnType<typeof userEvent.setup>
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   /** 第二排的「原声 | 配音」。 */
   const modeButton = (name: '原声' | '配音') =>
-    within(within(panel()).getByRole('group', { name: '原声或配音' })).getByRole('button', {
+    within(within(panel()).getByRole('radiogroup', { name: '原声或配音' })).getByRole('radio', {
       name,
     })
   /** 页签里的按钮：「生成配音」「重配 N 句」「重新生成」、默认音色胶囊等。 */
@@ -259,7 +259,7 @@ describe('final-cut 编辑器 · 配音', () => {
         screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }),
       ).getByRole('tab', { name: /^字幕/ }),
     )
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     await waitFor(() => expect(modeButton('原声')).toBeVisible())
     return user
   }
@@ -274,14 +274,14 @@ describe('final-cut 编辑器 · 配音', () => {
   it('English 下默认原声；切到「配音」只记下、不发起，默认音色是原片音色；点「生成配音」每条素材片发起一次，字幕时间换算到素材片里（切开、入点、变速），没翻的、没有音色的旁白句不配，参考用原声；原文也有「原声 | 配音」', async () => {
     const user = await open()
     const sent = serveDubbings()
-    expect(modeButton('原声')).toHaveAttribute('aria-pressed', 'true')
+    expect(modeButton('原声')).toBeChecked()
     expect(within(panel()).queryByRole('button', { name: '生成配音' })).toBeNull()
     expect(within(panel()).queryByRole('button', { name: /^默认音色/ })).toBeNull()
     // 时间线上还没有配音行：配音行的位置写一句去哪里配
     expect(screen.getByText(KEEP_ORIGINAL_HINT)).toBeVisible()
     await user.click(modeButton('配音'))
     await waitSaved(() => expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}'))
-    expect(modeButton('配音')).toHaveAttribute('aria-pressed', 'true')
+    expect(modeButton('配音')).toBeChecked()
     expect(voiceButton('默认音色：原片音色')).toBeVisible()
     expect(sent).toEqual([])
     expect(savedDubs()).toEqual([])
@@ -320,8 +320,8 @@ describe('final-cut 编辑器 · 配音', () => {
     // 有了配音片段，引导收起
     await waitFor(() => expect(screen.queryByText(NOT_DUBBED_HINT)).toBeNull())
 
-    await user.click(within(languages()).getByRole('button', { name: '原文' }))
-    expect(modeButton('原声')).toHaveAttribute('aria-pressed', 'true')
+    await user.click(within(languages()).getByRole('radio', { name: '原文' }))
+    expect(modeButton('原声')).toBeChecked()
     expect(modeButton('配音')).toBeVisible()
   })
 
@@ -443,7 +443,7 @@ describe('final-cut 编辑器 · 配音', () => {
     await waitSaved(() => expect(savedModes()).toBeNull())
     expect(dubClips()).toHaveLength(0)
 
-    await user.click(within(languages()).getByRole('button', { name: '原文' }))
+    await user.click(within(languages()).getByRole('radio', { name: '原文' }))
     await waitFor(() =>
       expect(screen.queryAllByRole('group', { name: /^配音 · / })).toHaveLength(0),
     )
@@ -606,7 +606,7 @@ describe('final-cut 编辑器 · 配音', () => {
     const pop = within(await screen.findByRole('dialog', { name: '选择本句音色' }))
     await user.click(
       ['跟随默认', '原片音色', '不配音'].includes(name)
-        ? within(pop.getByRole('group', { name: '本句音色' })).getByRole('button', {
+        ? within(pop.getByRole('radiogroup', { name: '本句音色' })).getByRole('radio', {
             name: new RegExp(`^${name}`),
           })
         : await pop.findByRole('button', { name: `选用：${name}` }),
@@ -630,13 +630,13 @@ describe('final-cut 编辑器 · 配音', () => {
 
     await user.click(lineChip(2))
     const pop = within(await screen.findByRole('dialog', { name: '选择本句音色' }))
-    const modes = within(pop.getByRole('group', { name: '本句音色' }))
-    expect(modes.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    const modes = within(pop.getByRole('radiogroup', { name: '本句音色' }))
+    expect(modes.getAllByRole('radio').map((radio) => radio.textContent)).toEqual([
       '跟随默认（原片音色）',
       '原片音色',
       '不配音',
     ])
-    expect(modes.getByRole('button', { name: /^跟随默认/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(modes.getByRole('radio', { name: /^跟随默认/ })).toBeChecked()
     await waitFor(() => expect(popVoices('选择本句音色')).toEqual(['Emma']))
     expect(pop.queryByText('当前')).toBeNull()
     // 浮层没有「原片音色」那一行：单句的原片音色在最上面一排
@@ -927,7 +927,7 @@ describe('final-cut 编辑器 · 配音', () => {
     // 试听着切到原文：这句的配音不在列表里了，停下
     await user.click(within(captionRow(3)).getByRole('button', { name: '试听本句配音' }))
     pause.mockClear()
-    await user.click(within(languages()).getByRole('button', { name: '原文' }))
+    await user.click(within(languages()).getByRole('radio', { name: '原文' }))
     await waitFor(() => expect(pause).toHaveBeenCalled())
   })
 
@@ -985,9 +985,9 @@ describe('final-cut 编辑器 · 配音', () => {
     await user.click(inspectorVoice())
     const pop = within(await screen.findByRole('dialog', { name: '选择本句音色' }))
     expect(
-      within(pop.getByRole('group', { name: '本句音色' }))
-        .getAllByRole('button')
-        .map((button) => button.textContent),
+      within(pop.getByRole('radiogroup', { name: '本句音色' }))
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
     ).toEqual(['跟随默认（原片音色）', '原片音色', '不配音'])
     await user.click(await pop.findByRole('button', { name: '选用：Emma' }))
     await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择本句音色' })).toBeNull())
@@ -1024,7 +1024,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
   const EN_FILE = 'final-cut/locales/en.json'
   const SPEECH_URL = 'https://media.test/speech.m4a'
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
-  const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
+  const languages = () => within(toolbar()).getByRole('radiogroup', { name: '语言' })
   const narrationClips = () => screen.queryAllByRole('group', { name: /^旁白 · / })
 
   /** 存下来的主文件里的配音片段：配的哪句、语言、起止（秒）、音色、念的字、地址。 */
@@ -1136,7 +1136,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     const pop = within(await screen.findByRole('dialog', { name: '选择本句音色' }))
     // 原文原声时没有默认音色可跟：第一段不写音色名
     expect(
-      within(pop.getByRole('group', { name: '本句音色' })).getAllByRole('button')[0],
+      within(pop.getByRole('radiogroup', { name: '本句音色' })).getAllByRole('radio')[0],
     ).toHaveTextContent(/^跟随默认$/)
     await user.click(await pop.findByRole('button', { name: '选用：Emma' }))
     const savedModes = () =>
@@ -1181,7 +1181,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
     const user = await open({ voice: 'v-own', dubbed: true })
     expect(narrationClips()).toHaveLength(1)
 
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
 
     await waitFor(() => expect(narrationClips()).toHaveLength(0))
     expect(screen.getByRole('group', { name: /^配音 · Welcome/ })).toBeVisible()
@@ -1195,7 +1195,7 @@ describe('final-cut 编辑器 · 旁白配音', () => {
         HttpResponse.json({ detail: '配音没有开通，暂时不能配音' }, { status: 422 }),
       ),
     )
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
 
     // a1 还没配，n1 记着的字是旧的：两句待处理
     await user.click(await within(panel()).findByRole('button', { name: '重配 2 句' }))

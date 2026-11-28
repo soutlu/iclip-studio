@@ -100,28 +100,28 @@ const renderTab = async (scripts: ReadonlyMap<string, ScriptNote> = new Map()) =
   return { ...locales, onText, onPick, user: userEvent.setup() }
 }
 
-const languages = () => screen.getByRole('group', { name: '原文与译文' })
+const languages = () => screen.getByRole('radiogroup', { name: '原文与译文' })
+// 页签单独渲染，页面上只有这一个「+」
+const addLanguage = () => screen.getByRole('button', { name: '添加语言' })
 const view = (name: RegExp) =>
-  within(screen.getByRole('group', { name: '字幕或画面文字' })).getByRole('button', { name })
+  within(screen.getByRole('radiogroup', { name: '字幕或画面文字' })).getByRole('radio', { name })
 const pick = (user: ReturnType<typeof userEvent.setup>, id: string) =>
   user.click(screen.getByRole('button', { name: `时间线上选中 ${id}` }))
 
 describe('「字幕」顶部的语言', () => {
   it('原文和加了的语言各一个小块，写语言代码，当前的高亮；点一个切过去', async () => {
     const { user, onSwitch } = await renderTab()
-    const chips = within(languages()).getAllByRole('button')
-    expect(chips.map((chip) => chip.textContent)).toEqual(['原文', 'EN', ''])
-    expect(within(languages()).getByRole('button', { name: '原文' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    await user.click(within(languages()).getByRole('button', { name: 'English（EN）' }))
+    const chips = within(languages()).getAllByRole('radio')
+    expect(chips.map((chip) => chip.textContent)).toEqual(['原文', 'EN'])
+    expect(addLanguage()).toBeVisible()
+    expect(within(languages()).getByRole('radio', { name: '原文' })).toBeChecked()
+    await user.click(within(languages()).getByRole('radio', { name: 'English（EN）' }))
     expect(onSwitch).toHaveBeenCalledExactlyOnceWith('en')
   })
 
   it('点「+」列出还没加的语言（和工具条上的一样），选一个加上', async () => {
     const { user, onAdd } = await renderTab()
-    await user.click(within(languages()).getByRole('button', { name: '添加语言' }))
+    await user.click(addLanguage())
     const menu = await screen.findByRole('menu')
     expect(
       within(menu)
@@ -136,16 +136,16 @@ describe('「字幕」顶部的语言', () => {
 describe('「字幕」跟着选中走', () => {
   it('时间线上选中有文字的元素片段：切到「画面文字」', async () => {
     const { user } = await renderTab()
-    expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^字幕/)).toBeChecked()
     await pick(user, 'title-1')
-    expect(view(/^画面文字/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^画面文字/)).toBeChecked()
   })
 
   it('选中配音片段：切回「字幕」，标出它配的那一句', async () => {
     const { user } = await renderTab()
     await pick(user, 'title-1')
     await pick(user, 'en-b2')
-    expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^字幕/)).toBeChecked()
     const rows = within(screen.getByRole('list', { name: '字幕' })).getAllByRole('listitem')
     expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, 'true'])
   })
@@ -165,10 +165,10 @@ describe('「字幕」跟着选中走', () => {
     await pick(user, 'title-1')
     await user.click(view(/^字幕/))
     await pick(user, 'title-1')
-    expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^字幕/)).toBeChecked()
     await pick(user, 'cap-a1')
     await pick(user, 'title-1')
-    expect(view(/^画面文字/)).toHaveAttribute('aria-pressed', 'true')
+    expect(view(/^画面文字/)).toBeChecked()
   })
 })
 
