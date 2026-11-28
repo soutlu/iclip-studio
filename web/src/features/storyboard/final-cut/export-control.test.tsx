@@ -46,22 +46,26 @@ const EMPTY_TEXT = 'final-cut 暂无内容，无法导出；请先加入内容'
 
 type Target = ComponentProps<typeof ExportControl>['target']
 
-const SOURCE: Target = { locale: null, untranslated: 0, resolution: null }
+const NO_GAPS = { stale: 0, missing: 0 }
 
-const ENGLISH: Target = { locale: 'en', untranslated: 0, resolution: null }
+const SOURCE: Target = { locale: null, untranslated: 0, resolution: null, dubs: NO_GAPS }
+
+const ENGLISH: Target = { locale: 'en', untranslated: 0, resolution: null, dubs: NO_GAPS }
 
 const renderControl = (
   view: ExportView,
   {
     blocked,
     onStart = () => {},
+    onFixDubs = () => {},
     target = SOURCE,
-  }: { blocked?: string; onStart?: () => void; target?: Target } = {},
+  }: { blocked?: string; onStart?: () => void; onFixDubs?: () => void; target?: Target } = {},
 ) =>
   renderWithProviders(
     <ExportControl
       blocked={blocked}
       onCancel={() => {}}
+      onFixDubs={onFixDubs}
       onStart={onStart}
       target={target}
       view={view}
@@ -303,7 +307,7 @@ describe('ExportControl · 语言', () => {
 
       await renderControl(view, {
         onStart,
-        target: { locale: 'zh', untranslated: 2, resolution: null },
+        target: { locale: 'zh', untranslated: 2, resolution: null, dubs: NO_GAPS },
       })
       await user.hover(screen.getByRole('button', { name: new RegExp(`^${button}$`) }))
       expect(await screen.findByRole('tooltip')).toHaveTextContent(
@@ -323,6 +327,53 @@ describe('ExportControl · 语言', () => {
     await renderControl({ kind: 'idle' }, { blocked: EMPTY_TEXT, target: ENGLISH })
     await user.click(screen.getByRole('button', { name: '导出' }))
     expect(await screen.findByRole('tooltip')).toHaveTextContent(new RegExp(`^${EMPTY_TEXT}$`))
+  })
+})
+
+describe('ExportControl · 配音提醒', () => {
+  const GAPS = { stale: 2, missing: 1 }
+  const NOTE = '有 2 句还是旧配音、1 句没有配音，导出时旧配音照旧、没有配音的句子不出声'
+
+  it('配音没跟上：悬停「导出」的提示接上句数；点了照常导出，同时弹出同一句话和「去重配」，点它去重配并收起', async () => {
+    const user = userEvent.setup()
+    const onStart = vi.fn()
+    const onFixDubs = vi.fn()
+    await renderControl(
+      { kind: 'idle' },
+      { onStart, onFixDubs, target: { ...ENGLISH, dubs: GAPS } },
+    )
+    const start = screen.getByRole('button', { name: '导出' })
+    await user.hover(start)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      new RegExp(`^导出 English 版；${NOTE}$`),
+    )
+    expect(start).not.toHaveAttribute('aria-disabled')
+    await user.click(start)
+    expect(onStart).toHaveBeenCalledTimes(1)
+    const note = await screen.findByRole('dialog', { name: '配音提醒' })
+    expect(note).toHaveTextContent(NOTE)
+    await user.click(within(note).getByRole('button', { name: '去重配' }))
+    expect(onFixDubs).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '配音提醒' })).toBeNull())
+  })
+
+  it('原文只有旧配音时也提示，只写有的那一项；配音都跟上了点「导出」不弹提醒', async () => {
+    const user = userEvent.setup()
+    const { unmount } = await renderControl(
+      { kind: 'idle' },
+      { target: { ...SOURCE, dubs: { stale: 3, missing: 0 } } },
+    )
+    await user.hover(screen.getByRole('button', { name: '导出' }))
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      /^有 3 句还是旧配音，导出时旧配音照旧$/,
+    )
+    unmount()
+
+    const onStart = vi.fn()
+    await renderControl({ kind: 'idle' }, { onStart, target: ENGLISH })
+    await user.click(screen.getByRole('button', { name: '导出' }))
+    expect(onStart).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog', { name: '配音提醒' })).toBeNull()
   })
 })
 

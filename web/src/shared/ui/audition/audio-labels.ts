@@ -105,15 +105,6 @@ export const voiceToneText = ({ gender, age }: Pick<ReferenceAudio, 'gender' | '
 export const scenariosText = ({ scenarios }: Pick<ReferenceAudio, 'scenarios'>) =>
   joinOrNull(scenarios.map((each) => AUDIO_FILTER_LABELS.scenario.values[each]))
 
-/** 音色卡片上的一行属性：声线再接场景，「男声 · 中年 · 纪录片 / 电影预告」；都没填是 null。 */
-export const voiceTraitsText = (audio: Pick<ReferenceAudio, 'gender' | 'age' | 'scenarios'>) =>
-  joinOrNull([
-    voiceToneText(audio),
-    audio.scenarios.length === 0
-      ? null
-      : audio.scenarios.map((each) => AUDIO_FILTER_LABELS.scenario.values[each]).join(' / '),
-  ])
-
 /** 配乐的风格与情绪：「原声吉他 · 温暖」；没填是 null。 */
 export const bgmStyleText = ({ genre, mood }: Pick<ReferenceAudio, 'genre' | 'mood'>) =>
   joinOrNull([

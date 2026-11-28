@@ -15,6 +15,7 @@ import { errorMessageOf } from '@/shared/api/client'
 import { videoSnapshotUrl } from '@/shared/lib/media-url'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
+import { useAudition } from '@/shared/ui/audition'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { MediaBuffering } from '@/shared/ui/media-buffering'
 import { TabsContent, TabsRoot } from '@/shared/ui/tabs'
@@ -167,6 +168,7 @@ import { useTranslation } from './use-translation'
 import { useVoiceControl } from './use-voice-control'
 import { useWholeFilmExport } from './use-whole-film-export'
 import { ownedIn } from './voice-lines'
+import { VoicePicker, type VoicePickRequest, type VoicePickTarget } from './voice-picker'
 import { withVolumePoints } from './volume-envelope'
 import {
   createProjectFile,
@@ -190,7 +192,7 @@ const EMPTY_EXPORT_TEXT = 'final-cut 暂无内容，无法导出；请先加入�
 const READING_TAKES_TEXT = '正在读取素材片，请稍后再识别字幕'
 const RECOGNIZING_TEXT = '正在识别字幕，请等待识别完成'
 const ELSEWHERE_TEXT = '字幕归口播起始的片段，未新增字幕'
-/** 「识别字幕」旁的识别结果提示停留多久；鼠标移开时提前收起。 */
+/** 「识别」旁的识别结果提示停留多久；鼠标移开时提前收起。 */
 const RECOGNIZE_NOTE_MS = 4_000
 const NO_LINKS: Links = new Map()
 const NO_BINDINGS: ReadonlyMap<string, LocaleBindings> = new Map()
@@ -536,6 +538,8 @@ function EditorBody({
   }
   const selectOnly = (id: string) => setSelectedIds(new Set([id]))
   const sideRef = useRef<HTMLElement | null>(null)
+  // 右栏页签内容的可见区域：选音浮层左右与它的内容边线对齐
+  const [sideScroll, setSideScroll] = useState<HTMLDivElement | null>(null)
   const timelinePanelRef = useRef<HTMLDivElement | null>(null)
   // 右栏宽度、收起态与时间线高度。选中片段时若右栏已收起则保持收起（仅点亮「属性」圆点），点击页签或双击片段时展开
   const { layout, setSideCollapsed, sideSplitter, timelineSplitter } = useEditorLayout(() => ({
@@ -1037,7 +1041,7 @@ function EditorBody({
     return id
   }
 
-  // 「字幕」页签的「识别字幕」：识别期间不阻塞编辑，全部完成后按最新工程状态一次性写入。
+  // 「字幕」页签原文下的「识别」：识别期间不阻塞编辑，全部完成后按最新工程状态一次性写入。
   const takeOf = useCallback((src: string) => takeOfUrl.get(src), [takeOfUrl])
   const recognizable = recognitionTargets(clips, takeOf)
   /**
@@ -1062,7 +1066,7 @@ function EditorBody({
     }
     return { failed, ...recognizedCaptions(current, sentences) }
   }
-  // 再点「识别字幕」多半立刻有结果、鼠标还在按钮上，所以这类结果提示挂在按钮旁，到时或鼠标移开就收起
+  // 再点「识别」多半立刻有结果、鼠标还在按钮上，所以这类结果提示挂在按钮旁，到时或鼠标移开就收起
   const [recognizeNote, setRecognizeNote] = useState<string>()
   useEffect(() => {
     if (recognizeNote === undefined) return
@@ -1089,7 +1093,7 @@ function EditorBody({
     if (result.silent.length > 0) notice(`${labels(result.silent)} 未识别到口播内容，未新增字幕`)
     if (added === 0 && result.elsewhere.length > 0) setRecognizeNote(ELSEWHERE_TEXT)
     if (result.failed.length > 0)
-      notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别字幕」重试`)
+      notice(`${labels(result.failed)} 的字幕识别失败，请点击「识别」重试`)
   }
   const recognition = useCaptionRecognition(conversationId, (clipIds, outcomes) => {
     void writeRecognized(clipIds, outcomes)
@@ -1152,11 +1156,7 @@ function EditorBody({
     if (tooLong > 0) notice(`${tooLong} 条超过 ${TRANSLATION_LIMITS.text} 字，未翻译；请手动填写`)
   }
   // 配音（当前显示的语言，原文也有）：选音色、改模式只记下，合成由用户点（见 `useVoiceControl`）
-  const {
-    voice,
-    narrate,
-    busy: dubbingBusy,
-  } = useVoiceControl({
+  const voice = useVoiceControl({
     conversationId,
     film:
       film === null ? null : { clips: allClips, voiceModes: film.voiceModes, locale: film.locale },
@@ -1166,16 +1166,54 @@ function EditorBody({
     sourceName: (src) =>
       sourceNames.get(src) ??
       clips.find((clip) => clip.kind === 'video' && clip.src === src)?.label,
-    playhead,
     session,
     notice,
     beforeEdit: leaveMaterial,
   })
-  // 原文下「旁白配音」展开着时、时间线上有用资料库音色配的配音片段时（顶行写音色名）也要读资料库的音色
-  const [narrationOpen, setNarrationOpen] = useState(false)
+  // 右栏收起时页签内容隐藏，与工作台折叠一致视为不可见，同步暂停页签内的试听与预览播放
+  const sideVisible = !collapsed && !layout.sideCollapsed
+  // 右栏共用的试听：字幕页签的单句试听和选音浮层的样音同一时间只放一条；右栏看不见、离开字幕页签且浮层收着时停下
+  const [voicePick, setVoicePick] = useState<
+    (VoicePickRequest & { locale: Language; tab: SideTab }) | null
+  >(null)
+  // 换了语言、换了页签、右栏看不见时浮层收起
+  const shownPick =
+    voicePick !== null &&
+    voicePick.locale === locale.code &&
+    voicePick.tab === sideTab &&
+    sideVisible &&
+    voice !== undefined
+      ? voicePick
+      : null
+  if (voicePick !== null && shownPick === null) setVoicePick(null)
+  const sideAudition = useAudition({
+    active: sideVisible && (sideTab === 'captions' || shownPick !== null),
+    onError: () => notice('试听失败，请重试'),
+  })
+  /**
+   * 打开选音浮层（见 `VoicePicker`）：给这种语言的默认音色（`{ target: 'language' }`）或某一句
+   * （`{ target: 'line', caption: 字幕编号 }`）选，贴着 `anchor` 弹在右栏内容区里。右栏任何页签都能唤起。
+   */
+  const openVoicePicker = (pick: VoicePickTarget, anchor: HTMLElement) => {
+    sideAudition.stop()
+    setVoicePick({ pick, anchor, locale: locale.code, tab: sideTab })
+  }
+  const closeVoicePicker = () => {
+    sideAudition.stop()
+    setVoicePick(null)
+  }
+  // 当前语言下各句的配音片段：字幕页签的单句试听放它
+  const shownDubs = new Map(
+    allClips.flatMap((clip) =>
+      isDubClip(clip) && clip.dub.locale === locale.code ? [[clip.dub.caption, clip] as const] : [],
+    ),
+  )
+  // 配音时（默认音色胶囊）、有句子自己选过音色时、浮层开着时、时间线上有用资料库音色配的配音片段时（顶行写音色名和
+  // 小封面）要读资料库的音色
   const libraryVoices = useLibraryVoices(
-    target !== undefined ||
-      narrationOpen ||
+    voice?.mode === 'dub' ||
+      [...(voice?.lines.values() ?? [])].some((line) => line.own !== undefined) ||
+      shownPick !== null ||
       clips.some((clip) => isDubClip(clip) && clip.dub.voice !== null),
   )
   const dubLooks = dubLooksOf(clips, voice, libraryVoices.data)
@@ -1192,17 +1230,14 @@ function EditorBody({
         onRetry: () => void libraryVoices.refetch(),
       }
     : undefined
-  // 原文下的「旁白配音」：合成走配音的同一条路，和配音共用「正在生成」
-  const narration =
-    target !== undefined
-      ? undefined
-      : {
-          open: narrationOpen,
-          onOpen: setNarrationOpen,
-          generating: dubbingBusy !== undefined,
-          blocked: dubbingBusy,
-          onInsert: narrate,
-        }
+  // 导出提醒：当前语言里还是旧配音（过期）的、要配还没配的句数
+  const dubGaps = { stale: 0, missing: 0 }
+  for (const line of voice?.lines.values() ?? []) {
+    if (line.status === 'stale') dubGaps.stale += 1
+    if (line.status === 'missing') dubGaps.missing += 1
+  }
+  // 导出提醒里的「去重配」：切到「字幕」页签的「字幕」视图
+  const [showCaptions, setShowCaptions] = useState(0)
 
   // 元素、模板片段的文字：「画面文字」和「属性」共用
   const itemTexts = {
@@ -1313,9 +1348,6 @@ function EditorBody({
       ? { forceMount: true as const, hidden: sideTab !== tab || layout.sideCollapsed }
       : {}
 
-  // 右栏收起时页签内容隐藏，与工作台折叠一致视为不可见，同步暂停页签内的试听与预览播放
-  const sideShown = !collapsed && !layout.sideCollapsed
-
   return (
     <div
       className={cn(
@@ -1339,10 +1371,15 @@ function EditorBody({
             blocked={exportBlocked}
             onCancel={() => void exporting.cancel()}
             onStart={() => void exporting.start(locale.code, exportTier.resolution)}
+            onFixDubs={() => {
+              openSideTab('captions')
+              setShowCaptions((count) => count + 1)
+            }}
             target={{
               locale: locale.code,
               untranslated: pending === undefined ? 0 : pending.entries.length + pending.tooLong,
               resolution: exportTier.resolution,
+              dubs: dubGaps,
             }}
             view={exporting.view}
           />
@@ -1437,7 +1474,7 @@ function EditorBody({
             onCollapsedChange={setSideCollapsed}
             used={usedTabs(film.clips, catalog)}
           />
-          <div className="wf-side-scroll">
+          <div className="wf-side-scroll" ref={setSideScroll}>
             <TabsContent className="wf-side-body is-shots" value="shots" {...catalogPanel('shots')}>
               <MaterialArea
                 closedGroups={closedGroups}
@@ -1537,7 +1574,7 @@ function EditorBody({
             ))}
             <TabsContent className="wf-side-body is-audio" value="audio" {...catalogPanel('audio')}>
               <AudioTab
-                active={sideTab === 'audio' && sideShown}
+                active={sideTab === 'audio' && sideVisible}
                 clips={clips}
                 conversationId={conversationId}
                 onAdd={(audio) =>
@@ -1565,9 +1602,13 @@ function EditorBody({
               {...catalogPanel('captions')}
             >
               <CaptionsTab
-                active={sideTab === 'captions' && sideShown}
-                onNotice={notice}
                 addBlocked={captionBlocked}
+                audition={sideAudition}
+                dubs={shownDubs}
+                onPickVoice={openVoicePicker}
+                onSelect={(caption) => selectOnly(caption.id)}
+                picking={shownPick?.pick ?? null}
+                showCaptions={showCaptions}
                 captions={captions}
                 texts={{
                   ...itemTexts,
@@ -1581,7 +1622,6 @@ function EditorBody({
                 locale={locale}
                 locales={localeControls}
                 focus={captionsFocus(selectedClips, new Set(hostsWithText.map((host) => host.id)))}
-                narration={narration}
                 library={{ voices: libraryVoices.data, problem: voicesProblem }}
                 onAdd={addCaption}
                 onPick={(caption) => {
@@ -1601,8 +1641,7 @@ function EditorBody({
                 recognizing={recognition.recognizing}
                 scripts={captionScripts}
                 selected={selected}
-                // 原文的人声设置还没有界面：页签只在译文语言下显示人声卡和单句标签
-                voice={target === undefined ? undefined : voice}
+                voice={voice}
                 translate={
                   pending === undefined
                     ? undefined
@@ -1668,6 +1707,17 @@ function EditorBody({
           </div>
         </TabsRoot>
       </aside>
+      {voice === undefined ? null : (
+        <VoicePicker
+          audition={sideAudition}
+          container={root}
+          library={{ voices: libraryVoices.data, problem: voicesProblem }}
+          onClose={closeVoicePicker}
+          panel={sideScroll}
+          request={shownPick}
+          voice={voice}
+        />
+      )}
       <LayoutSplitter
         className="wf-timeline-splitter"
         label="调整时间线高度"

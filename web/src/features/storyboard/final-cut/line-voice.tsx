@@ -1,124 +1,121 @@
-import { useState } from 'react'
+import type { ReactNode } from 'react'
 import type { ReferenceAudio } from '@/shared/api/reference-audios'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
-import {
-  MenuItem,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuRoot,
-  MenuSeparator,
-  MenuSurface,
-  MenuTrigger,
-} from '@/shared/ui/menu'
-import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { IconButton } from '@/shared/ui/button'
 import { BlockedReason } from '../components/blocked-reason'
-import type { LineVoice } from './composition/voices'
-import { ORIGINAL_VOICE_NAME, ownLineVoice, voiceNameOf, type VoiceControl } from './voice-choices'
+import { voiceTitleOf, type VoiceControl } from './voice-choices'
+import type { LineState } from './voice-lines'
 
-const FOLLOW = 'follow'
-const ORIGINAL = 'original'
-const UNVOICED = 'unvoiced'
 const UNVOICED_NAME = '不配音'
 
-/** 将菜单选项值转换为单句配音覆盖配置（`null` 表示跟随整体音色）。 */
-const lineVoiceOfValue = (value: string): LineVoice | null =>
-  value === FOLLOW
-    ? null
-    : value === UNVOICED
-      ? { dub: false }
-      : { voice: value === ORIGINAL ? null : value.slice('voice:'.length) }
-
-/** 将单句配音覆盖配置映射为菜单选中值。 */
-const valueOfLineVoice = (line: LineVoice | undefined): string =>
-  line === undefined
-    ? FOLLOW
-    : 'dub' in line
-      ? UNVOICED
-      : line.voice === null
-        ? ORIGINAL
-        : `voice:${line.voice}`
-
-type LineVoiceChipProps = {
-  caption: string
+/** 一句的配音按钮要用的：这句的样子、当前语言的人声设置、试听和选音浮层。 */
+export type LineVoiceProps = {
+  /** 这句在当前语言下的样子。 */
+  state: LineState
   voice: VoiceControl
   library: readonly ReferenceAudio[] | undefined
-  /** 常用音色的编号（见 `commonVoices`）。 */
-  common: readonly string[]
-  /** 菜单最后的「更多音色…」：给这一句打开选音面板。 */
-  onMore: () => void
+  /** 这句在当前语言下有没有配音片段（有才能试听）。 */
+  hasDub: boolean
+  /** 这句的配音是不是正在放。 */
+  auditioning: boolean
+  onAudition: () => void
+  /** 选音浮层正给这句选：音色按钮保持展开的样子，按意图显露的一组不收起。 */
+  picking: boolean
+  /** 给这句打开选音浮层，贴着 `anchor` 弹。 */
+  onPickVoice: (anchor: HTMLElement) => void
+}
+
+type LineToolsProps = {
+  caption: string
+  /** 配音按钮要用的；保留原声的句子（外语原声下全部、原文原声下属于视频片段的）是 undefined，没有任何配音按钮。 */
+  dub: LineVoiceProps | undefined
+  /** 排在最后、按意图显露的「删除」。 */
+  remove: ReactNode
 }
 
 /**
- * 译文语言下单句字幕右上的配音标签：保留原声时是只读的「原声」；AI 配音时跟随整体的写「跟随 · 音色名」（灰），
- * 单独设过的写「单句 · 音色名」或「单句 · 不配音」。点开是单选菜单：跟随整体音色、原声、常用音色（再加这句自己选的那个）、
- * 不配音，最后「更多音色…」；选了只记下，不合成。这句不能选音色时置灰并说明原因。
+ * 一句字幕行右上的按钮，从左到右：
+ * - 按意图显露（`.wf-reveal`）：有配音片段时「试听」，已配好时「重配」；
+ * - 常驻：合成中的小转圈；过期的琥珀色「重配」、要配还没配的琥珀色「配音」（点了只合成这一句）；
+ * - 音色：自己选过时常驻写着音色（「Klaus ⌄」「原片音色 ⌄」「不配音 ⌄」），没选过时按意图显露「音色 ⌄」，点了弹选音浮层；
+ * - 按意图显露的「删除」。
+ * 隐藏的按钮照样占位，常驻的几个排在右边、只隔着「删除」那一格。
  */
-export function LineVoiceChip({ caption, voice, library, common, onMore }: LineVoiceChipProps) {
-  const [open, setOpen] = useState(false)
-  const [hint, setHint] = useState(false)
-  if (voice.mode === 'original') return <span className="wf-line-voice">{ORIGINAL_VOICE_NAME}</span>
-  const own = ownLineVoice(voice, caption)
-  const chosen = own ?? { voice: voice.voice }
-  const name =
-    'dub' in chosen
-      ? UNVOICED_NAME
-      : chosen.voice === null
-        ? ORIGINAL_VOICE_NAME
-        : voiceNameOf(chosen.voice, library)
-  const label = `本句配音：${name}${own === undefined ? '，跟随整体音色' : ''}`
-  const blocked = voice.lines.get(caption)?.chooseBlocked
-  const chip = (
+export function LineTools({ caption, dub, remove }: LineToolsProps) {
+  if (dub === undefined || dub.state.status === 'original')
+    return (
+      <span className="wf-line-tools">
+        <span className="wf-reveal wf-line-reveal">{remove}</span>
+      </span>
+    )
+  const { state, voice, library, hasDub, auditioning, onAudition, picking, onPickVoice } = dub
+  const { own } = state
+  // 整种语言一句都还没配过时，「生成配音」在页签顶上，各句不再一一提醒
+  const remind =
+    state.status === 'stale' ||
+    (state.status === 'missing' && (voice.mode === 'original' || voice.summary.dubbed))
+  const ownName =
+    own === undefined ? undefined : 'dub' in own ? UNVOICED_NAME : voiceTitleOf(own.voice, library)
+  const voiceButton = (
     <button
-      aria-disabled={blocked === undefined ? undefined : true}
-      aria-label={label}
-      className={cn('wf-line-voice is-voiced ui-state ui-focus', own !== undefined && 'is-own')}
+      aria-label={ownName === undefined ? '本句音色：跟随默认' : `本句音色：${ownName}`}
+      className={cn(
+        'wf-chip-btn wf-line-chip ui-state ui-focus',
+        ownName === undefined ? 'wf-reveal' : 'is-tonal',
+      )}
+      data-state={picking ? 'open' : undefined}
+      onClick={(event) => onPickVoice(event.currentTarget)}
       type="button"
     >
-      <span className="wf-line-voice-name">{`${own === undefined ? '跟随' : '单句'} · ${name}`}</span>
+      <span className="wf-line-chip-name">{ownName ?? '音色'}</span>
       <Icon decorative name="final-cut-expand" size="xs" />
     </button>
   )
-  if (blocked !== undefined) return <BlockedReason reason={blocked}>{chip}</BlockedReason>
-  const picked = valueOfLineVoice(own)
-  const ownVoice = own !== undefined && 'voice' in own ? own.voice : null
-  const listed = ownVoice === null || common.includes(ownVoice) ? common : [...common, ownVoice]
   return (
-    <MenuRoot
-      onOpenChange={(next) => {
-        setOpen(next)
-        setHint(false)
-      }}
-      open={open}
-    >
-      {/* 菜单展开时抑制 Tooltip，避免与菜单重叠 */}
-      <TooltipRoot onOpenChange={setHint} open={hint && !open}>
-        <MenuTrigger asChild>
-          <TooltipTrigger asChild>{chip}</TooltipTrigger>
-        </MenuTrigger>
-        <TooltipContent className="wf-tip" side="top">
-          切换本句配音音色或不配音
-        </TooltipContent>
-      </TooltipRoot>
-      <MenuSurface align="end" className="wf-menu">
-        <MenuRadioGroup
-          onValueChange={(value) => {
-            if (value !== picked) voice.onLine(caption, lineVoiceOfValue(value))
-          }}
-          value={picked}
-        >
-          <MenuRadioItem value={FOLLOW}>跟随整体音色</MenuRadioItem>
-          <MenuRadioItem value={ORIGINAL}>{ORIGINAL_VOICE_NAME}</MenuRadioItem>
-          {listed.map((id) => (
-            <MenuRadioItem key={id} value={`voice:${id}`}>
-              {voiceNameOf(id, library)}
-            </MenuRadioItem>
-          ))}
-          <MenuRadioItem value={UNVOICED}>{UNVOICED_NAME}</MenuRadioItem>
-        </MenuRadioGroup>
-        <MenuSeparator />
-        <MenuItem onSelect={onMore}>更多音色…</MenuItem>
-      </MenuSurface>
-    </MenuRoot>
+    <span className="wf-line-tools">
+      <span className="wf-reveal wf-line-reveal">
+        {hasDub ? (
+          <IconButton
+            label={auditioning ? '暂停本句配音试听' : '试听本句配音'}
+            name={auditioning ? 'final-cut-pause' : 'final-cut-sound-on'}
+            onClick={onAudition}
+            size="xs"
+            tooltip={auditioning ? '暂停本句配音试听' : '试听本句配音'}
+          />
+        ) : null}
+        {state.status === 'ready' ? (
+          <BlockedReason reason={state.blocked}>
+            <IconButton
+              aria-disabled={state.blocked === undefined ? undefined : true}
+              label="重配本句"
+              name="final-cut-reset"
+              onClick={() => voice.dubLine(caption)}
+              size="xs"
+            />
+          </BlockedReason>
+        ) : null}
+      </span>
+      {state.status === 'running' ? (
+        <span aria-label="本句配音合成中" className="wf-line-busy" role="img">
+          <Icon className="animate-spin" decorative name="spinner" size="xs" />
+        </span>
+      ) : remind ? (
+        <BlockedReason reason={state.blocked}>
+          <button
+            aria-disabled={state.blocked === undefined ? undefined : true}
+            className="wf-chip-btn is-warning ui-state ui-focus"
+            onClick={() => voice.dubLine(caption)}
+            type="button"
+          >
+            <Icon decorative name="final-cut-reset" size="xs" />
+            {state.status === 'stale' ? '重配' : '配音'}
+          </button>
+        </BlockedReason>
+      ) : null}
+      {/* 音色按钮一直排在这一格（自己选过时常驻、没选过时按意图显露）：选完音色它还是同一个元素，浮层收起时焦点回得去 */}
+      {voiceButton}
+      <span className="wf-reveal wf-line-reveal">{remove}</span>
+    </span>
   )
 }

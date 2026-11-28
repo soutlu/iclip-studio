@@ -1,4 +1,4 @@
-import type { PointerEvent, ReactNode } from 'react'
+import type { PointerEvent } from 'react'
 import {
   AudioCover,
   AuditionBuffering,
@@ -136,33 +136,5 @@ function PlayingWave({
         onSeek: (next) => audition.seek(next, totalMs),
       }}
     />
-  )
-}
-
-type AudioCardTextProps = {
-  title: string
-  /** 名字旁边的小字（语种、时长）。 */
-  meta?: string | undefined
-  /** 名字下面那行属性；空串、不给时不显示。 */
-  traits?: string | undefined
-  /** 排在最后的东西，如正在试听的进度线。 */
-  children?: ReactNode
-}
-
-/** 选音面板的音色卡、人声卡的当前音色行共用的文字块：名字和小字一行，下面一行属性。 */
-export function AudioCardText({ title, meta, traits, children }: AudioCardTextProps) {
-  return (
-    <span className="wf-audio-text">
-      <span className="wf-audio-name">
-        <span className="wf-audio-title" title={title}>
-          {title}
-        </span>
-        {meta === undefined ? null : <span className="wf-audio-meta">{meta}</span>}
-      </span>
-      {traits === undefined || traits === '' ? null : (
-        <span className="wf-audio-traits">{traits}</span>
-      )}
-      {children}
-    </span>
   )
 }

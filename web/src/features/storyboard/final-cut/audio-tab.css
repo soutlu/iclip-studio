@@ -99,52 +99,6 @@
   --waveform-played: var(--wf-audition-progress);
 }
 
-/* 音频卡片里的文字块（选音卡片、人声卡的当前音色行共用）：名字一行，下面属性 */
-.wf-audio-text {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  pointer-events: none;
-}
-
-.wf-audio-name {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.wf-audio-title {
-  overflow: hidden;
-  min-width: 0;
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  font-weight: 600;
-  line-height: var(--text-label--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wf-audio-meta {
-  flex: none;
-  color: var(--color-on-surface-faint);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  font-variant-numeric: tabular-nums;
-}
-
-.wf-audio-traits {
-  overflow: hidden;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .wf-audio-import > svg {
   color: var(--color-on-surface-variant);
 }

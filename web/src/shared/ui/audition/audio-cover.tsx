@@ -115,13 +115,18 @@ type AudioCoverProps = {
   state: 'idle' | 'paused' | 'playing'
   /** 不给时封面只是个样子，本身不能单独点；外层可点的元素加 `audition-cover-host` 类，悬停、聚焦时封面跟着变。 */
   onToggle?: (() => void) | undefined
-  /** `md` 44px（资料库），`sm` 40px（侧栏列表），`xs` 20px（胶囊里的小头像）。 */
-  size?: 'md' | 'sm' | 'xs'
+  /** `md` 44px（资料库），`sm` 40px（侧栏列表），`xs` 20px（胶囊里的小头像），`2xs` 14px（时间线片段顶行里）。 */
+  size?: 'md' | 'sm' | 'xs' | '2xs'
   /** 盖在封面上的东西，如等数据的提示。 */
   children?: ReactNode
 }
 
-const SIZE_CLASS = { md: 'is-md size-11', sm: 'is-sm size-10', xs: 'is-xs size-5' } as const
+const SIZE_CLASS = {
+  md: 'is-md size-11',
+  sm: 'is-sm size-10',
+  xs: 'is-xs size-5',
+  '2xs': 'is-xs size-3.5',
+} as const
 
 /**
  * 音频条目的插画封面，本身可作试听键：悬停、聚焦或暂停着时盖一层暗色、中间一个播放标，

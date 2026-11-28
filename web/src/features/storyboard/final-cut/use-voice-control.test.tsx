@@ -109,14 +109,13 @@ const renderSourceVoice = (initial: Project = { clips: CLIPS, modes: {} }) => {
         ...latestRef.current.modes,
         [voiceKeyOf(locale)]: update(voiceSettingOf(latestRef.current.modes, locale)),
       })
-      const { voice } = useVoiceControl({
+      const voice = useVoiceControl({
         conversationId: CONVERSATION,
         film: { clips: project.clips, voiceModes: project.modes, locale: SOURCE_SHOWN },
         sourceMs: () => undefined,
         takeOf: (src) => (src === SRC ? TAKE : undefined),
         takesPending: false,
         sourceName: () => undefined,
-        playhead: 0,
         notice: () => {},
         beforeEdit: () => {},
         session: {
@@ -151,7 +150,6 @@ const renderSourceVoice = (initial: Project = { clips: CLIPS, modes: {} }) => {
             })
             return dubs.length
           },
-          addCaptions: () => Promise.resolve(undefined),
         },
       })
       return { voice, project }

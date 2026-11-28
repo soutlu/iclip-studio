@@ -141,7 +141,8 @@
   box-shadow: var(--shadow-panel-card), var(--shadow-specular);
 }
 
-/* 胶囊形次要操作按钮：is-active / aria-pressed 为激活开关态，is-warning 为警示态，is-soft 为推荐主动作（深色实底） */
+/* 胶囊形次要操作按钮：is-active / aria-pressed 为激活开关态，is-warning 为警示态，is-tonal 为浅灰实底的常用动作，
+   is-soft 为推荐主动作（深色实底） */
 .wf-chip-btn {
   display: inline-flex;
   height: 26px;
@@ -170,6 +171,11 @@
 .wf-chip-btn.is-warning:not([aria-disabled='true']) {
   background: color-mix(in srgb, var(--color-warning) 16%, transparent);
   color: var(--color-warning);
+}
+
+.wf-chip-btn.is-tonal {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
 }
 
 .wf-chip-btn[aria-disabled='true']:not([aria-pressed='true']) {

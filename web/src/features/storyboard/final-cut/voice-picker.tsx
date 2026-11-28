@@ -1,385 +1,471 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { errorMessageOf } from '@/shared/api/client'
-import {
-  AUDIO_FILTER_VALUES,
-  type AudioTraitFilter,
-  type ReferenceAudio,
-} from '@/shared/api/reference-audios'
-import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
+import { AUDIO_FILTER_VALUES, type ReferenceAudio } from '@/shared/api/reference-audios'
 import {
   AUDIO_FILTER_LABELS,
   AudioCover,
   AuditionBuffering,
-  AuditionProgressLine,
   audioDurationText,
-  voiceTraitsText,
   type Audition,
 } from '@/shared/ui/audition'
-import { IconButton } from '@/shared/ui/button'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Input } from '@/shared/ui/field'
 import { InlineAlert } from '@/shared/ui/inline-alert'
 import { NextPageFooter } from '@/shared/ui/list-state'
-import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { BlockedReason } from '../components/blocked-reason'
-import { AudioCardText } from './audio-card'
+import { PopupAnchor, PopupRoot, PopupSurface } from '@/shared/ui/popup'
+import { RowClock } from './audio-card'
+import type { LineVoice } from './composition/voices'
 import { EmptyNote } from './empty-note'
 import { useVoiceOptions } from './final-cut.api'
-import { SOURCE_LOCALE, type Language } from './locales'
-import { TraitFilters } from './trait-filters'
+import { MediaRow, RowProgress, UsedBadge } from './media-row'
 import {
-  languageChoice,
-  ownLineVoice,
-  PICKER_TRAITS,
+  ORIGINAL_VOICE_NAME,
   voiceLocaleTag,
   voicePickerFilter,
+  voiceTitleOf,
+  type PickerGender,
   type PickerLocale,
   type VoiceControl,
+  type VoiceLibrary,
 } from './voice-choices'
 
 const SEARCH_DEBOUNCE_MS = 300
 
+/** 浮层左右离右栏可见区域两边的距离：和页签内容左右留的边（`--wf-tab-inset`）一样，浮层与内容边线对齐。 */
+const PANEL_INSET = 14
+
+const UNVOICED_NAME = '不配音'
+
 const PICKER_LOCALES: readonly PickerLocale[] = [
+  'all',
   ...AUDIO_FILTER_VALUES.locale.filter((each) => each !== 'none'),
   'none',
-  'all',
 ]
 
-const localeName = (locale: PickerLocale) =>
-  locale === 'all' ? '全部' : AUDIO_FILTER_LABELS.locale.values[locale]
+/** 语种分段列哪几项：「全部」加上资料库音色里实际有的语种（还没读到资料库时全列）。 */
+const pickerLocalesOf = (library: readonly ReferenceAudio[] | undefined) => {
+  if (library === undefined) return PICKER_LOCALES
+  const present = new Set<PickerLocale>(library.map((audio) => audio.locale ?? 'none'))
+  return PICKER_LOCALES.filter((each) => each === 'all' || present.has(each))
+}
 
-const localeTag = (locale: PickerLocale) =>
+const localeTab = (locale: PickerLocale) =>
   locale === 'all' ? '全部' : voiceLocaleTag(locale === 'none' ? null : locale)
 
-/** 顶行「原声」按钮：选它是用原声（整体音色或这一句）；`pressed` 是现在用的就是原声。 */
-type OriginalChoice = { pressed: boolean; blocked: string | undefined; onUse: () => void }
+const PICKER_GENDERS: readonly { value: PickerGender; label: string }[] = [
+  { value: 'all', label: '不限' },
+  { value: 'female', label: AUDIO_FILTER_LABELS.gender.values.female },
+  { value: 'male', label: AUDIO_FILTER_LABELS.gender.values.male },
+]
+
+/** 音色行名字下面那一行：「EN · 女声 · 社媒种草」，没填的那项不写。 */
+const voiceDetail = (audio: ReferenceAudio) =>
+  [
+    voiceLocaleTag(audio.locale),
+    audio.gender === null ? null : AUDIO_FILTER_LABELS.gender.values[audio.gender],
+    ...audio.scenarios.map((each) => AUDIO_FILTER_LABELS.scenario.values[each]),
+  ]
+    .filter((each) => each !== null)
+    .join(' · ')
+
+/** 选音浮层给谁选：这种语言的默认音色，或某一句（`caption` 是字幕编号）。 */
+export type VoicePickTarget = { target: 'language' } | { target: 'line'; caption: string }
+
+/** 唤起一次选音浮层：给谁选、贴着哪个元素弹（浮层弹在它下面，左右仍与右栏内容边线对齐）。 */
+export type VoicePickRequest = { pick: VoicePickTarget; anchor: HTMLElement }
 
 type VoicePickerProps = {
-  /** 「选择音色」「选择本句音色」等。 */
-  title: string
-  /** 语种下拉一开始选哪项。 */
-  defaultLocale: PickerLocale
-  /** 正在用着的音色（打 ✓、不给「选用」）；用的是原声或还没选时传 null。 */
-  picked: string | null
-  /** 不给时顶行没有「原声」（旁白必须用资料库音色）。 */
-  original: OriginalChoice | undefined
-  /** 选用 `id` 不行时的原因（照 `BlockedReason` 说明）。 */
-  blockedFor: (id: string) => string | undefined
-  onUse: (audio: ReferenceAudio) => void
-  onBack: () => void
+  /** 这次唤起；null 时收起。 */
+  request: VoicePickRequest | null
+  /** 右栏页签内容的可见区域（滚动容器）：浮层左右与它的内容边线对齐。 */
+  panel: HTMLElement | null
+  /** 浮层挂在哪个元素下（编辑器根节点：样式、快捷键都在它里面）。 */
+  container: HTMLElement | null
+  voice: VoiceControl
+  library: VoiceLibrary
+  /** 右栏共用的试听：点封面试听样音，收起浮层时由调用方停下。 */
   audition: Audition
-  /** 点卡片试听或暂停。 */
-  onToggle: (audio: ReferenceAudio) => void
+  onClose: () => void
 }
 
 /**
- * 选音面板：「字幕」页签里的一层（不是弹窗），顶行返回、语种下拉和「原声」，下面搜索、按场景 / 性别 / 年龄筛（每项选一个），
- * 列表从服务端按条件查、往下滚接着读。点卡片试听，右边「选用」（悬停、聚焦或正在试听时露出）；用着的那张打 ✓。
+ * 同页选音浮层：在右栏内容区里贴着唤起它的按钮弹出，左右与内容边线对齐，盖住下面的列表、不动它的滚动位置；Esc、
+ * 点外面、选定后收起。给单句选时最上面是「跟随默认（音色名）| 原片音色 | 不配音」；下面搜索框、语种和性别两组平铺
+ * 分段，再下面音色列表（媒体行：封面试听、名字和「语种 · 性别 · 场景」、右边时长，悬停换成「选用」，生效的常驻
+ * 「✓ 当前」）。给默认音色选时列表第一项是「原片音色」。选择都只记下（见 `VoiceControl`），不合成。
  */
-function VoicePicker({
-  title,
-  defaultLocale,
-  picked,
-  original,
-  blockedFor,
-  onUse,
-  onBack,
+export function VoicePicker({
+  request,
+  panel,
+  container,
+  voice,
+  library,
   audition,
-  onToggle,
+  onClose,
 }: VoicePickerProps) {
-  const [locale, setLocale] = useState<PickerLocale>(defaultLocale)
+  const anchor = request?.anchor ?? null
+  // 浮层的锚：竖直方向是唤起它的按钮，左右是右栏可见区域去掉两边留白（浮层宽度跟着锚的宽度）
+  const virtualRef = useMemo(
+    () => ({
+      current: {
+        getBoundingClientRect: () => {
+          if (anchor === null || panel === null) return DOMRect.fromRect()
+          const area = panel.getBoundingClientRect()
+          const at = anchor.getBoundingClientRect()
+          return DOMRect.fromRect({
+            x: area.left + PANEL_INSET,
+            y: at.top,
+            width: Math.max(0, area.width - PANEL_INSET * 2),
+            height: at.height,
+          })
+        },
+      },
+    }),
+    [anchor, panel],
+  )
+  const pick = request?.pick ?? null
+  return (
+    <PopupRoot
+      onOpenChange={(open) => {
+        if (!open) onClose()
+      }}
+      open={request !== null}
+    >
+      <PopupAnchor virtualRef={virtualRef} />
+      {pick === null ? null : (
+        <PopupSurface
+          align="start"
+          aria-label={pick.target === 'line' ? '选择本句音色' : '选择默认音色'}
+          className="wf-menu wf-voice-pop"
+          collisionPadding={8}
+          container={container}
+          onCloseAutoFocus={(event) => {
+            // 锚是量出来的位置，Radix 不知道把焦点还给谁：还给唤起它的按钮
+            event.preventDefault()
+            if (anchor?.isConnected === true) anchor.focus()
+          }}
+          onOpenAutoFocus={(event) => {
+            // 打开后先落在搜索框上
+            const search =
+              event.currentTarget instanceof HTMLElement
+                ? event.currentTarget.querySelector<HTMLElement>('input[type="search"]')
+                : null
+            if (search === null) return
+            event.preventDefault()
+            search.focus()
+          }}
+          side="bottom"
+          sideOffset={6}
+        >
+          <VoicePickerBody
+            audition={audition}
+            key={pick.target === 'line' ? `line:${pick.caption}` : 'language'}
+            library={library}
+            onDone={onClose}
+            pick={pick}
+            voice={voice}
+          />
+        </PopupSurface>
+      )}
+    </PopupRoot>
+  )
+}
+
+/** 单句最上面那排分段的取值：跟随默认、原片音色、不配音；自己选了资料库音色时三个都不按下。 */
+const lineMode = (own: LineVoice | undefined) =>
+  own === undefined
+    ? 'follow'
+    : 'dub' in own
+      ? 'unvoiced'
+      : own.voice === null
+        ? 'original'
+        : undefined
+
+function VoicePickerBody({
+  pick,
+  voice,
+  library,
+  audition,
+  onDone,
+}: {
+  pick: VoicePickTarget
+  voice: VoiceControl
+  library: VoiceLibrary
+  audition: Audition
+  onDone: () => void
+}) {
+  const [locale, setLocale] = useState<PickerLocale>('all')
+  const [gender, setGender] = useState<PickerGender>('all')
   const [query, setQuery] = useState('')
   const [keyword, setKeyword] = useState('')
-  const [traits, setTraits] = useState<AudioTraitFilter>({})
   useEffect(() => {
     const timer = setTimeout(() => setKeyword(query), SEARCH_DEBOUNCE_MS)
     return () => clearTimeout(timer)
   }, [query])
-  const options = useVoiceOptions(voicePickerFilter({ locale, q: keyword, traits }))
+  const options = useVoiceOptions(voicePickerFilter({ locale, gender, q: keyword }))
   const voices = options.data?.pages.flatMap((page) => page.items) ?? []
-  const total = options.data?.pages[0]?.total
   const readFailed = options.isError && !options.isFetchNextPageError
   const listRef = useRef<HTMLUListElement>(null)
   const scroller = useCallback(() => listRef.current, [])
-  // 点「更换」的按钮跟着首页藏起来了：焦点放到「返回」上，别掉出编辑器（编辑器的快捷键只在焦点在里面时生效）
-  const backRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => backRef.current?.focus(), [])
+
+  const own = pick.target === 'line' ? voice.lines.get(pick.caption)?.own : undefined
+  // 现在生效、要打「✓ 当前」的：默认音色在配音时是它（null 是原片音色）；单句是它自己选的资料库音色
+  const picked =
+    pick.target === 'language'
+      ? voice.mode === 'dub'
+        ? voice.voice
+        : undefined
+      : own !== undefined && 'voice' in own && own.voice !== null
+        ? own.voice
+        : undefined
+  const choose = (id: string | null) => {
+    if (id !== picked) {
+      if (pick.target === 'language') voice.onVoice(id)
+      else voice.onLine(pick.caption, { voice: id })
+    }
+    onDone()
+  }
+  // 原片音色只在给默认音色选、没搜也没筛时排在最前
+  const showOriginal =
+    pick.target === 'language' && keyword.trim() === '' && locale === 'all' && gender === 'all'
+  const locales = pickerLocalesOf(library.voices)
 
   return (
-    <section aria-label={title} className="wf-voice-picker">
-      <div className="wf-voice-picker-head">
-        <IconButton
-          className="wf-voice-back"
-          label="返回"
-          name="final-cut-disclosure"
-          onClick={onBack}
-          ref={backRef}
-          size="xs"
+    <div className="wf-voice-pop-body">
+      {pick.target === 'line' ? (
+        <LineModes
+          defaultName={voice.mode === 'dub' ? voiceTitleOf(voice.voice, library.voices) : undefined}
+          mode={lineMode(own)}
+          onPick={(line) => {
+            voice.onLine(pick.caption, line)
+            onDone()
+          }}
         />
-        <h3 className="wf-voice-picker-title">{title}</h3>
-        <MenuRoot>
-          <MenuTrigger asChild>
-            <button
-              aria-label={`语种：${localeName(locale)}`}
-              className="wf-voice-locale ui-state ui-focus"
-              type="button"
-            >
-              {localeTag(locale)}
-              <Icon decorative name="final-cut-expand" size="xs" />
-            </button>
-          </MenuTrigger>
-          <MenuSurface align="end" className="wf-menu">
-            <MenuRadioGroup
-              onValueChange={(value) => {
-                const next = PICKER_LOCALES.find((each) => each === value)
-                if (next !== undefined) setLocale(next)
-              }}
-              value={locale}
-            >
-              {PICKER_LOCALES.map((each) => (
-                <MenuRadioItem key={each} value={each}>
-                  {localeName(each)}
-                </MenuRadioItem>
-              ))}
-            </MenuRadioGroup>
-          </MenuSurface>
-        </MenuRoot>
-        {original === undefined ? null : (
-          <BlockedReason reason={original.blocked}>
-            <button
-              aria-disabled={original.blocked === undefined ? undefined : true}
-              aria-pressed={original.pressed}
-              className="wf-chip-btn ui-state ui-focus"
-              onClick={() => {
-                if (original.blocked === undefined) original.onUse()
-              }}
-              type="button"
-            >
-              原声
-            </button>
-          </BlockedReason>
-        )}
-      </div>
+      ) : null}
       <Input
         aria-label="搜索音色"
         leadingIcon="final-cut-search"
         onChange={(event) => setQuery(event.currentTarget.value)}
-        placeholder="搜索音色名、风格…"
+        placeholder="搜索音色名或描述"
         type="search"
         value={query}
-        wrapperClassName="wf-field wf-search wf-voice-search"
+        wrapperClassName="wf-field wf-search"
       />
-      <TraitFilters keys={PICKER_TRAITS} onChange={setTraits} total={total} value={traits} />
-      {readFailed ? (
-        <InlineAlert
-          action={{ label: '重试', onClick: () => void options.refetch() }}
-          className="wf-voice-picker-alert"
-          message={errorMessageOf(options.error, '读取音色失败')}
-        />
-      ) : options.isPending ? (
-        <EmptyNote icon="final-cut-voice">正在读取音色…</EmptyNote>
-      ) : voices.length === 0 ? (
-        <EmptyNote icon="final-cut-voice">
-          暂无符合条件的音色，请更换语种、关键词或筛选条件
-        </EmptyNote>
-      ) : (
-        <ul aria-label="音色" className="wf-tab-list wf-voice-options" ref={listRef}>
-          {voices.map((voice) => (
-            <VoiceOption
-              audition={audition}
-              blocked={blockedFor(voice.id)}
-              key={voice.id}
-              onToggle={() => onToggle(voice)}
-              onUse={() => onUse(voice)}
-              picked={voice.id === picked}
-              voice={voice}
-            />
+      <div className="wf-voice-pop-filters">
+        <ChipGroup
+          aria-label="语种"
+          className="wf-seg wf-voice-pop-locales"
+          onValueChange={(value) => {
+            const next = locales.find((each) => each === value)
+            if (next !== undefined) setLocale(next)
+          }}
+          type="single"
+          value={locale}
+          variant="segmented"
+        >
+          {locales.map((each) => (
+            <FilterChip className="wf-seg-item" key={each} value={each} variant="segmented">
+              {localeTab(each)}
+            </FilterChip>
           ))}
-          {options.hasNextPage ? (
-            <li className="wf-audio-more">
-              {options.isFetchNextPageError && !options.isFetchingNextPage ? (
-                <InlineAlert
-                  action={{ label: '重试', onClick: () => void options.fetchNextPage() }}
-                  message={errorMessageOf(options.error, '读取音色失败')}
-                />
-              ) : (
-                <NextPageFooter getScrollElement={scroller} query={options} />
-              )}
-            </li>
-          ) : null}
-        </ul>
+        </ChipGroup>
+        <ChipGroup
+          aria-label="性别"
+          className="wf-seg"
+          onValueChange={(value) => {
+            const next = PICKER_GENDERS.find((each) => each.value === value)
+            if (next !== undefined) setGender(next.value)
+          }}
+          type="single"
+          value={gender}
+          variant="segmented"
+        >
+          {PICKER_GENDERS.map((each) => (
+            <FilterChip
+              className="wf-seg-item"
+              key={each.value}
+              value={each.value}
+              variant="segmented"
+            >
+              {each.label}
+            </FilterChip>
+          ))}
+        </ChipGroup>
+      </div>
+      {library.problem === undefined ? null : (
+        <InlineAlert
+          action={{ label: '重试', onClick: library.problem.onRetry }}
+          className="wf-voice-pop-alert"
+          message={library.problem.message}
+        />
       )}
-    </section>
+      <ul aria-label="音色" className="wf-voice-pop-list" ref={listRef}>
+        {showOriginal ? (
+          <MediaRow
+            badge={picked === null ? <UsedBadge>当前</UsedBadge> : undefined}
+            cover={
+              <AudioCover
+                art="original"
+                id="original"
+                size="sm"
+                state="idle"
+                title={ORIGINAL_VOICE_NAME}
+              />
+            }
+            current={picked === null}
+            detail={<span className="wf-voice-detail">保留原片同期人声</span>}
+            hit={
+              <button
+                aria-label={picked === null ? `${ORIGINAL_VOICE_NAME}，当前` : ORIGINAL_VOICE_NAME}
+                className="wf-row-hit"
+                onClick={() => choose(null)}
+                type="button"
+              />
+            }
+            title={ORIGINAL_VOICE_NAME}
+          />
+        ) : null}
+        {voices.map((audio) => (
+          <VoiceRow
+            audio={audio}
+            audition={audition}
+            key={audio.id}
+            onUse={() => choose(audio.id)}
+            picked={audio.id === picked}
+          />
+        ))}
+        {readFailed ? (
+          <li className="wf-voice-pop-note">
+            <InlineAlert
+              action={{ label: '重试', onClick: () => void options.refetch() }}
+              message={errorMessageOf(options.error, '读取音色失败')}
+            />
+          </li>
+        ) : options.isPending ? (
+          <li className="wf-voice-pop-note">
+            <EmptyNote icon="final-cut-voice">正在读取音色…</EmptyNote>
+          </li>
+        ) : voices.length === 0 ? (
+          <li className="wf-voice-pop-note">
+            <EmptyNote icon="final-cut-voice">
+              暂无符合条件的音色，请更换语种、性别或关键词
+            </EmptyNote>
+          </li>
+        ) : options.hasNextPage ? (
+          <li className="wf-voice-pop-note">
+            {options.isFetchNextPageError && !options.isFetchingNextPage ? (
+              <InlineAlert
+                action={{ label: '重试', onClick: () => void options.fetchNextPage() }}
+                message={errorMessageOf(options.error, '读取音色失败')}
+              />
+            ) : (
+              <NextPageFooter getScrollElement={scroller} query={options} />
+            )}
+          </li>
+        ) : null}
+      </ul>
+    </div>
   )
 }
 
-/** 选音面板给谁选：这种语言的整体音色、某一句（`caption`）或原文的旁白。 */
-export type VoicePick =
-  { target: 'language' } | { target: 'line'; caption: string } | { target: 'narration' }
-
-type TargetVoicePickerProps = {
-  pick: VoicePick
-  /** 当前展示语言：整体音色和单句的语种下拉默认它。 */
-  locale: Language
-  /** 译文语言下的人声配置；给整体音色、单句选时要有。 */
-  voice: VoiceControl | undefined
-  /** 旁白现在要用的音色。 */
-  narrationVoice: string | null
-  onNarrationVoice: (id: string) => void
-  /** 选用或返回：回到「字幕」页签首页。 */
-  onDone: () => void
-  audition: Audition
-  onToggle: (audio: ReferenceAudio) => void
+/** 单句最上面一排：跟随默认音色（配音时写上它的名字）、原片音色、不配音；点了只记下这句的选择并收起。 */
+function LineModes({
+  defaultName,
+  mode,
+  onPick,
+}: {
+  defaultName: string | undefined
+  mode: ReturnType<typeof lineMode>
+  onPick: (line: LineVoice | null) => void
+}) {
+  const items = [
+    {
+      value: 'follow',
+      label: defaultName === undefined ? '跟随默认' : `跟随默认（${defaultName}）`,
+      line: null,
+    },
+    { value: 'original', label: ORIGINAL_VOICE_NAME, line: { voice: null } },
+    { value: 'unvoiced', label: UNVOICED_NAME, line: { dub: false } },
+  ] as const
+  return (
+    <div aria-label="本句音色" className="wf-seg wf-voice-pop-modes" role="group">
+      {items.map((item) => (
+        <button
+          aria-pressed={mode === item.value}
+          className="wf-seg-item ui-state ui-focus"
+          key={item.value}
+          onClick={() => onPick(item.line)}
+          type="button"
+        >
+          <span className="wf-voice-pop-mode">{item.label}</span>
+        </button>
+      ))}
+    </div>
+  )
 }
 
-/**
- * 按选给谁配好选音面板：整体音色照人声卡常用音色的规则（`languageChoice`）选；单句照单句菜单的规则只改这一句（`onLine`），
- * 「原声」是这句用原声；选用都只记下、不合成。旁白只换旁白要用的音色，没有「原声」，语种默认「全部」。选用后都回到首页。
- */
-export function TargetVoicePicker({
-  pick,
-  locale,
-  voice,
-  narrationVoice,
-  onNarrationVoice,
-  onDone,
+/** 浮层里的一个资料库音色：封面点了试听 / 暂停，行内展开进度条；点行体或「选用」选它；生效的常驻「✓ 当前」。 */
+function VoiceRow({
+  audio,
   audition,
-  onToggle,
-}: TargetVoicePickerProps) {
-  const shared = { audition, onToggle, onBack: onDone }
-  const defaultLocale: PickerLocale = locale === SOURCE_LOCALE ? 'all' : locale
-  if (pick.target === 'narration')
-    return (
-      <VoicePicker
-        {...shared}
-        blockedFor={() => undefined}
-        defaultLocale="all"
-        onUse={(audio) => {
-          onNarrationVoice(audio.id)
-          onDone()
-        }}
-        original={undefined}
-        picked={narrationVoice}
-        title="选择旁白音色"
-      />
-    )
-  if (voice === undefined) return null
-  if (pick.target === 'line') {
-    const { caption } = pick
-    const own = ownLineVoice(voice, caption)
-    const blocked = voice.lines.get(caption)?.chooseBlocked
-    const ownOriginal = own !== undefined && 'voice' in own && own.voice === null
-    return (
-      <VoicePicker
-        {...shared}
-        blockedFor={() => blocked}
-        defaultLocale={defaultLocale}
-        onUse={(audio) => {
-          voice.onLine(caption, { voice: audio.id })
-          onDone()
-        }}
-        original={{
-          pressed: ownOriginal,
-          blocked,
-          onUse: () => {
-            if (!ownOriginal) voice.onLine(caption, { voice: null })
-            onDone()
-          },
-        }}
-        picked={own !== undefined && 'voice' in own ? own.voice : null}
-        title="选择本句音色"
-      />
-    )
-  }
-  const original = languageChoice(voice, null)
-  return (
-    <VoicePicker
-      {...shared}
-      blockedFor={() => undefined}
-      defaultLocale={defaultLocale}
-      onUse={(audio) => {
-        languageChoice(voice, audio.id).pick()
-        onDone()
-      }}
-      original={{
-        pressed: original.picked,
-        blocked: undefined,
-        onUse: () => {
-          if (!original.picked) original.pick()
-          onDone()
-        },
-      }}
-      picked={voice.mode === 'dub' ? voice.voice : null}
-      title="选择音色"
-    />
-  )
-}
-
-type VoiceOptionProps = {
-  voice: ReferenceAudio
-  picked: boolean
-  blocked: string | undefined
+  picked,
+  onUse,
+}: {
+  audio: ReferenceAudio
   audition: Audition
-  onToggle: () => void
+  picked: boolean
   onUse: () => void
-}
-
-/** 选音面板里的一张音色卡：整张点了试听 / 暂停，右边「当前」或「选用」。 */
-function VoiceOption({ voice, picked, blocked, audition, onToggle, onUse }: VoiceOptionProps) {
-  const current = audition.current === voice.id
-  const playing = audition.playing === voice.id
+}) {
+  const current = audition.current === audio.id
+  const playing = audition.playing === audio.id
   return (
-    <li className={cn('wf-card wf-voice-option', picked && 'is-picked', current && 'is-current')}>
-      <button
-        aria-label={playing ? `暂停试听：${voice.title}` : `试听：${voice.title}`}
-        aria-pressed={playing}
-        className="audition-cover-host wf-voice-option-play ui-focus"
-        onClick={onToggle}
-        type="button"
-      >
+    <MediaRow
+      actions={
+        picked ? undefined : (
+          // 整行已能用 Enter 选用，「选用」不再占一个 Tab 停靠点
+          <button className="wf-voice-use ui-state" onClick={onUse} tabIndex={-1} type="button">
+            选用
+          </button>
+        )
+      }
+      badge={picked ? <UsedBadge>当前</UsedBadge> : undefined}
+      cover={
         <AudioCover
-          id={voice.id}
+          id={audio.id}
+          onToggle={() => audition.toggle(audio.id, audio.url)}
           size="sm"
           state={playing ? 'playing' : current ? 'paused' : 'idle'}
-          title={voice.title}
-          traits={voice}
+          title={audio.title}
+          traits={audio}
         >
           {current ? <AuditionBuffering audition={audition} /> : null}
         </AudioCover>
-        <AudioCardText
-          meta={`${voiceLocaleTag(voice.locale)} · ${audioDurationText(voice.durationMs)}`}
-          title={voice.title}
-          traits={voiceTraitsText(voice) ?? undefined}
-        >
-          {current ? (
-            <AuditionProgressLine
-              audition={audition}
-              className="wf-voice-option-progress"
-              durationMs={voice.durationMs}
-            />
-          ) : null}
-        </AudioCardText>
-      </button>
-      {picked ? (
-        <span className="wf-voice-option-used">
-          <Icon decorative name="final-cut-in-use" size="xs" />
-          当前
-        </span>
-      ) : (
-        <BlockedReason reason={blocked}>
-          <button
-            aria-disabled={blocked === undefined ? undefined : true}
-            aria-label={`选用：${voice.title}`}
-            className="wf-voice-option-use ui-state ui-focus"
-            onClick={() => {
-              if (blocked === undefined) onUse()
-            }}
-            type="button"
-          >
-            选用
-          </button>
-        </BlockedReason>
-      )}
-    </li>
+      }
+      current={current || picked}
+      detail={<span className="wf-voice-detail">{voiceDetail(audio)}</span>}
+      end={
+        picked ? undefined : current ? (
+          <RowClock audition={audition} durationMs={audio.durationMs} />
+        ) : (
+          <span className="wf-media-duration">{audioDurationText(audio.durationMs)}</span>
+        )
+      }
+      hit={
+        <button
+          aria-label={picked ? `${audio.title}，当前` : `选用：${audio.title}`}
+          className="wf-row-hit"
+          onClick={onUse}
+          type="button"
+        />
+      }
+      title={audio.title}
+    >
+      <RowProgress
+        audition={audition}
+        current={current}
+        durationMs={audio.durationMs}
+        label={`播放进度：${audio.title}`}
+      />
+    </MediaRow>
   )
 }

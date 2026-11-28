@@ -18,7 +18,6 @@ import {
   narrationDubs,
 } from './dubbing'
 import { languageName, phraseAround, SOURCE_LOCALE, type ShownLocale } from './locales'
-import { narrationSpot } from './caption-edit'
 import { useDubbing, type DubbingDone } from './use-dubbing'
 import type { useFilmSession } from './use-film-session'
 import type { DubAction, VoiceControl } from './voice-choices'
@@ -30,12 +29,8 @@ const NOTHING_TO_DUB_TEXT = '没有要配音的字幕'
 const NOTHING_PENDING_TEXT = '没有待重配的字幕'
 const ORIGINAL_MODE_TEXT = '当前为原声，切换到配音后再生成'
 const BUSY_TEXT = '正在生成配音，请等待生成完成'
-const NARRATION_UNREADABLE_TEXT = '旁白配音生成失败，请重试'
 
-type Session = Pick<
-  ReturnType<typeof useFilmSession>,
-  'setVoiceMode' | 'changeVoice' | 'addDubs' | 'addCaptions'
->
+type Session = Pick<ReturnType<typeof useFilmSession>, 'setVoiceMode' | 'changeVoice' | 'addDubs'>
 
 type VoiceControlInput = {
   conversationId: string
@@ -49,8 +44,6 @@ type VoiceControlInput = {
   takesPending: boolean
   /** 素材片在提示里的名字。 */
   sourceName: (src: string) => string | undefined
-  /** 「旁白配音」新加的旁白放在哪儿：现在的播放头（毫秒）。 */
-  playhead: number
   session: Session
   notice: (message: string) => void
   /** 改工程以前要做的（比如退出素材预览）。 */
@@ -65,10 +58,9 @@ const everyOwnedVoiced = (voicing: Voicing): Voicing => ({
 })
 
 /**
- * 「字幕」页签的人声设置和配音（见 `VoiceControl`），当前显示的语言的，原文也有；工程还没打开时 `voice` 是
- * undefined。合成走 `useDubbing`：按句子挑、按素材片和音色分组发起，旁白句各发一次（见 `dubbingPlanOf`），全部有了
- * 结果后按那时的 final-cut 一步建成配好的那几句的配音片段（换掉它们原来的，带着合成时的记录），人声设置不动。
- * `narrate` 是原文下「旁白配音」面板用的：合成一段文案，好了以后在那时的播放头处加一句字幕和对齐的旁白。
+ * 「字幕」页签的人声设置和配音（见 `VoiceControl`），当前显示的语言的，原文也有；工程还没打开时是 undefined。
+ * 合成走 `useDubbing`：按句子挑、按素材片和音色分组发起，旁白句各发一次（见 `dubbingPlanOf`），全部有了结果后按
+ * 那时的 final-cut 一步建成配好的那几句的配音片段（换掉它们原来的，带着合成时的记录），人声设置不动。
  */
 export function useVoiceControl({
   conversationId,
@@ -77,50 +69,10 @@ export function useVoiceControl({
   takeOf,
   takesPending,
   sourceName,
-  playhead,
   session,
   notice,
   beforeEdit,
 }: VoiceControlInput) {
-  // 「旁白配音」面板插入的旁白：合成好后在那时的播放头处（放不下往后找，见 `narrationSpot`）加一句字幕和对齐的旁白
-  // 片段，一步撤销
-  const insertNarrations = async ({ narrations }: DubbingDone) => {
-    for (const { line, outcome } of narrations) {
-      if (outcome.kind === 'failed') {
-        notice(`旁白配音生成失败：${outcome.message}`)
-        continue
-      }
-      const { outputUrl, durationMs, dubbedLines } = outcome.job
-      if (outputUrl === null || durationMs === null) {
-        notice(NARRATION_UNREADABLE_TEXT)
-        continue
-      }
-      const [id] =
-        (await session.addCaptions(
-          (current) => [
-            {
-              ...narrationSpot(
-                current.filter((clip) => clip.kind === 'caption'),
-                playhead,
-                durationMs,
-              ),
-              text: line.text,
-              owner: null,
-            },
-          ],
-          {
-            src: outputUrl,
-            label: `旁白 · ${line.text}`,
-            text: line.text,
-            voice: line.voice,
-            speed: dubbedLines?.[0]?.speed ?? 1,
-            trimmed: dubbedLines?.[0]?.trimmed ?? false,
-          },
-        )) ?? []
-      if (id !== undefined) notice('已加入旁白配音与字幕')
-    }
-  }
-
   const writeDubs = ({ locale, results, narrations }: DubbingDone) => {
     const spoken = narrations.flatMap(({ line, outcome }) =>
       line.caption === null || outcome.kind !== 'ready' || outcome.job.outputUrl === null
@@ -182,20 +134,10 @@ export function useVoiceControl({
         notice(`旁白的配音生成失败：${outcome.message}`)
   }
 
-  const dubbing = useDubbing(conversationId, (done) => {
-    writeDubs(done)
-    void insertNarrations({
-      ...done,
-      narrations: done.narrations.filter(({ line }) => line.caption === null),
-    })
-  })
+  const dubbing = useDubbing(conversationId, writeDubs)
   const busy = dubbing.running === null ? undefined : BUSY_TEXT
 
-  /** 原文下「旁白配音」：用资料库音色 `voice` 合成 `text`，好了以后插进时间线（见 `insertNarrations`）。 */
-  const narrate = (text: string, voice: string) =>
-    void dubbing.start(SOURCE_LOCALE, { takes: [], narrations: [{ caption: null, text, voice }] })
-
-  if (film === null) return { voice: undefined, narrate, busy }
+  if (film === null) return undefined
   const { clips, voiceModes, locale } = film
   const code = locale.code
   const setting = voiceSettingOf(voiceModes, code)
@@ -311,5 +253,5 @@ export function useVoiceControl({
       if ('work' in plan) void dubbing.start(code, plan.work)
     },
   }
-  return { voice, narrate, busy }
+  return voice
 }
