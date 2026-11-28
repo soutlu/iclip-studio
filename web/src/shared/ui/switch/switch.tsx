@@ -11,7 +11,10 @@ type SwitchProps = Omit<
   blockedReason?: string | undefined
 }
 
-/** 开关。`switch-root`、`switch-thumb` 是给所在页面改样子的挂点。 */
+/**
+ * 开关：34×19 的胶囊、15px 带轻投影的圆钮。关着是凹槽配白色圆钮，开着是墨色轨道配背景色圆钮
+ * （深色主题下白圆钮放在浅色轨道上看不清）。`switch-root` 是给所在页面排版的挂点。
+ */
 export function Switch({
   blockedReason,
   checked,
@@ -30,8 +33,8 @@ export function Switch({
           aria-checked={checked}
           aria-disabled={blocked ? true : undefined}
           className={cn(
-            'switch-root inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full p-0.5 ui-focus transition-colors ui-motion-s',
-            checked ? 'bg-on-surface' : 'bg-outline-variant',
+            'switch-root inline-flex h-4.75 w-8.5 shrink-0 cursor-pointer items-center rounded-full p-0.5 ui-focus transition-colors ui-motion-s',
+            checked ? 'bg-on-surface' : 'bg-surface-container-high shadow-control-well',
             'disabled:cursor-not-allowed disabled:opacity-(--state-disabled-content) aria-disabled:cursor-not-allowed',
             className,
           )}
@@ -48,8 +51,8 @@ export function Switch({
           <span
             aria-hidden
             className={cn(
-              'switch-thumb size-4 rounded-full bg-background transition-transform ui-motion-s',
-              checked && 'translate-x-4',
+              'size-3.75 rounded-full shadow-[var(--shadow-knob)] transition-transform ui-motion-s',
+              checked ? 'translate-x-3.75 bg-background' : 'bg-knob',
             )}
           />
         </button>

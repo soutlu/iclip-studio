@@ -3,10 +3,9 @@
 /* 本模块专用变量，仅限 final-cut 的各样式文件引用。声明于 :root 而非编辑器根节点，以便挂载在 body 下的浮层（菜单、「生成音乐」卡片、音频详情）共享。
    优先复用语义色角色，仅在无对应语义角色时直接引用基础色阶，且严格限定于此区块 */
 :root {
-  /* 中性控件：control-soft/ring 为中性实心控件（按下的胶囊按钮、选中的菜单项）的浅底与描边；knob 为开关圆钮 */
+  /* 中性控件：control-soft/ring 为中性实心控件（按下的胶囊按钮、选中的菜单项）的浅底与描边 */
   --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
-  --wf-knob: var(--n100);
   /* 深色实心主按钮图标的指示光色 */
   --wf-led: var(--t80);
   /* 中性实心主操作（「加入轨道」）：纵向微渐变叠加顶部高光；深色模式下反转为浅底 */
@@ -47,8 +46,7 @@
   --wf-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
   /* 时间线每一行的底色带子：浅色下比面板深一档，深色下比面板再暗一档（都是往下凹的样子） */
   --wf-lane-bed: var(--color-surface-container-low);
-  /* 开关圆钮投影；浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
-  --wf-shadow-knob: var(--shadow-knob);
+  /* 浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
   /* 低于全站最小字号一档：仅用于画布安全区标注 */
   --wf-text-clip-label: 9.5px;
 }
@@ -385,33 +383,6 @@
 
 .wf-menu [role^='menuitem'][data-state='checked'] {
   background: var(--wf-control-soft);
-}
-
-/* 开关：关闭态为凹槽配白色圆钮；开启态沿用全站样式，前景色轨道配背景色圆钮（避免深色主题下白圆钮融入浅灰轨道）；
-   挂载点见 shared/ui/switch，以双类选择器覆盖默认尺寸与底色 */
-.wf-editor .switch-root {
-  width: 34px;
-  height: 19px;
-  padding: 2px;
-  background: var(--color-surface-container-high);
-  box-shadow: var(--shadow-control-well);
-}
-
-.wf-editor .switch-root[aria-checked='true'] {
-  background: var(--color-on-surface);
-  box-shadow: none;
-}
-
-.wf-editor .switch-thumb {
-  width: 15px;
-  height: 15px;
-  background: var(--wf-knob);
-  box-shadow: var(--wf-shadow-knob);
-}
-
-.wf-editor .switch-root[aria-checked='true'] .switch-thumb {
-  translate: 15px 0;
-  background: var(--color-background);
 }
 
 /* ---- 外框：凹底三区浮起网格（左上预览舞台、右上右栏、底部全宽时间线），面板间置可拖拽分隔条 ----
