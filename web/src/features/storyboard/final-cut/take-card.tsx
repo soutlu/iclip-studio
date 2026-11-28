@@ -118,7 +118,7 @@ const dimmedOf = (spans: readonly MediaSpan[], durationMs: number): MediaSpan[] 
   return gaps
 }
 
-/** 「镜头」页签单条原作卡片：顶部为 `TakeHead`，下方为全宽镜头条，叠绘已入轨标记与选区。 */
+/** 「镜头」页签里的一条出片（不套卡片框）：顶部为 `TakeHead`，下方为圆角的连续镜头条，叠绘已用标记与选区。 */
 export function TakeCard({
   take,
   version,
@@ -288,7 +288,7 @@ export function TakeCard({
   return (
     <article
       aria-label={take.label}
-      className={cn('wf-take', previewing && 'is-previewing')}
+      className={cn('wf-take wf-reveal-host', previewing && 'is-previewing')}
       ref={cardRef}
     >
       <TakeHead
@@ -304,7 +304,6 @@ export function TakeCard({
           if (durationMs !== undefined) onInsertWhole({ startMs: 0, endMs: durationMs })
         }}
         onVersion={onVersion}
-        shotCount={durationMs === undefined ? undefined : shots.length}
         take={take}
         used={used}
         version={version}

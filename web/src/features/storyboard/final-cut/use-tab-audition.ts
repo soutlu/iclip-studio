@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useAudition } from '@/shared/ui/audition'
+import { useAudition, type AudioCoverTraits } from '@/shared/ui/audition'
 
 /** 试听条上要显示的那条：点试听时记下，列表换了筛选、翻了页也不变。 */
 export type AuditionItem = {
@@ -7,6 +7,8 @@ export type AuditionItem = {
   url: string
   title: string
   peaks: readonly number[] | null
+  /** 封面按它挑插画（同列表里那一行的封面）；不给时按音色、按编号挑。 */
+  traits?: AudioCoverTraits | undefined
   /** 条目自己记的时长；没有时传 0，读到音频后按真实时长算。 */
   durationMs: number
 }

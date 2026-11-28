@@ -66,6 +66,9 @@ describe('final-cut 编辑器 · 配音', () => {
     ],
   }
   const ORIGINAL_B = { kind: 'original', spans: [{ startMs: 900, endMs: 1_900 }] }
+  /** 时间线上还没有配音行时，配音行的位置写的引导：保留原声时、AI 配音还没生成时。 */
+  const KEEP_ORIGINAL_HINT = '当前语言保留原声；在「字幕」页签切到「配音」可生成配音'
+  const NOT_DUBBED_HINT = '当前语言还没有配音；在「字幕」页签点击「生成配音」'
   const languages = () => within(toolbar()).getByRole('group', { name: '语言' })
   const panel = () => screen.getByRole('tabpanel', { name: /^字幕/ })
   const voiceRow = () => within(panel()).getByRole('group', { name: '人声设置' })
@@ -263,11 +266,15 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(voiceButton('保留原声')).toHaveAttribute('aria-pressed', 'true')
     expect(within(voiceRow()).queryByRole('button', { name: '生成配音' })).toBeNull()
     expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'false')
+    // 时间线上还没有配音行：配音行的位置写一句去哪里配
+    expect(screen.getByText(KEEP_ORIGINAL_HINT)).toBeVisible()
     await user.click(commonVoice('原声'))
     await waitSaved(() => expect(savedModes()).toBe('{"en":{"mode":"dub","voice":null}}'))
     expect(commonVoice('原声')).toHaveAttribute('aria-checked', 'true')
     expect(sent).toEqual([])
     expect(savedDubs()).toEqual([])
+    expect(screen.getByText(NOT_DUBBED_HINT)).toBeVisible()
+    expect(screen.queryByText(KEEP_ORIGINAL_HINT)).toBeNull()
 
     await user.click(voiceButton('生成配音'))
     await waitFor(() => expect(sent).toHaveLength(2))
@@ -298,12 +305,14 @@ describe('final-cut 编辑器 · 配音', () => {
     expect(speeches).toEqual([])
     // 等配好的配音存下来再结束：卸载时没存的改动会存进同一份模拟的工作区，碰上下一条用例
     await waitSaved(() => expect(savedDubs()).toHaveLength(3))
+    // 有了配音片段，引导收起
+    await waitFor(() => expect(screen.queryByText(NOT_DUBBED_HINT)).toBeNull())
 
     await user.click(within(languages()).getByRole('button', { name: '原文' }))
     expect(within(panel()).queryByRole('group', { name: '人声设置' })).toBeNull()
   })
 
-  it('配好后每句一个配音片段：在配音行上和字幕对齐，从这句在素材片里的开始放、跟着视频片段的速度，占到下一句、不超出视频片段；截了尾的标出来；每段记着念的字、音色和倍数；一步撤销都回去', async () => {
+  it('配好后每句一个配音片段：在配音行上和字幕对齐，从这句在素材片里的开始放、跟着视频片段的速度，占到下一句、不超出视频片段；片段上写音色名，加速的写倍数、截了尾的标出来；每段记着念的字、音色和倍数；一步撤销都回去', async () => {
     const user = await open()
     serveDubbings()
     await dubWithOriginal(user)
@@ -354,8 +363,12 @@ describe('final-cut 编辑器 · 配音', () => {
     expect((await screen.findAllByText(/2.*截短/)).length).toBeGreaterThan(0)
     expect(voiceButton('重新生成')).toBeVisible()
     const row = screen.getByRole('group', { name: '配音' })
-    expect(within(row).getByRole('group', { name: /^配音 · A one，2\.0 秒，截短$/ })).toBeVisible()
-    expect(within(row).getByRole('group', { name: /^配音 · B two，1\.5 秒$/ })).toBeVisible()
+    const trimmed = within(row).getByRole('group', { name: /^配音 · A one，2\.0 秒，倍速 · 截尾$/ })
+    expect(trimmed).toBeVisible()
+    expect(within(trimmed).getByText('原声')).toBeVisible()
+    expect(within(trimmed).getByText('倍速 · 截尾')).toBeVisible()
+    const faster = within(row).getByRole('group', { name: /^配音 · B two，1\.5 秒，1\.18×$/ })
+    expect(within(faster).getByText('1.18×')).toBeVisible()
 
     // 撤销一步：配音片段都去掉，人声设置还是选音色时记下的
     await user.click(undoButton())
@@ -365,18 +378,22 @@ describe('final-cut 编辑器 · 配音', () => {
     await waitSaved(() => expect(savedModes()).toBeNull())
   })
 
-  it('改了译文的句子过期：按钮变成「重配 1 句」，只重配这一句；撤销回去又不过期', async () => {
+  it('改了译文的句子过期：按钮变成「重配 1 句」，时间线上这句的配音片段标着需重配，只重配这一句；撤销回去又不过期', async () => {
     const user = await open()
     const sent = serveDubbings()
     await dubWithOriginal(user)
+    const stale = () => screen.queryAllByRole('group', { name: /^配音 · .*，需重配$/ })
+    expect(stale()).toHaveLength(0)
     const field = within(panel()).getByRole('textbox', { name: '字幕文字 00:02.50 – 00:03.50' })
     await user.clear(field)
     await user.type(field, 'B again')
     await user.tab()
     await waitFor(() => expect(voiceButton('重配 1 句')).toBeVisible())
+    expect(stale()).toEqual([screen.getByRole('group', { name: /^配音 · B two，/ })])
 
     await user.click(undoButton())
     await waitFor(() => expect(voiceButton('重新生成')).toBeVisible())
+    expect(stale()).toHaveLength(0)
     await user.click(within(toolbar()).getByRole('button', { name: '重做' }))
     await user.click(await within(voiceRow()).findByRole('button', { name: '重配 1 句' }))
     await waitFor(() => expect(sent).toHaveLength(3))
@@ -401,6 +418,7 @@ describe('final-cut 编辑器 · 配音', () => {
     await waitSaved(() => expect(savedModes()).toBeNull())
     expect(dubClips()).toHaveLength(0)
     expect(screen.queryByRole('group', { name: '配音' })).toBeNull()
+    expect(screen.getByText(KEEP_ORIGINAL_HINT)).toBeVisible()
     expect(savedDubs()).toHaveLength(3)
     // 再点「原声」只是切回去，配音片段都还在，不再生成
     await user.click(commonVoice('原声'))

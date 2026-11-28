@@ -1,0 +1,316 @@
+/* ---- 右栏列表通用件：行底色、按意图显露的次要操作、媒体行、「✓ 已用」徽标、行内试听进度条、筛选小块 ---- */
+
+/* 列表行的底色状态：不画外框和竖条，只靠底色深浅。静止透明，悬停很浅，选中 / 正在试听稍深；只换底色，不动排版 */
+.wf-row {
+  position: relative;
+  border-radius: var(--radius-control);
+  transition: background-color var(--dur-s) var(--ease);
+}
+
+@media (hover: hover) {
+  .wf-row:hover {
+    background-color: var(--wf-fill-hover);
+  }
+}
+
+.wf-row.is-current {
+  background-color: var(--wf-fill-selected);
+}
+
+.wf-row.is-lifting {
+  opacity: 0.4;
+}
+
+/* 盖满整行的按钮：点、拖到时间线、右键、按 Enter 都落在它上面；行里别的控件叠在它上面 */
+.wf-row-hit {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-row-hit.is-inert {
+  cursor: default;
+}
+
+.wf-row.is-lifting .wf-row-hit {
+  cursor: grabbing;
+}
+
+.wf-row-hit:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: -2px;
+}
+
+/* 按意图显露的次要操作（.wf-reveal）：指针停在宿主（.wf-reveal-host）上、键盘焦点在宿主里、宿主里有菜单或浮层开着时显出来；
+   平时占着位置但透明、不接指针，显出来时同一格里平时的内容（.wf-reveal-rest）淡出。没有悬停能力的设备一直显示 */
+.wf-reveal,
+.wf-reveal-rest {
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+@media (hover: hover) {
+  .wf-reveal-host:not(:hover, :has(:focus-visible, [data-state='open'])) .wf-reveal {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .wf-reveal-host:is(:hover, :has(:focus-visible, [data-state='open'])) .wf-reveal-rest {
+    opacity: 0;
+  }
+}
+
+/* 媒体行：左封面，中间名字和下面一行（波形或属性），右边对齐的一列和常驻徽标 */
+.wf-media-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 8px;
+}
+
+.wf-media-cover,
+.wf-media-end,
+.wf-used-badge {
+  position: relative;
+  flex: none;
+}
+
+.wf-media-cover {
+  display: grid;
+}
+
+/* 文字块叠在整行按钮上面但不接指针，点名字也是点整行；里面的波形、进度条自己接 */
+.wf-media-text {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: none;
+}
+
+.wf-media-title {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右边那一列：平时的内容和显露的操作叠在同一格里，换的时候不挪位置；没有悬停能力时并排 */
+.wf-media-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (hover: hover) {
+  .wf-media-end {
+    display: grid;
+    justify-items: end;
+  }
+
+  .wf-media-end > * {
+    grid-area: 1 / 1;
+  }
+}
+
+.wf-media-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 「当前 / 总长」：已放到的时刻用试听进度色 */
+.wf-audio-clock {
+  color: var(--color-on-surface-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-audio-clock b {
+  color: var(--wf-audition-progress);
+  font-weight: 500;
+}
+
+/* 常驻的「✓ 已用」「✓ 当前」：中性浅底小胶囊 */
+.wf-used-badge {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 配乐行名字下面的对称波形：试听中的那条能点能拖；别的行点一下从那里开始试听 */
+.wf-media-wave {
+  height: 16px;
+  pointer-events: auto;
+}
+
+.wf-media-wave.is-idle {
+  display: block;
+  cursor: pointer;
+}
+
+.wf-media-wave-bars {
+  height: 16px;
+}
+
+/* 行内试听进度条：正在试听的行展开一条细线（点、拖任意位置跳过去），停了收起；高度过渡，不跳排版 */
+.wf-row-progress {
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: -4px;
+  pointer-events: auto;
+  transition:
+    grid-template-rows var(--dur-m) var(--ease),
+    margin-top var(--dur-m) var(--ease);
+}
+
+.wf-row-progress[data-open] {
+  grid-template-rows: 1fr;
+  margin-top: 0;
+}
+
+.wf-row-progress-body {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.wf-row-progress-idle {
+  display: block;
+  height: 16px;
+}
+
+.wf-row-progress-line {
+  height: 16px;
+}
+
+/* 筛选小块：没选时是素净的「名词 ⌄」，选了以后垫浅底、写选中值，右边一个 × */
+.wf-select-chip {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    color var(--dur-s) var(--ease);
+}
+
+.wf-select-chip:hover,
+.wf-select-chip:has([data-state='open']) {
+  background-color: var(--wf-fill-hover);
+  color: var(--color-on-surface);
+}
+
+.wf-select-chip.is-picked {
+  background-color: var(--wf-fill-selected);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-select-chip-main {
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 10px;
+  border-radius: inherit;
+}
+
+.wf-select-chip.is-picked .wf-select-chip-main {
+  padding-right: 4px;
+}
+
+.wf-select-chip-label {
+  overflow: hidden;
+  max-width: 120px;
+  text-overflow: ellipsis;
+}
+
+.wf-select-chip-main > svg {
+  color: var(--color-on-surface-faint);
+}
+
+.wf-select-chip-clear {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-muted);
+}
+
+.wf-select-chip-clear:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-select-chip-menu {
+  min-width: 140px;
+}
+
+.wf-select-chip-options {
+  display: grid;
+  gap: 2px;
+}
+
+.wf-select-chip-options.is-two-columns {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.wf-select-chip-option {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.wf-select-chip-option[aria-checked='true'] {
+  background-color: var(--wf-fill-selected);
+  font-weight: 600;
+}
+
+/* 页签底部贴着的条（迷你试听条、镜头的选区汇总栏）：浅灰圆角底条，占自己的一行、不盖住列表 */
+.wf-tab-dock {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin: auto 10px 10px;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--wf-radius-dock);
+  background: var(--color-surface-container);
+}
+
+.dark .wf-tab-dock {
+  background: var(--color-surface-container-lowest);
+}

@@ -6,7 +6,6 @@ import type { MaterialView } from './material-preview'
 import {
   filterTakes,
   picksSummary,
-  takeInTrack,
   withTakePicks,
   type Material,
   type MaterialGroup,
@@ -48,11 +47,11 @@ type MaterialAreaProps = {
 
 const FILTERS: readonly { value: TakeFilter; label: string }[] = [
   { value: 'all', label: '全部' },
-  { value: 'unused', label: '未入轨' },
-  { value: 'used', label: '已入轨' },
+  { value: 'unused', label: '未用' },
+  { value: 'used', label: '已用' },
 ]
 
-/** 「镜头」页签：顶部按入轨状态筛选，按镜头组展示可折叠原作卡片并支持跨原作划选区间；存在选区时底部浮现加入轨道操作条。 */
+/** 「镜头」页签：顶部按「全部 / 未用 / 已用」筛选，按镜头组列出可折叠的出片并支持跨出片划选区间；存在选区时底部浮现加入轨道汇总栏。 */
 export function MaterialArea({
   groups,
   placeholder,
@@ -76,7 +75,6 @@ export function MaterialArea({
 }: MaterialAreaProps) {
   const summary = picksSummary(picks)
   const shown = filterTakes(groups, filter, used)
-  const takeCount = groups.reduce((total, group) => total + group.takes.length, 0)
   const listed = placeholder === undefined && groups.length > 0
   return (
     <section aria-label="视频素材区" className="wf-materials">
@@ -95,9 +93,6 @@ export function MaterialArea({
               </button>
             ))}
           </div>
-          <span className="wf-materials-count">
-            {groups.length} 组 · {takeCount} 条
-          </span>
         </div>
       ) : null}
       <div className="wf-materials-list">
@@ -107,7 +102,7 @@ export function MaterialArea({
           ) : shown.length === 0 ? (
             // 仅在启用入轨状态筛选时可能出现筛选后为空的情况
             <p className="wf-materials-empty">
-              {filter === 'used' ? '暂无已入轨的出片' : '暂无未入轨的出片'}
+              {filter === 'used' ? '暂无已用的出片' : '暂无未用的出片'}
             </p>
           ) : (
             shown.map((group) => (
@@ -116,7 +111,6 @@ export function MaterialArea({
                 group={group}
                 key={group.id}
                 onToggle={() => onToggleGroup(group.id)}
-                used={used}
               >
                 {group.takes.map((take) => {
                   const version = versionOf(take)
@@ -152,11 +146,10 @@ export function MaterialArea({
       {summary.count === 0 ? null : (
         <div
           aria-label={`已选 ${summary.count} 段 · ${(summary.durationMs / 1000).toFixed(1)}s`}
-          className="wf-pick-dock"
+          className="wf-tab-dock wf-pick-dock"
           role="group"
         >
           <span aria-hidden="true" className="wf-pick-dock-info">
-            <i className="wf-pick-dock-dot" />
             已选 <b>{summary.count}</b> 段 · <b>{(summary.durationMs / 1000).toFixed(1)}s</b>
           </span>
           <button className="wf-chip-btn ui-state ui-focus" onClick={onClear} type="button">
@@ -172,22 +165,19 @@ export function MaterialArea({
   )
 }
 
-/** 单个镜头组：点击组头切换折叠/展开；折叠态下组头标注该组已入轨原作数。 */
+/** 单个镜头组：组头是加粗的组名和右边的折叠箭头，点组头切换折叠 / 展开。 */
 function MaterialGroupSection({
   group,
   closed,
-  used,
   onToggle,
   children,
 }: {
   group: MaterialGroup
   closed: boolean
-  used: ReadonlyMap<string, readonly UsedSpan[]>
   onToggle: () => void
   children: ReactNode
 }) {
   const bodyId = useId()
-  const inTrack = group.takes.filter((take) => takeInTrack(take, used)).length
   return (
     <div
       aria-label={group.label}
@@ -202,13 +192,6 @@ function MaterialGroupSection({
         type="button"
       >
         <span className="wf-material-group-title">{group.label}</span>
-        {closed && inTrack > 0 ? (
-          <span className="wf-take-in-track">
-            <i aria-hidden="true" className="wf-take-dot" />
-            已用 {inTrack}
-          </span>
-        ) : null}
-        <span className="wf-material-group-count">{group.takes.length} 条出片</span>
         <Icon decorative name="final-cut-expand" size="xs" />
       </button>
       <div className="wf-material-group-body" hidden={closed} id={bodyId}>

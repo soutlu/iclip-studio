@@ -774,7 +774,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
   const previewHtml = () => previewPlayer().getAttribute('srcdoc') ?? ''
   const playerUp = previewSettled
 
-  it('侧栏六个页签：镜头、元素、模板、配乐、字幕、属性；元素、模板各记着自己的搜索词和分类，切走再回来还在', async () => {
+  it('侧栏六个页签：镜头、元素、模板、配乐、字幕、属性；元素、模板各记着自己的搜索词和品牌，切走再回来还在', async () => {
     const user = userEvent.setup()
     await openEditor()
     expect(
@@ -789,8 +789,8 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
 
     await openTab(user, '模板')
     expect(within(side()).getByRole('searchbox', { name: '搜索模板' })).toHaveValue('')
-    const blockChips = () => within(side()).getByRole('radiogroup', { name: '模板分类' })
-    await user.click(within(blockChips()).getByRole('radio', { name: '品牌' }))
+    await user.click(within(side()).getByRole('button', { name: '品牌：品牌' }))
+    await user.click(await screen.findByRole('radio', { name: '示例品牌' }))
     expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
 
     await openTab(user, '配乐')
@@ -798,10 +798,7 @@ describe('final-cut 编辑器 · 组件、块页签', () => {
     expect(within(side()).getByRole('searchbox', { name: '搜索元素' })).toHaveValue('圆环')
     expect(cardNames()).toEqual(['测试叠加，4 秒'])
     await openTab(user, '模板')
-    expect(within(blockChips()).getByRole('radio', { name: '品牌' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    )
+    expect(within(side()).getByRole('button', { name: '品牌：示例品牌' })).toBeVisible()
     expect(cardNames()).toEqual(['示例品牌 片尾，3 秒'])
   })
 
@@ -990,20 +987,23 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
     expect(tabNames()).toEqual(NONE)
   })
 
-  it('自动切到「属性」再回来：目录页签里的搜索词和分类都还在', async () => {
+  it('自动切到「属性」再回来：目录页签里的搜索词、分类和品牌都还在', async () => {
     const user = await openTwo()
     await user.click(tab('模板'))
     await user.type(within(side()).getByRole('searchbox', { name: '搜索模板' }), '片尾')
     const chips = () => within(side()).getByRole('radiogroup', { name: '模板分类' })
-    await user.click(within(chips()).getByRole('radio', { name: '品牌' }))
+    await user.click(within(chips()).getByRole('radio', { name: '通用' }))
+    await user.click(within(side()).getByRole('button', { name: '品牌：品牌' }))
+    await user.click(await screen.findByRole('radio', { name: '示例品牌' }))
     await user.click(clip(FIRST))
     expect(within(side()).queryByRole('searchbox', { name: '搜索模板' })).toBeNull()
     await user.keyboard('{Escape}')
     expect(within(side()).getByRole('searchbox', { name: '搜索模板' })).toHaveValue('片尾')
-    expect(within(chips()).getByRole('radio', { name: '品牌' })).toHaveAttribute(
+    expect(within(chips()).getByRole('radio', { name: '通用' })).toHaveAttribute(
       'aria-checked',
       'true',
     )
+    expect(within(side()).getByRole('button', { name: '品牌：示例品牌' })).toBeVisible()
 
     await user.click(tab('配乐'))
     await user.type(within(side()).getByRole('searchbox', { name: '搜索音频' }), '吉他')
@@ -1067,7 +1067,7 @@ describe('final-cut 编辑器 · 配乐页签的音频库', () => {
     expect(within(side()).queryByRole('button', { name: /^轻快原声吉他/ })).toBeNull()
   })
 
-  it('配乐按「情绪」筛：只列这种情绪的，右边条数跟着变；换到「音效」时筛选换成「分类」、清掉情绪', async () => {
+  it('配乐按「情绪」筛：只列这种情绪的，点 × 清掉；换到「音效」时筛选换成「分类」、清掉情绪', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     const user = userEvent.setup()
     await openEditor()
@@ -1078,14 +1078,24 @@ describe('final-cut 编辑器 · 配乐页签的音频库', () => {
     await within(await within(side()).findByRole('list', { name: '音频库' })).findByRole('button', {
       name: '轻快原声吉他',
     })
-    expect(within(side()).getByText('2 条')).toBeVisible()
+    expect(within(library()).getByRole('button', { name: '城市夜景氛围' })).toBeVisible()
 
     await user.click(within(side()).getByRole('button', { name: '情绪：情绪' }))
     await user.click(await screen.findByRole('radio', { name: '松弛' }))
-    await waitFor(() => expect(within(side()).getByText('1 条')).toBeVisible())
+    await waitFor(() =>
+      expect(within(library()).queryByRole('button', { name: '轻快原声吉他' })).toBeNull(),
+    )
     expect(within(library()).getByRole('button', { name: '城市夜景氛围' })).toBeVisible()
-    expect(within(library()).queryByRole('button', { name: '轻快原声吉他' })).toBeNull()
     expect(within(side()).getByRole('button', { name: '情绪：松弛' })).toBeVisible()
+
+    await user.click(within(side()).getByRole('button', { name: '清除情绪筛选' }))
+    expect(await within(library()).findByRole('button', { name: '轻快原声吉他' })).toBeVisible()
+    expect(within(side()).getByRole('button', { name: '情绪：情绪' })).toHaveFocus()
+    await user.click(within(side()).getByRole('button', { name: '情绪：情绪' }))
+    await user.click(await screen.findByRole('radio', { name: '松弛' }))
+    await waitFor(() =>
+      expect(within(library()).queryByRole('button', { name: '轻快原声吉他' })).toBeNull(),
+    )
 
     await user.click(within(side()).getByRole('radio', { name: '音效' }))
     expect(

@@ -1,71 +1,73 @@
 import type { ReactNode } from 'react'
 import type { ReferenceAudio } from '@/shared/api/reference-audios'
 import { Icon } from '@/shared/icons'
-import type { AudioCoverGlyphName } from '@/shared/icons/audio-cover-glyphs'
 import { cn } from '@/shared/lib/utils'
+import clara from './covers/clara.svg'
+import commute from './covers/commute.svg'
+import emma from './covers/emma.svg'
+import gentle from './covers/gentle.svg'
+import klaus from './covers/klaus.svg'
+import linen from './covers/linen.svg'
+import marcus from './covers/marcus.svg'
+import original from './covers/original.svg'
+import pulse from './covers/pulse.svg'
+import velvet from './covers/velvet.svg'
 
-export type AudioCoverTone = 'copper' | 'teal' | 'umber' | 'slate' | 'ochre'
+// 每张插画是一个单独的 SVG 文件、用 <img> 显示：里面渐变、裁切的 id 只在自己的文件里，同一页放多少张都不会串
+const COVER_ART = {
+  linen,
+  commute,
+  pulse,
+  velvet,
+  emma,
+  klaus,
+  gentle,
+  clara,
+  marcus,
+  original,
+} as const
 
-export type AudioCoverAppearance = {
-  readonly glyph: AudioCoverGlyphName
-  readonly tone: AudioCoverTone
-}
+/** 封面插画：配乐 4 张、音色 5 张，`original` 只给「原片音色」用。 */
+export type AudioCoverArt = keyof typeof COVER_ART
 
 export type AudioCoverTraits = Partial<
   Pick<ReferenceAudio, 'audioKind' | 'gender' | 'age' | 'scenarios' | 'genre' | 'mood'>
 >
 
-const GLYPH_TONES: Record<AudioCoverGlyphName, AudioCoverTone> = {
-  'audio-cover-bright': 'copper',
-  'audio-cover-broadcast': 'copper',
-  'audio-cover-studio': 'teal',
-  'audio-cover-pulse': 'teal',
-  'audio-cover-electronic': 'teal',
-  'audio-cover-calm': 'umber',
-  'audio-cover-acoustic': 'umber',
-  'audio-cover-cinema': 'slate',
-  'audio-cover-tuning': 'slate',
-  'audio-cover-piano': 'slate',
-  'audio-cover-dialogue': 'ochre',
-  'audio-cover-vinyl': 'ochre',
-}
+type NonEmptyArts = readonly [AudioCoverArt, ...AudioCoverArt[]]
 
-type NonEmptyGlyphs = readonly [AudioCoverGlyphName, ...AudioCoverGlyphName[]]
+const BGM_ARTS: NonEmptyArts = ['commute', 'linen', 'pulse', 'velvet']
 
-const VOICE_FALLBACKS: NonEmptyGlyphs = [
-  'audio-cover-bright',
-  'audio-cover-studio',
-  'audio-cover-calm',
-  'audio-cover-pulse',
-  'audio-cover-cinema',
-  'audio-cover-broadcast',
-  'audio-cover-dialogue',
-  'audio-cover-tuning',
+const VOICE_ARTS: NonEmptyArts = ['emma', 'klaus', 'gentle', 'clara', 'marcus']
+
+// 8 类场景并成 5 张，一条音色填了几个场景时按这里的先后取第一个对得上的
+const SCENARIO_ARTS: readonly (readonly [ReferenceAudio['scenarios'][number], AudioCoverArt])[] = [
+  ['wellness', 'clara'],
+  ['commercials', 'klaus'],
+  ['trailers', 'klaus'],
+  ['explainers', 'marcus'],
+  ['tutorials', 'marcus'],
+  ['documentaries', 'marcus'],
+  ['social', 'emma'],
+  ['characters', 'gentle'],
 ]
 
-const BGM_FALLBACKS: NonEmptyGlyphs = [
-  'audio-cover-piano',
-  'audio-cover-acoustic',
-  'audio-cover-electronic',
-  'audio-cover-vinyl',
-]
-
-const pickByHash = (id: string, pool: NonEmptyGlyphs): AudioCoverGlyphName => {
+const pickByHash = (id: string, pool: NonEmptyArts): AudioCoverArt => {
   let hash = 0
   for (const char of id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
   return pool[hash % pool.length] ?? pool[0]
 }
 
-const bgmGlyph = (id: string, traits: AudioCoverTraits): AudioCoverGlyphName => {
+const bgmArt = (id: string, traits: AudioCoverTraits): AudioCoverArt => {
   switch (traits.genre) {
     case 'piano':
-      return 'audio-cover-piano'
+      return 'commute'
     case 'acoustic':
-      return 'audio-cover-acoustic'
+      return 'linen'
     case 'electronic':
-      return 'audio-cover-electronic'
+      return 'pulse'
     case 'orchestral':
-      return 'audio-cover-vinyl'
+      return 'velvet'
     case null:
     case undefined:
       break
@@ -73,121 +75,103 @@ const bgmGlyph = (id: string, traits: AudioCoverTraits): AudioCoverGlyphName => 
   switch (traits.mood) {
     case 'warm':
     case 'relaxed':
-      return 'audio-cover-acoustic'
+      return 'linen'
     case 'uplifting':
-      return 'audio-cover-electronic'
+      return 'pulse'
     case 'epic':
     case 'suspense':
-      return 'audio-cover-vinyl'
+      return 'velvet'
     case null:
     case undefined:
       break
   }
-  return pickByHash(id, BGM_FALLBACKS)
+  return pickByHash(id, BGM_ARTS)
 }
 
-const voiceGlyph = (id: string, traits: AudioCoverTraits): AudioCoverGlyphName => {
+const voiceArt = (id: string, traits: AudioCoverTraits): AudioCoverArt => {
   const scenarios = traits.scenarios ?? []
-  if (scenarios.includes('wellness')) return 'audio-cover-calm'
-  if (scenarios.includes('characters')) return 'audio-cover-dialogue'
-  if (scenarios.includes('documentaries') || scenarios.includes('trailers'))
-    return 'audio-cover-cinema'
-  if (scenarios.includes('tutorials')) return 'audio-cover-studio'
-  if (scenarios.includes('explainers')) return 'audio-cover-tuning'
-  if (scenarios.includes('commercials')) {
-    return traits.gender === 'female' || (traits.age === 'young' && traits.gender !== 'male')
-      ? 'audio-cover-bright'
-      : 'audio-cover-broadcast'
-  }
-  if (scenarios.includes('social')) return 'audio-cover-pulse'
-
+  const byScenario = SCENARIO_ARTS.find(([scenario]) => scenarios.includes(scenario))
+  if (byScenario !== undefined) return byScenario[1]
   const mature = traits.age === 'middle' || traits.age === 'senior'
-  if (traits.gender === 'female') return mature ? 'audio-cover-calm' : 'audio-cover-bright'
-  if (traits.gender === 'male') return mature ? 'audio-cover-cinema' : 'audio-cover-pulse'
-  if (traits.gender === 'neutral') return 'audio-cover-tuning'
-  return pickByHash(id, VOICE_FALLBACKS)
+  if (traits.gender === 'female') return mature ? 'gentle' : 'emma'
+  if (traits.gender === 'male') return mature ? 'marcus' : 'klaus'
+  if (traits.gender === 'neutral') return 'clara'
+  return pickByHash(id, VOICE_ARTS)
 }
 
-/** 按音频子类与声线 / 场景 / 曲风属性匹配封面声学图标，色调跟图标走；未填属性时按编号稳定回退。 */
-export const audioCoverAppearance = (
-  id: string,
-  traits: AudioCoverTraits = {},
-): AudioCoverAppearance => {
-  const glyph = traits.audioKind === 'bgm' ? bgmGlyph(id, traits) : voiceGlyph(id, traits)
-  return { glyph, tone: GLYPH_TONES[glyph] }
-}
+/** 按音频子类与场景 / 声线 / 曲风 / 情绪属性挑封面插画；未填属性时按编号稳定挑一张。 */
+export const audioCoverArt = (id: string, traits: AudioCoverTraits = {}): AudioCoverArt =>
+  traits.audioKind === 'bgm' ? bgmArt(id, traits) : voiceArt(id, traits)
 
 type AudioCoverProps = {
-  /** 条目编号：未填属性时决定回退声学图形。 */
+  /** 条目编号：未填属性时决定挑哪张。 */
   id: string
   title: string
   /** 音频子类与声线、场景或曲风属性；缺省按音色处理。 */
   traits?: AudioCoverTraits | undefined
+  /** 直接指定插画（如「原片音色」的 `original`）；给了就不按 `id`、`traits` 挑。 */
+  art?: AudioCoverArt | undefined
   /** 当前这条：在放（`playing`）或暂停着（`paused`）。 */
   state: 'idle' | 'paused' | 'playing'
   /** 不给时封面只是个样子，本身不能单独点；外层可点的元素加 `audition-cover-host` 类，悬停、聚焦时封面跟着变。 */
   onToggle?: (() => void) | undefined
-  /** `md` 44px（资料库），`sm` 36px（窄的侧栏）。 */
-  size?: 'md' | 'sm'
+  /** `md` 44px（资料库），`sm` 40px（侧栏列表），`xs` 20px（胶囊里的小头像）。 */
+  size?: 'md' | 'sm' | 'xs'
   /** 盖在封面上的东西，如等数据的提示。 */
   children?: ReactNode
 }
 
+const SIZE_CLASS = { md: 'is-md size-11', sm: 'is-sm size-10', xs: 'is-xs size-5' } as const
+
 /**
- * 音频条目的声学封面，本身可作试听键：纯中性底块配双层声学图标；
- * 悬停、聚焦或暂停态平滑切换为纯墨播放标，正在播放时切换为反色底与跳动音柱。
+ * 音频条目的插画封面，本身可作试听键：悬停、聚焦或暂停着时盖一层暗色、中间一个播放标，
+ * 正在播放时暗层上换成跳动的音柱。插画自带颜色，深浅色外观下都不变。
  */
 export function AudioCover({
   id,
   title,
   traits,
+  art,
   state,
   onToggle,
   size = 'md',
   children,
 }: AudioCoverProps) {
   const playing = state === 'playing'
-  const paused = state === 'paused'
-  const { glyph, tone } = audioCoverAppearance(id, traits)
   const className = cn(
-    'audition-cover relative isolate grid shrink-0 place-items-center',
-    size === 'md' ? 'is-md size-11' : 'size-9',
-    playing && 'is-playing bg-inverse-surface text-inverse-on-surface',
-    paused && 'is-paused',
+    'audition-cover relative isolate grid shrink-0 place-items-center overflow-hidden',
+    SIZE_CLASS[size],
+    playing && 'is-playing',
+    state === 'paused' && 'is-paused',
   )
   const face = (
     <>
-      {playing ? (
-        <span aria-hidden className="audition-eq">
-          <i />
-          <i />
-          <i />
-        </span>
-      ) : (
-        <>
-          <span aria-hidden className="audition-cover-glyph">
-            <Icon className="size-(--audition-cover-glyph-size)" decorative name={glyph} />
+      <img
+        alt=""
+        className="audition-cover-art"
+        draggable={false}
+        src={COVER_ART[art ?? audioCoverArt(id, traits)]}
+      />
+      <span aria-hidden className="audition-cover-veil">
+        {playing ? (
+          <span className="audition-eq">
+            <i />
+            <i />
+            <i />
           </span>
-          <span aria-hidden className="audition-cover-play">
-            <Icon decorative name="final-cut-play" size="sm" />
-          </span>
-        </>
-      )}
+        ) : (
+          <Icon decorative name="final-cut-play" size="sm" />
+        )}
+      </span>
       {children}
     </>
   )
-  if (onToggle === undefined)
-    return (
-      <span className={className} data-tone={tone}>
-        {face}
-      </span>
-    )
+  if (onToggle === undefined) return <span className={className}>{face}</span>
   return (
     <button
       aria-label={playing ? `暂停试听：${title}` : `试听：${title}`}
       aria-pressed={playing}
       className={cn(className, 'audition-cover-host cursor-pointer ui-focus')}
-      data-tone={tone}
       onClick={onToggle}
       type="button"
     >

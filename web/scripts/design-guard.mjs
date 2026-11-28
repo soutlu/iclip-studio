@@ -180,9 +180,27 @@ const RULES = [
     ext: ['.css', '.ts', '.tsx'],
     re: /design-allow(?!\s*--\s*\S)/g,
   },
+  {
+    id: 'globals-feature-css-imports',
+    desc: 'globals.css 引入业务样式（业务样式由所属功能的组件自己引入；全站入口里的存量只减不增）',
+    // 只查这一个文件；它在 EXEMPT 里，别的规则不扫它
+    only: ['src/app/globals.css'],
+    ext: ['.css'],
+    re: /^@import\s+['"]\.\.\/features\//g,
+  },
 ]
 
 const ALLOW_RE = /(?:\/\/|\/\*)\s*design-allow\s*--\s*\S/
+
+// 单个样式文件的有效行上限：注释和空行不计。已经超过的存量文件逐个记在基线里，只减不增
+const CSS_MAX_LINES = 500
+const CSS_LINES_ID = 'css-file-max-lines'
+const CSS_LINES_DESC = `单个样式文件不超过 ${CSS_MAX_LINES} 有效行（注释、空行不计）；超出的部分按分节拆到新文件`
+const effectiveLines = (text) =>
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => line.trim() !== '').length
 
 const walk = (dir, acc = []) => {
   for (const name of readdirSync(dir)) {
@@ -204,7 +222,7 @@ const hits = {}
 for (const rule of RULES) {
   counts[rule.id] = 0
   hits[rule.id] = []
-  for (const file of files) {
+  for (const file of rule.only?.map((rel) => join(ROOT, rel)) ?? files) {
     if (!rule.ext.some((e) => file.endsWith(e))) continue
     const text = readFileSync(file, 'utf8')
     const lines = text.split('\n')
@@ -219,10 +237,26 @@ for (const rule of RULES) {
   }
 }
 
+const cssLines = new Map(
+  files
+    .filter((file) => file.endsWith('.css'))
+    .map((file) => [relative(ROOT, file), effectiveLines(readFileSync(file, 'utf8'))]),
+)
+
 if (process.argv.includes('--update')) {
-  writeFileSync(BASELINE_PATH, `${JSON.stringify(counts, null, 2)}\n`)
+  const oversized = Object.fromEntries(
+    [...cssLines]
+      .filter(([, lines]) => lines > CSS_MAX_LINES)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  )
+  writeFileSync(
+    BASELINE_PATH,
+    `${JSON.stringify({ ...counts, [CSS_LINES_ID]: oversized }, null, 2)}\n`,
+  )
   console.log('design-guard 基线已更新：')
   for (const rule of RULES) console.log(`  ${rule.id}: ${counts[rule.id]}`)
+  for (const [file, lines] of Object.entries(oversized))
+    console.log(`  ${CSS_LINES_ID}: ${file} ${lines} 行`)
   process.exit(0)
 }
 
@@ -250,11 +284,39 @@ for (const rule of RULES) {
     console.log(`✓ ${rule.id}: ${now} 处`)
   }
 }
+
+// 基线里记了的文件以记下的行数为限，没记的以上限为限
+const baseLines = baseline[CSS_LINES_ID] ?? {}
+let linesClean = true
+for (const [file, now] of cssLines) {
+  const base = baseLines[file]
+  if (now > (base ?? CSS_MAX_LINES)) {
+    failed = true
+    linesClean = false
+    const limit = base === undefined ? `上限 ${CSS_MAX_LINES}` : `基线 ${base}`
+    console.error(`✗ ${CSS_LINES_ID}: ${file} ${now} 行（${limit}）— ${CSS_LINES_DESC}`)
+  } else if (base !== undefined && (now < base || now <= CSS_MAX_LINES)) {
+    tightenable = true
+    linesClean = false
+    console.log(`↓ ${CSS_LINES_ID}: ${file} ${now} 行（基线 ${base}，可收紧）`)
+  }
+}
+for (const file of Object.keys(baseLines)) {
+  if (cssLines.has(file)) continue
+  tightenable = true
+  linesClean = false
+  console.log(`↓ ${CSS_LINES_ID}: ${file} 已不存在（可收紧）`)
+}
+if (linesClean)
+  console.log(
+    `✓ ${CSS_LINES_ID}: 上限 ${CSS_MAX_LINES} 行，${Object.keys(baseLines).length} 个存量文件未超基线`,
+  )
+
 if (tightenable && !failed)
   console.log('存量减少：运行 node scripts/design-guard.mjs --update 收紧基线')
 if (failed) {
   console.error(
-    '\ndesign-guard 失败：请改用 token（规范见仓库根目录 design-system.html），勿新增硬编码。',
+    '\ndesign-guard 失败：按上面各条的说明处理（Token 规范见仓库根目录 design-system.html），勿新增硬编码。',
   )
   process.exit(1)
 }

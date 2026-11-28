@@ -13,12 +13,12 @@ export {
   voiceToneText,
   voiceTraitsText,
 } from './audio-labels'
-export { AudioCover, AuditionButton } from './audio-cover'
+export { AudioCover, AuditionButton, type AudioCoverTraits } from './audio-cover'
 export {
   AuditionBar,
   AuditionBuffering,
   AuditionProgressLine,
   useAuditionRatio,
 } from './audition-bar'
-export { useAudition, type Audition } from './use-audition'
+export { useAudition, useAuditionProgress, type Audition } from './use-audition'
 export { Waveform } from './waveform'

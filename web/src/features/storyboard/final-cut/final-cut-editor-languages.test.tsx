@@ -109,7 +109,7 @@ describe('final-cut 编辑器 · 语言', () => {
     ).toEqual(['原文', 'ZH', 'EN', 'DE', 'ES', 'FR'])
   })
 
-  it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的显示原文并标出来，不能加字幕；切回原文都回来', async () => {
+  it('切到 English：预览套上 English 的值，字幕页签、时间线上是英文，没翻的在时间线上写「待输入字幕」，不能加字幕；切回原文都回来', async () => {
     const user = await open()
     expect(previewValues()).toBeUndefined()
     await user.click(within(side()).getByRole('tab', { name: /^字幕/ }))
@@ -124,7 +124,8 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(second).toHaveAttribute('placeholder', '输入 English 字幕…')
     const row = screen.getByRole('group', { name: '字幕' })
     expect(within(row).getByRole('group', { name: /^Line one，/ })).toBeVisible()
-    expect(within(row).getByRole('group', { name: /^字幕 b2，1\.0 秒，原文$/ })).toBeVisible()
+    const blank = within(row).getByRole('group', { name: /^字幕 b2，1\.0 秒，待输入字幕$/ })
+    expect(within(blank).getByText('待输入字幕')).toBeVisible()
     const add = within(panel()).getByRole('button', { name: '在播放头处添加字幕' })
     expect(add).toHaveAttribute('aria-disabled', 'true')
     await user.click(add)

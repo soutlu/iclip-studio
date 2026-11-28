@@ -44,14 +44,12 @@ export function AuditionProgressLine({
 type AuditionBarProps = {
   audition: Audition
   title: string
-  /** 标题下那一行灰字，如属性摘要；紧凑样子不显示。 */
+  /** 标题下那一行灰字，如属性摘要。 */
   detail?: string
   peaks: readonly number[] | null
   durationMs: number
   /** 暂停或续放当前这条。 */
   onToggle: () => void
-  /** 紧凑样子：单行、贴着所在面板的底边（上面一条细线），给窄的侧栏用。 */
-  compact?: boolean
 }
 
 /**
@@ -65,7 +63,6 @@ export function AuditionBar({
   peaks,
   durationMs,
   onToggle,
-  compact = false,
 }: AuditionBarProps) {
   const { failed } = useAuditionProgress(audition)
   const { ratio, timeMs, totalMs } = useAuditionRatio(audition, durationMs)
@@ -73,33 +70,14 @@ export function AuditionBar({
   return (
     <section
       aria-label={`试听：${title}`}
-      className={cn(
-        'flex w-full items-center',
-        compact
-          ? 'gap-2.5 border-t border-hairline bg-card py-1.5 pr-1.5 pl-3'
-          : 'gap-3 rounded-lg bg-card py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4',
-      )}
+      className="flex w-full items-center gap-3 rounded-lg bg-card py-2.5 pr-2.5 pl-3 shadow-2 ring-1 ring-hairline sm:gap-4"
     >
-      <AuditionButton
-        className={compact ? 'size-7' : undefined}
-        ink
-        label={playing ? '暂停' : '播放'}
-        onToggle={onToggle}
-        playing={playing}
-      >
+      <AuditionButton ink label={playing ? '暂停' : '播放'} onToggle={onToggle} playing={playing}>
         <AuditionBuffering audition={audition} />
       </AuditionButton>
-      <div className={cn('min-w-0', compact ? 'max-w-32 shrink' : 'w-28 shrink-0 sm:w-44')}>
-        <p
-          className={cn(
-            'truncate font-medium text-on-surface',
-            compact ? 'text-label' : 'text-body-sm',
-          )}
-          title={compact ? title : undefined}
-        >
-          {title}
-        </p>
-        {compact || detail === '' ? null : (
+      <div className="w-28 min-w-0 shrink-0 sm:w-44">
+        <p className="truncate text-body-sm font-medium text-on-surface">{title}</p>
+        {detail === '' ? null : (
           <p className="truncate text-caption text-on-surface-faint">{detail}</p>
         )}
       </div>

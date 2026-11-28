@@ -1,0 +1,244 @@
+/* ---- 下半：工具条、轨道 ---- */
+
+/* 工具条和轨道区贴着面板的边，中间一道细线 */
+.wf-timeline {
+  /* 琥珀色的浅底：开着的吸附、关着的行的开关 */
+  --wf-amber-soft: color-mix(in srgb, var(--color-tertiary) 11%, transparent);
+  /* 压在画面上的深色半透明底：视频片段的原声波形条、压低图标 */
+  --wf-on-frame: color-mix(in srgb, var(--color-scrim) 56%, transparent);
+
+  /* 工具条按时间线面板的宽收紧间距（见文件末尾的容器查询） */
+  container: wf-timeline / inline-size;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  grid-area: timeline;
+  overflow: clip;
+}
+
+/* 面板放不下时只压缩轨道区，工具条保持原高 */
+.wf-timeline > * {
+  flex: none;
+}
+
+.wf-timeline > .wf-tracks {
+  flex: 0 1 auto;
+}
+
+/* 工具条只排一行：左边的剪辑工具不压缩；右边一组可以压，语言分段先收窄（在里面横向滚），再不够时被卡片裁掉 */
+.wf-toolbar {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+}
+
+.wf-toolbar-group {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.wf-toolbar-group.is-end {
+  min-width: 0;
+  flex: 0 1 auto;
+  gap: 4px;
+}
+
+/* 一组挨着的工具（撤销重做、两个工具和命令菜单、分离删除、两个开关） */
+.wf-toolbar-cluster {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.wf-tool {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  color: var(--color-on-surface-variant);
+}
+
+/* 开关类按钮关着时用淡色；开着的样子见剪辑工具条和播放条各自的规则 */
+.wf-tool[aria-pressed='false'] {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-tool[aria-disabled='true'] {
+  opacity: var(--state-disabled-content);
+  cursor: default;
+}
+
+/* 工具条上的图标按钮：方圆角，图标用中性色，删除悬停时变红。开关开着时：吸附是琥珀色浅底加细框（设计系统的
+   提示色），波纹编辑是中性浅底加细框；选择、切开两个工具见下面的分段 */
+.wf-toolbar .wf-tool {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-toolbar .wf-tool:not([aria-disabled='true'], .is-pressed):hover {
+  color: var(--color-on-surface);
+}
+
+.wf-toolbar .wf-tool.is-pressed:not(.wf-seg-item) {
+  background: var(--wf-control-soft);
+  box-shadow: inset 0 0 0 1px var(--wf-control-ring);
+  color: var(--color-on-surface);
+}
+
+.wf-toolbar .wf-tool.is-snap.is-pressed {
+  --icon-fill-color: var(--color-tone-ochre);
+  --icon-fill-opacity: 0.32;
+
+  background: var(--wf-amber-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tertiary) 28%, transparent);
+  color: var(--color-tertiary);
+}
+
+.wf-toolbar .wf-tool.is-danger:not([aria-disabled='true']):hover {
+  background-color: color-mix(in srgb, var(--color-error) 9%, transparent);
+  color: var(--color-error);
+}
+
+/* 选择、切开两个工具的分段：同右栏的分段（凹槽里当前项浮起白块），只把格子收成图标宽 */
+.wf-toolbar .wf-seg {
+  display: inline-flex;
+  flex: none;
+}
+
+.wf-toolbar .wf-seg .wf-tool {
+  width: 30px;
+  height: 26px;
+  padding: 0;
+}
+
+.wf-toolbar .wf-seg .wf-tool:not(.is-pressed) {
+  color: var(--color-on-surface-muted);
+}
+
+/* 分段右边的小箭头，点开三条剪辑命令 */
+.wf-toolbar .wf-tool.wf-tool-commands {
+  width: 16px;
+  color: var(--color-on-surface-muted);
+}
+
+.wf-toolbar .wf-tool.wf-tool-commands[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+/* 语言切换（工具条右边、「字幕」页签顶行同一个样子）：一个分段（样子见 wf-seg），右边「+」。分段放不下时在
+   自己的滚动区里横向滚，不出滚动条，能滚的一侧渐隐（data-fade，规则见 storyboard-scroll-fade） */
+.wf-locales {
+  --storyboard-fade: 20px;
+
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 再窄也留着一格（「原文」那么宽），当前语言滚进来看得见 */
+.wf-locales-scroll {
+  position: relative;
+  display: flex;
+  min-width: 48px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wf-locales-scroll > .wf-seg {
+  display: inline-flex;
+  flex: none;
+}
+
+.wf-editor .wf-locale-add {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.wf-locale-add[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+/* 缩放滑杆：细轨、墨色小圆钮，不画走过的那段（编辑器里别的滑杆是凹槽加白钮，见上面的滑杆） */
+.wf-toolbar .wf-zoom {
+  --slider-thumb-size: 12px;
+}
+
+.wf-toolbar .wf-zoom .slider-track {
+  height: 3px;
+  background: color-mix(in srgb, var(--color-on-surface) 14%, transparent);
+  box-shadow: none;
+}
+
+.wf-toolbar .wf-zoom .slider-range {
+  background: none;
+}
+
+.wf-toolbar .wf-zoom .slider-thumb {
+  border: none;
+  background: var(--color-on-surface);
+}
+
+/* 工具栏提示里的快捷键 */
+.wf-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 16px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-inverse-on-surface) 18%, transparent);
+  font: inherit;
+  font-size: var(--text-caption);
+  line-height: 16px;
+}
+
+/* 工具条上分组之间的竖线 */
+.wf-divider {
+  width: 1px;
+  height: 16px;
+  flex: none;
+  margin: 0 6px;
+  background: var(--color-panel-line-strong);
+}
+
+/* 时间线面板窄（工作台拖到最窄）时收紧工具条的留白和组间距：剪辑工具和缩放一个不少，语言分段至少露出一格 */
+@container wf-timeline (width < 640px) {
+  .wf-toolbar {
+    gap: 8px;
+    padding: 0 8px;
+  }
+
+  .wf-toolbar-group {
+    gap: 4px;
+  }
+
+  .wf-toolbar-group.is-end {
+    gap: 2px;
+  }
+
+  .wf-toolbar .wf-divider {
+    margin: 0 4px;
+  }
+}

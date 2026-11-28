@@ -1,0 +1,363 @@
+/* ---- 时间线 ---- */
+
+.wf-tracks {
+  --timeline-ruler-height: 24px;
+  --timeline-playhead-top: 24px;
+  --timeline-playhead-bottom: 0;
+  /* 所有行（画面、字幕、声音、可以新开一行的空行）一样高，行头和行共用 */
+  --wf-row: var(--control-height-md);
+  /* 行头一列：图标和悬停出来的开关，右边留一道空和各行分开 */
+  --wf-head-width: 72px;
+
+  /* 行头和各行在同一个滚动容器里，上下一起滚 */
+  overflow: auto;
+  /* 聚焦的片段不停在吸住的时间尺和行头底下 */
+  scroll-padding: var(--timeline-ruler-height) 0 0 var(--wf-head-width);
+  scrollbar-width: thin;
+  user-select: none;
+}
+
+/* 放不下所有行时，至少露出时间尺、第一行和最下面那条空行 */
+.wf-tracks:has(.wf-lane.is-new) {
+  min-height: calc(var(--timeline-ruler-height) + 4px + 2 * (var(--wf-row) + 4px) + 2px);
+}
+
+/* 和内容一样宽：吸在左边的行头一直横向滚到底都不会被带走 */
+.wf-track-inner {
+  display: flex;
+  width: max-content;
+  min-width: 100%;
+  isolation: isolate;
+}
+
+/* 行头那一列吸在左边，横向滚动时片段从它底下过去；底色同面板，和各行之间留一道空 */
+.wf-track-heads {
+  position: sticky;
+  left: 0;
+  z-index: var(--z-local-1);
+  display: flex;
+  width: var(--wf-head-width);
+  flex: none;
+  flex-direction: column;
+  padding: 0 8px 0 10px;
+  background: var(--color-surface);
+}
+
+/* 左上角吸在顶上，盖住往上滚的行头；与各行之间同样隔 4px */
+.wf-track-corner {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-1);
+  height: var(--timeline-ruler-height);
+  flex: none;
+  margin: 0 -8px 4px -10px;
+  background: var(--color-surface);
+  box-shadow: inset 0 -1px 0 var(--color-panel-line);
+}
+
+/* 行头之间的空同各行之间的空 */
+.wf-track-head + .wf-track-head {
+  margin-top: 4px;
+}
+
+/* 行头：行的图标（同种不止一行时带编号），指针停上去时浅底、右边露出这一行的开关；图标按行的种类着色 */
+.wf-track-head {
+  --wf-head-color: var(--color-tone-slate);
+
+  display: flex;
+  min-width: 0;
+  height: var(--wf-row);
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px;
+  padding: 0 4px 0 6px;
+  border-radius: var(--radius-sm);
+  transition: background-color var(--dur-s) var(--ease);
+}
+
+.wf-track-head:not(.is-opening):hover {
+  background: var(--color-state-hover);
+}
+
+.wf-track-head[data-kind='caption'] {
+  --wf-head-color: var(--color-tone-teal);
+}
+
+.wf-track-head:is([data-kind='dub'], [data-kind='original']) {
+  --wf-head-color: var(--color-tone-umber);
+}
+
+.wf-track-head[data-kind='music'] {
+  --wf-head-color: var(--color-primary);
+}
+
+.wf-head-sign {
+  --icon-fill-color: var(--wf-head-color);
+  --icon-fill-opacity: 0.28;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--wf-head-color);
+}
+
+.wf-head-ordinal {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* 行头最右边的开关：隐藏或显示这一行（声音区是静音）。平时收起，指针停在行头上、键盘聚焦或这一行关着时露出；
+   关着时用琥珀色标出来 */
+.wf-head-eye {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-muted);
+  opacity: 0;
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+.wf-track-head:hover .wf-head-eye,
+.wf-head-eye:focus-visible,
+.wf-head-eye[aria-pressed='false'] {
+  opacity: 1;
+}
+
+.wf-head-eye[aria-pressed='false'] {
+  background: var(--wf-amber-soft);
+  color: var(--color-tertiary);
+}
+
+/* 隐藏的片段留在时间线上，内容画淡、去掉颜色；选中框和把手不变淡 */
+.wf-clip.is-hidden > .wf-clip-body {
+  opacity: 0.3;
+  filter: saturate(0.2);
+}
+
+/* 左右留的空由 film-timeline.tsx 的 INSET 写在行内样式上 */
+.wf-track-content {
+  position: relative;
+  flex: none;
+  padding-bottom: 2px;
+  /* 播放头和悬停线从时间尺往下伸得比内容长（见 .wf-track-top），到内容底边裁掉，不撑出滚动 */
+  overflow-y: clip;
+  isolation: isolate;
+}
+
+/* 时间尺吸在顶上，底色同面板，各行从它底下滚过去，底边一道细线。播放头、悬停游标跟时间尺放在一起：头和读数留在
+   顶上，线往下伸过露出来的各行 */
+.wf-track-top {
+  --timeline-playhead-bottom: -100vh;
+
+  position: sticky;
+  top: 0;
+  z-index: var(--z-local-3);
+  height: var(--timeline-ruler-height);
+  background: var(--color-surface);
+  /* 时间区两边留的空也要盖住：滚上来的片段不从那里露出来 */
+  box-shadow:
+    inset 0 -1px 0 var(--color-panel-line),
+    -8px 0 0 var(--color-surface),
+    8px 0 0 var(--color-surface);
+}
+
+/* 刻度字：等宽数字，离时间尺上沿留一点空，下面是副刻度 */
+.wf-track-top .timeline-tick {
+  top: 2px;
+  font-family: var(--font-mono);
+}
+
+/* 片段的叠放只在各行里比，拖起来的片段也压不过吸在顶上的时间尺和播放头 */
+.wf-lanes {
+  display: grid;
+  grid-auto-rows: auto;
+  row-gap: 4px;
+  margin-top: 4px;
+  isolation: isolate;
+}
+
+/* 每一行是一条连续的圆角浅底带子，片段落在带子上；行与行之间露出面板底色当分隔 */
+.wf-lane {
+  position: relative;
+  height: var(--wf-row);
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--wf-lane-bed);
+}
+
+/* 最下面那条空行：把片段或镜头拖进来就新开一行；不铺底，只一圈虚线。拖到两行之间时它挪到那里去（行头那一列
+   同一处空出一样高的一格，下面的行头才对得齐）。
+   框用 outline 往里画，不占位置：拖进来的落点和提示文字照常按行的边算 */
+.wf-lane.is-new {
+  background: transparent;
+  outline: 1px dashed var(--color-panel-line-strong);
+  outline-offset: -1px;
+}
+
+/* 拖到别的行去的片段浮在各行上面 */
+.wf-clip.is-lifted {
+  z-index: var(--z-local-3);
+}
+
+/* 拖着的素材会落在这里 */
+.wf-drop-ghost {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--wf-control-soft);
+  box-shadow: inset 0 0 0 1.6px var(--color-on-surface);
+  pointer-events: none;
+}
+
+.wf-lane > * {
+  pointer-events: auto;
+}
+
+/* 行里一行浅色说明：最下面那条空行、配音行的引导 */
+.wf-lane-hint {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  translate: 0 -50%;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-clip {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  border-radius: var(--radius-sm);
+  transition: box-shadow var(--dur-s) var(--ease);
+  /* 两端把手按片段的宽算点按区、窄了不画（cqw、容器查询） */
+  container-type: inline-size;
+}
+
+/* 选中：轻轻浮起（投影），压在别的片段上面；贴合的细框见 .wf-clip::after */
+.wf-clip.is-selected {
+  z-index: var(--z-local-2);
+  box-shadow:
+    0 4px 12px -2px color-mix(in srgb, var(--color-shadow) 16%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-shadow) 8%, transparent);
+}
+
+.dark .wf-clip.is-selected {
+  box-shadow: 0 6px 16px -2px color-mix(in srgb, var(--color-shadow) 55%, transparent);
+}
+
+/* 裁剪把手（选中时才有）：左右边线正中骑着的一个白底墨边小胶囊，悬停时拉长变成墨色，盖不住片段里的字和音频的
+   色条。点按区只有从边线往里的那一块（::before，往外多盖 1px，按在胶囊正中的边线上也算），最多 14px、不超过片段宽的
+   三分之一：1 秒的片段只有 30px 上下，两端都留着、正中按得住拖动；胶囊伸出边线的半边不接指针，不盖住紧挨着的片段。
+   片段窄于 44px 时不画胶囊，点按区和键盘照常能裁。共用把手是悬浮的小方块，这里两个类压过它的大小、边框和底色 */
+.wf-clip > .timeline-handle {
+  pointer-events: none;
+  width: 6px;
+  height: 14px;
+  border: 1.5px solid var(--color-on-surface);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-lowest);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-shadow) 18%, transparent);
+  transition:
+    height var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+}
+
+.wf-clip > .timeline-handle::after {
+  content: none;
+}
+
+.wf-clip > .timeline-handle:is(:hover, :active, .is-pressed) {
+  height: 18px;
+  background: var(--color-on-surface);
+}
+
+.wf-clip > .timeline-handle:focus-visible {
+  outline: var(--state-focus-ring) solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+.wf-clip > .timeline-handle::before {
+  width: calc(min(14px, 100cqw / 3) + 1px);
+  height: 28px;
+  pointer-events: auto;
+}
+
+.wf-clip > .timeline-handle.is-start::before {
+  left: calc(50% - 1px);
+  translate: 0 -50%;
+}
+
+.wf-clip > .timeline-handle.is-end::before {
+  right: calc(50% - 1px);
+  left: auto;
+  translate: 0 -50%;
+}
+
+@container (width < 44px) {
+  .wf-clip > .timeline-handle:not(:focus-visible) {
+    border-color: transparent;
+    background: none;
+    box-shadow: none;
+  }
+}
+
+.wf-clip-body {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  padding: 0 8px;
+  border-radius: inherit;
+  text-align: left;
+  touch-action: none;
+}
+
+/* 片段外缘一圈细线，盖在内容上面（压不过把手）：卡片类片段是淡墨色，压在画面上的（视频、元素和模板）是浅色；
+   指针停上去时深一点；选中时换成贴合的 1.5px 墨色细框（只画在里面，字和色条不挪）。画在片段自己身上，
+   隐藏、过期的片段内容变淡时框不跟着淡 */
+.wf-clip::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-local-2);
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 1px var(--wf-clip-edge);
+  pointer-events: none;
+  transition: box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-clip:is(.is-video, .is-host)::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+}
+
+.wf-clip:not(.is-selected):hover::after {
+  box-shadow: inset 0 0 0 1px var(--color-border-hover);
+}
+
+.wf-clip:is(.is-video, .is-host):not(.is-selected):hover::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 36%, transparent);
+}
+
+.wf-clip.is-selected::after {
+  box-shadow: inset 0 0 0 1.5px var(--color-on-surface);
+}
+
+/* 压在画面上的片段：墨色细框里再垫一圈浅色，深色画面上也看得出 */
+.wf-clip.is-selected:is(.is-video, .is-host)::after {
+  box-shadow:
+    inset 0 0 0 1.5px var(--color-on-surface),
+    inset 0 0 0 2.5px color-mix(in srgb, var(--color-on-scrim) 22%, transparent);
+}

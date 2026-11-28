@@ -3,7 +3,7 @@ import { z } from 'zod'
 import type { ResizeInput } from '@/shared/ui/resize-handle'
 import { readStoredJson, writeStored } from '../editing/browser-storage'
 
-// 下列数值与 final-cut.css「外框」一节中 .wf-workspace 的钳制范围一致，调整时须同步修改
+// 下列数值与 final-cut-base.css「外框」一节中 .wf-workspace 的钳制范围一致，调整时须同步修改
 /** 右栏宽度（px）：默认值及拖拽上下限。 */
 export const SIDE_WIDTH = { default: 432, min: 150, max: 580 } as const
 /** 拖拽右栏至指针计算宽度低于此阈值（px）时自动收起为竖向图标轨（须在最窄宽度 150px 基础上继续向外拖出一段距离）。 */

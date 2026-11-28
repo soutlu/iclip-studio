@@ -95,7 +95,7 @@ type CanvasSettingsProps = {
 /**
  * 预览舞台右上角的画面设置胶囊：左侧展示画面尺寸（比例缩略框、简称、导出档位与展开箭头）并触发设置浮层；
  * 右侧为参考线快捷开关（已开启任一参考线时一键全关，全关时开启九宫格与安全区）。无激活导出档位时在简称后补充 `宽×高`（简称本身已是 `宽×高` 时不重复）。
- * 常态仅露参考线开关，悬停、键盘聚焦或浮层展开时通过样式展开尺寸按钮（见 final-cut.css 的 `.wf-stage-hud`）。
+ * 常态仅露参考线开关，悬停、键盘聚焦或浮层展开时通过样式展开尺寸按钮（见 canvas-settings.css 的 `.wf-stage-hud`）。
  */
 export function CanvasSettings({ framing, onFraming, layer, ...settings }: CanvasSettingsProps) {
   const { canvas, tier } = settings
@@ -377,7 +377,7 @@ function SideField({
 // 宽高比不超过此阈值视为竖屏或方屏，按竖屏短视频布局绘制安全区
 const UPRIGHT_MAX_RATIO = 1.05
 
-/** 各构图网格模式在横纵方向上的参考线位置标识（样式定位见 final-cut.css 的 `.wf-framing-line`）。 */
+/** 各构图网格模式在横纵方向上的参考线位置标识（样式定位见 final-cut-stage.css 的 `.wf-framing-line`）。 */
 const GRID_LINES: Record<FramingGrid, readonly string[]> = {
   off: [],
   thirds: ['third', 'two-thirds'],

@@ -1,0 +1,296 @@
+/* ---- 预览舞台：浅深主题下均为深色放映底的圆角浮起面板，画面四周透出柔和氛围溢光。
+   舞台内文案与控件统一按深底配色（on-scrim），弹出浮层（倍速菜单、快捷键面板、画面设置）仍跟随全局主题 ---- */
+
+/* final-cut 预览与素材预览重叠置于同一网格单元并各自撑满 */
+.wf-preview,
+.wf-material-preview {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-area: preview;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* 氛围溢光：模糊铺底叠加暗色面纱，仅透出轻微色调以保持深色舞台基调；
+   需三类选择器才能覆盖共用舞台样式中的深色主题规则 */
+.wf-stage .stage-backdrop > .stage-backdrop-image {
+  opacity: 0.35;
+  filter: blur(64px) saturate(1.2);
+}
+
+.wf-stage .stage-backdrop > .stage-backdrop-veil {
+  background: color-mix(in srgb, var(--color-storyboard-stage) 55%, transparent);
+}
+
+/* 画面留白：顶 20px、左右 24px，底部预留 58px 播放条 + 32px 间距（容纳选中框下方旋转把手） */
+.wf-preview > .editor-hero-wrap,
+.wf-material-preview > .editor-hero-wrap {
+  inset: 20px 24px 90px;
+}
+
+/* 深色放映底上的画布投影与浅色微描边 */
+.wf-stage .stage-picture {
+  box-shadow:
+    0 24px 60px color-mix(in srgb, var(--color-scrim) 65%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 10%, transparent);
+}
+
+/* final-cut 编辑画布保留直角以忠实呈现导出画幅边界（素材预览圆角见 .wf-material-video） */
+.wf-stage .wf-player-host {
+  border-radius: var(--radius-none);
+}
+
+.wf-player-host[hidden] {
+  display: none;
+}
+
+/* 加载失败提示含「重试」按钮，提升层级压过全画面点选编辑层 */
+.wf-player-host[data-failed] {
+  z-index: var(--z-local-1);
+}
+
+.wf-player-slot {
+  position: absolute;
+  inset: 0;
+}
+
+/* 独立预览域名承载页（运行播放器与合成文档）：禁用指针事件使点击焦点保留在编辑器根节点，保证空格等快捷键生效 */
+.wf-preview-frame {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+
+/* ---- 画布交互编辑层：与画面等大叠加（坐标由预览实测同步），选中框与控制柄允许越界伸出画布；
+   白色细框、四角方块缩放柄及底部圆形旋转柄统一按深底配色 ---- */
+
+.wf-canvas-slot {
+  position: absolute;
+}
+
+.wf-canvas-layer {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  touch-action: none;
+}
+
+/* 选中框本身不拦截指针，仅由各控制柄响应。编辑层内的选中框、参考线与原地改字框均不设 z-index，按 DOM 顺序层叠，
+   整层位于舞台右上角胶囊（.wf-stage-hud）之下 */
+.wf-canvas-frame {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  outline: 1.5px solid color-mix(in srgb, var(--color-on-scrim) 90%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-scrim) 25%, transparent);
+  pointer-events: none;
+}
+
+/* 悬停预选框（点击即将选中的目标层）：线条比正式选中框更细更浅；支持原地改字时切换文本光标 */
+.wf-canvas-hover {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  outline: 1px solid color-mix(in srgb, var(--color-on-scrim) 45%, transparent);
+  pointer-events: none;
+}
+
+.wf-canvas-layer[data-hover-text] {
+  cursor: text;
+}
+
+.wf-canvas-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  background: var(--color-on-scrim);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-scrim) 35%, transparent);
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+
+.wf-canvas-handle[data-corner='nw'] {
+  top: 0;
+  left: 0;
+}
+
+.wf-canvas-handle[data-corner='ne'] {
+  top: 0;
+  left: 100%;
+  cursor: nesw-resize;
+}
+
+.wf-canvas-handle[data-corner='se'] {
+  top: 100%;
+  left: 100%;
+}
+
+.wf-canvas-handle[data-corner='sw'] {
+  top: 100%;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.wf-canvas-rotate {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  translate: -50% 0;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-scrim) 30%, transparent),
+    0 1px 3px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+  color: var(--color-scrim);
+  cursor: grab;
+  pointer-events: auto;
+}
+
+.wf-canvas-rotate:active {
+  cursor: grabbing;
+}
+
+/* 旋转实时角度读数：置于旋转柄右侧并垂直居中，避免下探遮挡进度条 */
+.wf-canvas-angle {
+  position: absolute;
+  top: calc(100% + 19px);
+  left: calc(50% + 15px);
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 75%, transparent);
+  color: var(--color-on-scrim);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  translate: 0 -50%;
+  white-space: nowrap;
+}
+
+/* 拖拽移动时的对齐参考线与画布像素等距标记（纯展示层，采用琥珀色与白色选中框区分） */
+.wf-canvas-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-canvas-guide {
+  position: absolute;
+  background: var(--color-tertiary-fixed-dim);
+}
+
+.wf-canvas-spacing {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0 dashed color-mix(in srgb, var(--color-tertiary-fixed-dim) 75%, transparent);
+}
+
+.wf-canvas-spacing[data-axis='x'] {
+  border-inline-width: 1px;
+}
+
+.wf-canvas-spacing[data-axis='y'] {
+  border-block-width: 1px;
+}
+
+.wf-canvas-spacing > span {
+  padding: 0 4px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 75%, transparent);
+  color: var(--color-tertiary-fixed-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ---- 画面参考线：构图网格线与短视频平台遮挡安全区，位于画布编辑层之下，仅作编辑态辅助且不拦截指针 ---- */
+
+.wf-framing {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.wf-framing-line {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-on-scrim) 34%, transparent);
+  box-shadow: 0 0 1px color-mix(in srgb, var(--color-scrim) 45%, transparent);
+}
+
+.wf-framing-line[data-at='third'] {
+  --wf-framing-at: 33.333%;
+}
+
+.wf-framing-line[data-at='half'] {
+  --wf-framing-at: 50%;
+}
+
+.wf-framing-line[data-at='two-thirds'] {
+  --wf-framing-at: 66.667%;
+}
+
+.wf-framing-line[data-axis='x'] {
+  top: 0;
+  bottom: 0;
+  left: var(--wf-framing-at);
+  width: 1px;
+}
+
+.wf-framing-line[data-axis='y'] {
+  top: var(--wf-framing-at);
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
+/* 平台遮挡安全区：琥珀色虚线框叠加轻微暗幕，角部标注区域名称 */
+.wf-framing-zone {
+  position: absolute;
+  display: flex;
+  padding: 4px 6px;
+  border: 1px dashed color-mix(in srgb, var(--color-tertiary-fixed) 62%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-scrim) 24%, transparent);
+  color: color-mix(in srgb, var(--color-tertiary-fixed) 86%, transparent);
+  font-size: var(--wf-text-clip-label);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 竖屏右侧互动按钮列（点赞、评论等） */
+.wf-framing-zone[data-zone='side'] {
+  right: 6px;
+  bottom: 18%;
+  width: 13%;
+  height: 38%;
+  justify-content: center;
+  padding: 4px 0 0;
+}
+
+/* 竖屏底部标题文案区与横屏底部播控栏区 */
+.wf-framing-zone:is([data-zone='bottom'], [data-zone='controls']) {
+  right: 6px;
+  bottom: 5px;
+  left: 6px;
+  height: 15%;
+  align-items: flex-end;
+}
+
+.wf-framing-zone[data-zone='controls'] {
+  height: 17%;
+}

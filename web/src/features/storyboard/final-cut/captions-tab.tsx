@@ -191,6 +191,7 @@ export function CaptionsTab({
       url: audio.url,
       title: audio.title,
       peaks: audio.peaks,
+      traits: audio,
       durationMs: audio.durationMs,
     })
   // 旁白要用的音色：没换过时是资料库的第一个音色

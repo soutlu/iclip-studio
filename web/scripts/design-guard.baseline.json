@@ -1,7 +1,7 @@
 {
   "bare-hex-color": 0,
   "bare-rgb-color": 0,
-  "primitive-palette-ref": 44,
+  "primitive-palette-ref": 41,
   "tailwind-palette-class": 0,
   "tailwind-default-text-size": 0,
   "tailwind-default-shadow": 0,
@@ -24,5 +24,11 @@
   "arbitrary-spacing": 0,
   "off-grid-spacing-tsx": 0,
   "off-grid-spacing-css": 0,
-  "invalid-design-allow": 0
+  "invalid-design-allow": 0,
+  "globals-feature-css-imports": 8,
+  "css-file-max-lines": {
+    "src/features/storyboard/image-edit/image-edit.css": 555,
+    "src/features/storyboard/storyboard.css": 1507,
+    "src/features/storyboard/video-editor/editor-timeline.css": 508
+  }
 }

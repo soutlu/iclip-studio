@@ -149,10 +149,10 @@ describe('音频栏 · 列表', () => {
     expect(within(rowOf('轻快原声吉他')).getByText('0:30')).toBeInTheDocument()
     expect(within(rowOf('城市夜景氛围')).getByText('2:48')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '试听：轻快原声吉他' })).toBeInTheDocument()
-    expect(screen.queryByRole('img', { name: '使用中' })).toBeNull()
+    expect(within(list()).queryByText('已用')).toBeNull()
 
     const search = screen.getByRole('searchbox', { name: '搜索音频' })
-    expect(search).toHaveAttribute('placeholder', '搜索音频')
+    expect(search).toHaveAttribute('placeholder', '搜索')
     await user.type(search, '夜景')
     expect(within(list()).getAllByRole('listitem')).toHaveLength(1)
     expect(within(list()).getByText('城市夜景氛围')).toBeInTheDocument()
@@ -161,11 +161,13 @@ describe('音频栏 · 列表', () => {
     expect(screen.getByRole('status')).toHaveTextContent('暂无符合条件的音频，请更换关键词')
   })
 
-  it('这段对话还没有音频：说明怎么加', async () => {
+  it('这段对话还没有音频：说明怎么加，搜索框照样在', async () => {
     await openTab([])
     expect(await screen.findByRole('status')).toHaveTextContent(
-      '暂无音频，请点击「生成音乐」或「导入音频」',
+      '暂无音频，请点击「生成」或「导入音频」',
     )
+    expect(screen.getByRole('button', { name: '生成音乐' })).toHaveTextContent('生成')
+    expect(screen.getByRole('searchbox', { name: '搜索音频' })).toBeInTheDocument()
   })
 
   it.each([
@@ -267,6 +269,27 @@ describe('音频栏 · 试听', () => {
     expect(onReveal).not.toHaveBeenCalled()
   })
 
+  it('试听中的那一行：名字下面是能拖的播放进度，右边写「当前 / 总长」；底部试听条点 ✕ 停下，行和试听条一起收回', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    await openTab([guitar, night])
+    expect(within(rowOf('轻快原声吉他')).queryByRole('slider')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: '试听：轻快原声吉他' }))
+    const row = rowOf('轻快原声吉他')
+    expect(within(row).getByRole('slider', { name: '播放进度：轻快原声吉他' })).toBeInTheDocument()
+    expect(row).toHaveTextContent(/0:00 \/ 0:30/)
+    expect(within(rowOf('城市夜景氛围')).queryByRole('slider')).toBeNull()
+    const bar = screen.getByRole('region', { name: '试听：轻快原声吉他' })
+    expect(within(bar).getByRole('button', { name: '暂停' })).toBeInTheDocument()
+
+    await user.click(within(bar).getByRole('button', { name: '关闭试听' }))
+    expect(screen.queryByRole('region', { name: /^试听：/ })).toBeNull()
+    expect(within(rowOf('轻快原声吉他')).queryByRole('slider')).toBeNull()
+    expect(within(rowOf('轻快原声吉他')).getByText('0:30')).toBeInTheDocument()
+  })
+
   it('页签被藏起来时试听停下，再显示出来时没有哪一条还算在播', async () => {
     const user = userEvent.setup()
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve())
@@ -289,22 +312,22 @@ describe('音频栏 · 试听', () => {
   })
 })
 
-describe('音频栏 · 使用中', () => {
-  it('final-cut 里用着的那条行尾一个「使用中」的勾、没有「+」；点这一行选中它最早的那个片段，不再加一个', async () => {
+describe('音频栏 · 已用', () => {
+  it('final-cut 里用着的那条行尾常驻「已用」、没有「+」；点这一行选中它最早的那个片段，不再加一个', async () => {
     const user = userEvent.setup()
     const clips = [
       audio({ id: 'late', src: GUITAR_URL, start: 8000 }),
       audio({ id: 'early', src: GUITAR_URL, start: 1000, track: 1 }),
     ]
     const { onReveal, onAdd } = await openTab([guitar, night], clips)
-    expect(within(rowOf('轻快原声吉他')).getByRole('img', { name: '使用中' })).toBeInTheDocument()
+    expect(within(rowOf('轻快原声吉他')).getByText('已用')).toBeInTheDocument()
     expect(within(rowOf('轻快原声吉他')).getByText('0:30')).toBeInTheDocument()
     expect(
       within(rowOf('轻快原声吉他')).queryByRole('button', { name: /^放入配乐行：/ }),
     ).toBeNull()
-    expect(within(rowOf('城市夜景氛围')).queryByRole('img', { name: '使用中' })).toBeNull()
+    expect(within(rowOf('城市夜景氛围')).queryByText('已用')).toBeNull()
 
-    await user.click(rowButton('轻快原声吉他，使用中'))
+    await user.click(rowButton('轻快原声吉他，已用'))
     expect(onReveal).toHaveBeenCalledExactlyOnceWith('early')
     expect(onAdd).not.toHaveBeenCalled()
   })
@@ -362,7 +385,7 @@ describe('音频栏 · 加进 final-cut', () => {
 
   it('按住一行拖出去：移动时报告指针位置，松手时交给时间线；松手后不算点了这一行', async () => {
     const { onCarry, onDrop, onReveal } = await openTab([guitar], [audio({ src: GUITAR_URL })])
-    const row = rowButton('轻快原声吉他，使用中')
+    const row = rowButton('轻快原声吉他，已用')
     fireEvent.pointerDown(row, { button: 0, pointerId: 1, clientX: 10, clientY: 10 })
     fireEvent.pointerMove(row, { pointerId: 1, clientX: 10 + DRAG_THRESHOLD, clientY: 10 })
     expect(onCarry).not.toHaveBeenCalled()

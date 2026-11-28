@@ -1,0 +1,95 @@
+/* ---- 工作台顶栏右侧：保存状态、外观切换与导出（通过顶栏挂点渲染，位于 .wf-editor 之外） ---- */
+
+.wf-header-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 顶栏上的两个图标：保存状态和外观切换一样大 */
+:is(.wf-save-status, .wf-theme-toggle) {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-sm);
+}
+
+/* 保存状态只是一个图标：已保存是品牌色的勾（垫一层淡底），保存中转圈，失败是错误色 */
+.wf-save-status {
+  --icon-fill-opacity: 0.2;
+
+  color: var(--color-primary);
+}
+
+/* 外观切换：中性色图标，悬停变深 */
+.wf-theme-toggle {
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+}
+
+.wf-theme-toggle:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-save-status[data-save='saving'] {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-save-status[data-save='failed'] {
+  color: var(--color-error);
+}
+
+.wf-export {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  padding-left: 4px;
+}
+
+/* 导出一组的按钮同高：「导出」「下载成片」是品牌色的胶囊，取消、重新导出同高 */
+.wf-export button {
+  height: 29px;
+  flex: none;
+  gap: 6px;
+  padding: 0 14px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.wf-export button svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* 品牌色的主按钮压一道柔光和顶部高光 */
+.wf-export button.editor-compose:not([aria-disabled='true']) {
+  box-shadow:
+    0 3px 12px -2px color-mix(in srgb, var(--color-primary) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-primary) 24%, transparent);
+}
+
+.wf-export-status {
+  max-width: 240px;
+  overflow: hidden;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-body-sm);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 高清版在做时文字前的转圈，跟着文字排在同一行。 */
+.wf-export-status > svg {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.wf-export-status.is-error {
+  color: var(--color-error);
+}

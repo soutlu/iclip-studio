@@ -1,0 +1,130 @@
+/* 「原片截取」：标题行右边是入点 – 出点 / 素材总长 */
+.wf-slip-summary {
+  flex: none;
+  margin-left: auto;
+  color: var(--color-on-surface-variant);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-slip-total {
+  color: var(--color-on-surface-faint);
+}
+
+/* 整条素材：50px 高的凹槽，帧条、波形铺满；框外压暗的那圈投影被它裁掉 */
+.wf-slip {
+  position: relative;
+  display: flex;
+  height: 50px;
+  align-items: center;
+  overflow: clip;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-slip.is-ready {
+  cursor: grab;
+}
+
+.wf-slip-note {
+  padding-left: 12px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-slip-source {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+
+/* 整条素材的波形是上下对称的淡灰竖条。共用波形在自己身上定了颜色（深色主题下是 .dark 加一个类），这里三个条件压过它 */
+.wf-slip .wf-slip-source > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface-muted) 30%, transparent);
+}
+
+/* 片段用掉的那一段：墨色描边，框外压暗（一圈很宽的投影），两头按淡入、淡出画斜坡 */
+.wf-slip-window {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 1.8px solid var(--color-on-surface);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 999px color-mix(in srgb, var(--color-scrim) 28%, transparent);
+}
+
+.wf-slip-ramps {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.wf-slip-ramp {
+  fill: var(--color-on-surface);
+  fill-opacity: 0.14;
+}
+
+.wf-slip-ramp-line {
+  stroke: var(--color-on-surface);
+  stroke-width: 1.35;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 抓手收进框里：透明的一条，中间一道细竖条；点按区往框外伸，框很窄时两头仍各按得到。
+   两个类压过共用抓手（editing/timeline.css）的边框、底色和大小 */
+.wf-slip-window > .timeline-handle {
+  width: 10px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.wf-slip-window > .timeline-handle.is-start {
+  translate: 0 -50%;
+}
+
+.wf-slip-window > .timeline-handle.is-end {
+  translate: -100% -50%;
+}
+
+.wf-slip-window > .timeline-handle::after {
+  width: 2.5px;
+  height: 16px;
+}
+
+.wf-slip-window > .timeline-handle::before {
+  width: 18px;
+  translate: 0 -50%;
+}
+
+.wf-slip-window > .timeline-handle.is-start::before {
+  right: 0;
+  left: auto;
+}
+
+.wf-slip-window > .timeline-handle.is-end::before {
+  left: 0;
+}
+
+/* 拖着、聚焦时（共用抓手的反色）带圆角 */
+.wf-slip-window > .timeline-handle:is(:focus-visible, :active, .is-pressed) {
+  border-radius: var(--radius-xs);
+  background: var(--color-on-surface);
+}
+
+.wf-inspector-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}

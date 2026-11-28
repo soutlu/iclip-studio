@@ -1,9 +1,10 @@
-import { useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
+import { useScrollFade } from '../components/use-scroll-fade'
 import {
   LOCALES,
   phraseWith,
@@ -77,20 +78,18 @@ export const Keys = ({ children }: { children: string }) => <kbd className="wf-k
 /** 时间线编辑工具模式：选择（点选、拖拽与裁剪）或切开（剃刀）。 */
 export type EditTool = 'select' | 'razor'
 
-const TOOLS: Readonly<
-  Record<EditTool, { name: string; icon: IconName; keys: string; className: string }>
-> = {
-  select: { name: '选择工具', icon: 'final-cut-select', keys: 'V', className: 'wf-tool-select' },
-  razor: { name: '切开工具', icon: 'final-cut-split', keys: 'B', className: 'wf-tool-razor' },
+const TOOLS: Readonly<Record<EditTool, { name: string; icon: IconName; keys: string }>> = {
+  select: { name: '选择工具', icon: 'final-cut-select', keys: 'V' },
+  razor: { name: '切开工具', icon: 'final-cut-split', keys: 'B' },
 }
 
-/** 选择与切开工具组成的分段控件，当前激活项呈浮起态。 */
+/** 选择与切开工具组成的分段控件（样子同右栏的分段），当前工具浮起。 */
 function ToolSwitch({ tool, onTool }: Pick<EditorToolbarProps, 'tool' | 'onTool'>) {
   return (
     <div aria-label="编辑工具" className="wf-seg" role="group">
       {(['select', 'razor'] as const).map((each) => (
         <Tool
-          className={cn('wf-seg-item', TOOLS[each].className)}
+          className="wf-seg-item"
           icon={TOOLS[each].icon}
           key={each}
           label={TOOLS[each].name}
@@ -193,9 +192,10 @@ const SOURCE_BUTTON: LocaleButton = {
 }
 
 /**
- * 语言切换栏：展示原文及工程内已有值表的语言按钮（原文显示「原文」，其余显示语言代码，无障碍名称为完整语言名与代码），当前项高亮；
- * 末尾「+」菜单列出尚未添加的语言，选定后新建并切换，全部添加后隐藏。
- * 底部工具条（默认）向上弹出菜单，「字幕」页签顶部（`inPanel`）以紧凑行排列并向下弹出；两处共享同一份 `LocaleControls`。
+ * 语言切换栏：原文及工程内已有值表的语言平铺成一个分段（原文显示「原文」，其余显示语言代码，无障碍名称为完整语言名与代码），
+ * 当前项浮起；分段放不下时横向滚动、能滚的一侧渐隐，当前语言自动滚进看得见的地方。分段右边的「+」菜单列出尚未添加的语言，
+ * 选定后新建并切换，全部添加后隐藏。底部工具条（默认）的菜单和提示向上弹，「字幕」页签顶部（`inPanel`）的向下弹；
+ * 两处同一个样子，共享同一份 `LocaleControls`。
  */
 export function LocaleBar({
   current,
@@ -204,6 +204,19 @@ export function LocaleBar({
   onAdd,
   inPanel = false,
 }: LocaleControls & { inPanel?: boolean }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { fade, width } = useScrollFade(scrollRef)
+  // 当前语言被挡在滚动区外面时滚过去（换了语言、加了语言、滚动区变窄时）；只挪这一层，不带着外面的页面一起滚
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current
+    const shown = scroller?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (scroller === null || shown === null || shown === undefined) return
+    const left = shown.offsetLeft - LOCALE_SCROLL_MARGIN
+    const right = shown.offsetLeft + shown.offsetWidth + LOCALE_SCROLL_MARGIN
+    if (left < scroller.scrollLeft) scroller.scrollLeft = left
+    else if (right > scroller.scrollLeft + scroller.clientWidth)
+      scroller.scrollLeft = right - scroller.clientWidth
+  }, [current, present, width])
   const buttons: LocaleButton[] = [
     SOURCE_BUTTON,
     ...LOCALES.filter(({ code }) => present.includes(code)).map((locale) => ({
@@ -217,33 +230,36 @@ export function LocaleBar({
   const side = inPanel ? 'bottom' : 'top'
   return (
     // 侧栏语言组使用独立无障碍名称，避免按「语言」查询工具条分组时产生歧义
-    <div
-      aria-label={inPanel ? '原文与译文' : '语言'}
-      className={cn('wf-locales', inPanel && 'is-panel')}
-      role="group"
-    >
-      {buttons.map((button) => (
-        <TooltipRoot key={button.label}>
-          <TooltipTrigger asChild>
-            <button
-              aria-label={button.label}
-              aria-pressed={button.code === current}
-              className="wf-locale ui-state ui-focus"
-              onClick={() => onSwitch(button.code)}
-              type="button"
-            >
-              {button.tag}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="wf-tip" side={side}>
-            {button.tip}
-          </TooltipContent>
-        </TooltipRoot>
-      ))}
+    <div aria-label={inPanel ? '原文与译文' : '语言'} className="wf-locales" role="group">
+      <div className="wf-locales-scroll storyboard-scroll-fade" data-fade={fade} ref={scrollRef}>
+        <div className="wf-seg">
+          {buttons.map((button) => (
+            <TooltipRoot key={button.label}>
+              <TooltipTrigger asChild>
+                <button
+                  aria-label={button.label}
+                  aria-pressed={button.code === current}
+                  className="wf-seg-item ui-state ui-focus"
+                  onClick={() => onSwitch(button.code)}
+                  type="button"
+                >
+                  {button.tag}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent className="wf-tip" side={side}>
+                {button.tip}
+              </TooltipContent>
+            </TooltipRoot>
+          ))}
+        </div>
+      </div>
       {addable.length === 0 ? null : <AddLocale addable={addable} onAdd={onAdd} side={side} />}
     </div>
   )
 }
+
+/** 当前语言滚进看得见的地方时，两边离滚动区边缘留的空（px），让出渐隐的那一截。 */
+const LOCALE_SCROLL_MARGIN = 24
 
 /** 菜单与提示的弹出方向。 */
 type PopSide = 'top' | 'bottom'
@@ -271,7 +287,11 @@ function AddLocale({
       <TooltipRoot onOpenChange={setHint} open={hint && !open}>
         <MenuTrigger asChild>
           <TooltipTrigger asChild>
-            <button aria-label="添加语言" className="wf-locale-add ui-state ui-focus" type="button">
+            <button
+              aria-label="添加语言"
+              className="wf-tool wf-locale-add ui-state ui-focus"
+              type="button"
+            >
               <Icon decorative name="final-cut-add" size="xs" />
             </button>
           </TooltipTrigger>
@@ -349,94 +369,98 @@ export function EditorToolbar({
   return (
     <div aria-label="剪辑工具" className="wf-toolbar" role="toolbar">
       <div className="wf-toolbar-group">
-        <Tool
-          blocked={canUndo ? undefined : '暂无可撤销的操作'}
-          icon="final-cut-undo"
-          label="撤销"
-          onClick={onUndo}
-          shortcuts="Meta+Z"
-          tip={
-            <>
-              撤销
-              <Keys>⌘Z</Keys>
-            </>
-          }
-        />
-        <Tool
-          blocked={canRedo ? undefined : '暂无可重做的操作'}
-          icon="final-cut-redo"
-          label="重做"
-          onClick={onRedo}
-          shortcuts="Shift+Meta+Z"
-          tip={
-            <>
-              重做
-              <Keys>⇧⌘Z</Keys>
-            </>
-          }
-        />
-        <span aria-hidden="true" className="wf-divider" />
-        <ToolSwitch onTool={onTool} tool={tool} />
-        <EditCommands
-          onSelectAround={onSelectAround}
-          onSplit={onSplit}
-          splitBlocked={splitBlocked}
-        />
-        <Tool
-          blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
-          className="is-danger"
-          icon="final-cut-delete"
-          label="删除"
-          onClick={onRemove}
-          shortcuts="Delete"
-          tip={
-            <>
-              删除
-              <Keys>Delete</Keys>
-            </>
-          }
-        />
-        <span aria-hidden="true" className="wf-divider" />
-        <Tool
-          blocked={sound.blocked}
-          className="wf-tool-detach"
-          icon={SOUND_ACTION_LOOK[sound.kind].icon}
-          label={SOUND_ACTION_LOOK[sound.kind].label}
-          onClick={sound.onClick}
-          shortcuts="Shift+Meta+B"
-          tip={
-            <>
-              {SOUND_ACTION_LOOK[sound.kind].label}
-              <Keys>⇧⌘B</Keys>
-            </>
-          }
-        />
-        <Tool
-          className="wf-tool-snap"
-          icon="final-cut-snap"
-          label="吸附"
-          onClick={onSnap}
-          pressed={snap}
-          tip={
-            snap
-              ? '吸附已开启：拖动和裁剪时贴靠其他片段的两端、播放头和配乐的节拍'
-              : '吸附已关闭：片段停在拖到的位置'
-          }
-        />
-        <Tool
-          className="wf-tool-ripple"
-          icon="final-cut-ripple"
-          label="波纹编辑"
-          onClick={onRipple}
-          pressed={ripple}
-          tip={
-            ripple
-              ? '波纹编辑已开启：删除第一行的片段后，后面的片段自动前移补位'
-              : '波纹编辑已关闭：删除片段后保留空档'
-          }
-        />
+        <span className="wf-toolbar-cluster">
+          <Tool
+            blocked={canUndo ? undefined : '暂无可撤销的操作'}
+            icon="final-cut-undo"
+            label="撤销"
+            onClick={onUndo}
+            shortcuts="Meta+Z"
+            tip={
+              <>
+                撤销
+                <Keys>⌘Z</Keys>
+              </>
+            }
+          />
+          <Tool
+            blocked={canRedo ? undefined : '暂无可重做的操作'}
+            icon="final-cut-redo"
+            label="重做"
+            onClick={onRedo}
+            shortcuts="Shift+Meta+Z"
+            tip={
+              <>
+                重做
+                <Keys>⇧⌘Z</Keys>
+              </>
+            }
+          />
+        </span>
+        <span className="wf-toolbar-cluster">
+          <ToolSwitch onTool={onTool} tool={tool} />
+          <EditCommands
+            onSelectAround={onSelectAround}
+            onSplit={onSplit}
+            splitBlocked={splitBlocked}
+          />
+        </span>
+        <span className="wf-toolbar-cluster">
+          <Tool
+            blocked={sound.blocked}
+            icon={SOUND_ACTION_LOOK[sound.kind].icon}
+            label={SOUND_ACTION_LOOK[sound.kind].label}
+            onClick={sound.onClick}
+            shortcuts="Shift+Meta+B"
+            tip={
+              <>
+                {SOUND_ACTION_LOOK[sound.kind].label}
+                <Keys>⇧⌘B</Keys>
+              </>
+            }
+          />
+          <Tool
+            blocked={hasSelection ? undefined : '尚未选中片段，无法删除；请先选中片段'}
+            className="is-danger"
+            icon="final-cut-delete"
+            label="删除"
+            onClick={onRemove}
+            shortcuts="Delete"
+            tip={
+              <>
+                删除
+                <Keys>Delete</Keys>
+              </>
+            }
+          />
+        </span>
+        <span className="wf-toolbar-cluster">
+          <Tool
+            className="is-snap"
+            icon="final-cut-snap"
+            label="吸附"
+            onClick={onSnap}
+            pressed={snap}
+            tip={
+              snap
+                ? '吸附已开启：拖动和裁剪时贴靠其他片段的两端、播放头和配乐的节拍'
+                : '吸附已关闭：片段停在拖到的位置'
+            }
+          />
+          <Tool
+            icon="final-cut-ripple"
+            label="波纹编辑"
+            onClick={onRipple}
+            pressed={ripple}
+            tip={
+              ripple
+                ? '波纹编辑已开启：删除第一行的片段后，后面的片段自动前移补位'
+                : '波纹编辑已关闭：删除片段后保留空档'
+            }
+          />
+        </span>
       </div>
-      <div className="wf-toolbar-group">
+      <div className="wf-toolbar-group is-end">
         <LocaleBar {...locales} />
         <span aria-hidden="true" className="wf-divider" />
         <Tool
@@ -459,7 +483,7 @@ export function EditorToolbar({
           tip="适应宽度：整条时间线排满"
         />
         <Slider
-          className="mx-1 w-19.5 flex-none"
+          className="wf-zoom mx-1 w-19.5 flex-none"
           label="时间线缩放"
           max={100}
           min={0}

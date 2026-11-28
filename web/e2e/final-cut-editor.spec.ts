@@ -798,13 +798,13 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   const soundRow = editor.getByRole('group', { name: '配乐', exact: true })
   const music = soundRow.getByRole('group', { name: '轻快原声吉他，适合秋季穿搭，30.0 秒' })
   await expect(music).toBeVisible()
-  await expect(guitar.getByRole('img', { name: '使用中' })).toBeVisible()
+  await expect(guitar.getByText('已用', { exact: true })).toBeVisible()
   await expect(guitar.getByRole('button', { name: /^放入配乐行：/ })).toHaveCount(0)
   await expect(progress).toHaveAttribute('aria-valuetext', '00:01.00 / 00:31.00')
   expect(videoSeconds).toBeLessThan(31)
 
-  // 点「使用中」的那一行：选中它对应的片段，不再加一个，侧栏跟着切到「属性」；再点回「配乐」，选中不变
-  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，使用中' }).click()
+  // 点「已用」的那一行：选中它对应的片段，不再加一个，侧栏跟着切到「属性」；再点回「配乐」，选中不变
+  await guitar.getByRole('button', { name: '轻快原声吉他，适合秋季穿搭，已用' }).click()
   await expect(music.getByRole('button', { name: /^选中：/ })).toHaveAttribute(
     'aria-pressed',
     'true',
@@ -858,7 +858,7 @@ test('音频栏：试听只播一条，点一下没用过的一行加到播放�
   expect(savedAudio(htmlOf(await undone))).toEqual([
     { label: '轻快原声吉他，适合秋季穿搭', start: 1, duration: 30, track: 0 },
   ])
-  await expect(uploaded).not.toContainText('使用中')
+  await expect(uploaded).not.toContainText('已用')
 })
 
 /** 存下来的主文件里第一个 `tag` 片段上的属性 `name`；不写值的属性是空串，没有这个属性时是 undefined。 */
@@ -1612,7 +1612,7 @@ test('切开：选中视频片段、把播放头放进去按 S，存下来多了
   const box = await back.boundingBox()
   if (box === null) throw new Error('后半段还没排好')
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
-  await expect(editor.getByTestId('razor-line')).toBeVisible()
+  await expect(editor.getByTestId('timeline-skimmer')).toBeVisible()
   const again = mainSaved(page, 3)
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
   const [, middle, last] = savedVideoTimings(htmlOf(await again))
@@ -1647,7 +1647,7 @@ const dragClip = async (page: Page, clip: Locator, dx: number) => {
   await page.mouse.up()
 }
 
-test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是裁剪；把手不伸到片段外面', async ({
+test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是裁剪；把手骑在两端的边线上，点按区不伸到片段外面', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -1669,13 +1669,15 @@ test('默认缩放下选中 1 秒的片段：按在正中拖是挪动、不是�
   const box = await clip.boundingBox()
   if (box === null) throw new Error('片段还没排好')
   expect(box.width).toBeLessThan(40)
-  for (const name of ['裁剪开头', '裁剪结尾']) {
+  for (const [name, edge] of [
+    ['裁剪开头', box.x],
+    ['裁剪结尾', box.x + box.width],
+  ] as const) {
     const handle = await clip.getByRole('slider', { name }).boundingBox()
     if (handle === null) throw new Error('把手还没排好')
-    expect(handle.x).toBeGreaterThanOrEqual(box.x - 0.5)
-    expect(handle.x + handle.width).toBeLessThanOrEqual(box.x + box.width + 0.5)
+    expect(Math.abs(handle.x + handle.width / 2 - edge)).toBeLessThanOrEqual(1)
   }
-  // 点按区也不伸出去：紧挨着片段两边按下去的不是把手
+  // 点按区不伸出去：紧挨着片段两边按下去的不是把手
   const y = box.y + box.height / 2
   for (const x of [box.x - 2, box.x + box.width + 2])
     expect(
@@ -3329,6 +3331,63 @@ test('AI 配音：English 下点音色「原声」只记下，点「生成配音
   await expect.poll(sounds).toEqual({ muted: false, dubs: 0 })
 })
 
+test('配音行引导：有字幕、还没有配音时，声音区最上面那一行写着去哪里配；把一条音频拖到引导上，就在那里新开一行，原来的配乐行往下排', async ({
+  page,
+}) => {
+  test.setTimeout(90_000)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await serveSavedCaptions(page)
+  const panel = await openConversation(page, '工具过程展示')
+  const editor = await createFinalCut(panel)
+  await addWholeTake(page, editor)
+  const side = editor.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' })
+  await side.getByRole('tab', { name: '字幕' }).click()
+  const recognized = page.waitForRequest(
+    (request) =>
+      (savedFileOf(request, CAPTIONS_FILE)?.match(/data-caption-of/g) ?? []).length === 2,
+  )
+  await side
+    .getByRole('tabpanel', { name: '字幕' })
+    .getByRole('button', { name: '识别字幕', exact: true })
+    .click()
+  await recognized
+  const hint = editor.getByText('当前语言保留原声；在「字幕」页签切到「配音」可生成配音')
+  await expect(hint).toBeVisible()
+
+  // 点一下音频库的第一条：放在播放头处新开的配乐行，引导留在它上面
+  await side.getByRole('tab', { name: '配乐' }).click()
+  await side.getByRole('radio', { name: '音频库' }).click()
+  const rows = side.getByRole('list', { name: '音频库' }).getByRole('listitem')
+  const added = mainSavedWith(page, (html) => savedAudio(html).length === 1)
+  await rows.first().click()
+  const [first] = savedAudio(htmlOf(await added))
+  expect(first?.track).toBe(0)
+  const music = editor.getByRole('group', { name: '配乐', exact: true })
+  const hintBox = await boxOf(hint)
+  expect(hintBox.y).toBeLessThan((await boxOf(music)).y)
+
+  // 拖第二条到引导上：引导那一行换成要新开的一行，松手后新的在上面、原来的配乐往下排
+  const from = await boxOf(rows.nth(1))
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(from.x + from.width / 2 - 10, from.y + from.height / 2 + 10, { steps: 3 })
+  await page.mouse.move(hintBox.x + 300, hintBox.y + hintBox.height / 2, { steps: 12 })
+  await expect(editor.getByTestId('drop-ghost')).toBeVisible()
+  await expect(hint).toHaveCount(0)
+  const dropped = mainSavedWith(page, (html) => savedAudio(html).length === 2)
+  await page.mouse.up()
+  const both = savedAudio(htmlOf(await dropped))
+  expect(both.find(({ label }) => label === first?.label)?.track).toBe(1)
+  expect(both.find(({ label }) => label !== first?.label)?.track).toBe(0)
+  await expect(editor.getByRole('group', { name: '配乐 1', exact: true })).toBeVisible()
+  await expect(editor.getByRole('group', { name: '配乐 2', exact: true })).toBeVisible()
+  // 还是没有配音：引导回到声音区最上面
+  await expect(hint).toBeVisible()
+  expect((await boxOf(hint)).y).toBeLessThan(
+    (await boxOf(editor.getByRole('group', { name: '配乐 1', exact: true }))).y,
+  )
+})
+
 test('配音片段调音直接打进预览：English 下 AI 配音，给一个配音片段选音色风格，预览不换播放器，预览里和存下的这个配音片段都带着新的效果链', async ({
   page,
 }) => {
@@ -3595,9 +3654,12 @@ test('旁白配音：原文下输入文案、选资料库的音色插入，按�
   const caption = / data-dub-of="([^"]+)"/.exec(tag)?.[1] ?? ''
   const scene = savedFileOf(await sceneSaved, CAPTIONS_FILE) ?? ''
   expect(scene).toContain(`id="${caption}"`)
-  await expect(editor.getByRole('group', { name: '配音', exact: true })).toContainText(
-    '旁白 · 欢迎来到新品发布会',
-  )
+  // 配音行上多一个这段文案的旁白片段，顶行写合成它用的音色名
+  await expect(
+    editor
+      .getByRole('group', { name: '配音', exact: true })
+      .getByRole('group', { name: /^旁白 · 欢迎来到新品发布会/ }),
+  ).toContainText('Emma')
 })
 
 test('素材片的句子配音不压到后面的旁白上：English 下「重新生成」，素材片最后一句的上限是后面那句旁白字幕的开始', async ({

@@ -14,30 +14,32 @@ export const ITEM_KIND_LABEL: Record<ItemKind, string> = { component: '元素', 
 export const hostKindOf = (clip: HostClip, catalog: ComponentCatalog): ItemKind | undefined =>
   itemNamed(catalog, clip.item)?.kind
 
-/** 条目页签的一个分类：「全部」「品牌」，或者组件库目录里的一类。 */
+/** 条目页签的一个分类：「全部」，或者组件库目录里的一类。 */
 export type ItemChip = {
   value: string
   label: string
   includes: (item: CatalogItem) => boolean
 }
 
-/** 条目页签上的搜索词和选中的分类（`ItemChip.value`）。 */
-export type ItemFilter = { query: string; chip: string }
+/** 条目页签上的搜索词、选中的分类（`ItemChip.value`）和选中的品牌（null 是不按品牌筛）。 */
+export type ItemFilter = { query: string; chip: string; brand: string | null }
 
-export const NO_FILTER: ItemFilter = { query: '', chip: 'all' }
+export const NO_FILTER: ItemFilter = { query: '', chip: 'all', brand: null }
 
 // 组装脚本把这一类的条目标成字幕；字幕在后面的步骤里另做，条目页签不列
 const CAPTIONS = 'captions'
 
+const listedIn = (kind: ItemKind) => (item: CatalogItem) =>
+  item.kind === kind && item.category !== CAPTIONS
+
 /**
- * `kind` 这种条目的页签上的分类，按显示的先后：全部、品牌、目录里除字幕以外的各类。
- * 「全部」总在；别的分类在这种条目里一个都没有时不列。
+ * `kind` 这种条目的页签上的分类，按显示的先后：全部、目录里除字幕以外的各类。
+ * 「全部」总在；别的分类在这种条目里一个都没有时不列。品牌不算分类，另用 `itemBrands` 筛。
  */
 export const itemChips = (catalog: ComponentCatalog, kind: ItemKind): ItemChip[] => {
-  const listed = (item: CatalogItem) => item.kind === kind && item.category !== CAPTIONS
+  const listed = listedIn(kind)
   const chips: ItemChip[] = [
     { value: 'all', label: '全部', includes: listed },
-    { value: 'brand', label: '品牌', includes: (item) => listed(item) && item.brand !== undefined },
     ...catalog.categories.map((category) => ({
       value: `category:${category.id}`,
       label: category.label,
@@ -47,19 +49,33 @@ export const itemChips = (catalog: ComponentCatalog, kind: ItemKind): ItemChip[]
   return chips.filter((chip) => chip.value === 'all' || catalog.items.some(chip.includes))
 }
 
-export const categoryLabel = (catalog: ComponentCatalog, item: CatalogItem): string =>
+const categoryLabel = (catalog: ComponentCatalog, item: CatalogItem): string =>
   catalog.categories.find((category) => category.id === item.category)?.label ?? ''
 
-/** 分类里名字、说明或分类名含有 `query`（不分大小写，去掉两头空白）的条目，按目录里的先后。 */
+/** `kind` 这种条目里出现的品牌，按名字排；一个都没有时是空的。 */
+export const itemBrands = (catalog: ComponentCatalog, kind: ItemKind): string[] => {
+  const listed = listedIn(kind)
+  const brands = new Set(
+    catalog.items.flatMap((item) => (listed(item) && item.brand !== undefined ? [item.brand] : [])),
+  )
+  return [...brands].sort((a, b) => a.localeCompare(b))
+}
+
+/**
+ * 分类里（选了品牌时只看这个品牌的）名字、说明或分类名含有 `query`（不分大小写，去掉两头空白）的条目，
+ * 按目录里的先后。
+ */
 export const filterItems = (
   catalog: ComponentCatalog,
   chip: ItemChip,
   query: string,
+  brand: string | null = null,
 ): CatalogItem[] => {
   const keyword = query.trim().toLowerCase()
   return catalog.items.filter(
     (item) =>
       chip.includes(item) &&
+      (brand === null || item.brand === brand) &&
       [item.title, item.description, categoryLabel(catalog, item)].some((text) =>
         text.toLowerCase().includes(keyword),
       ),

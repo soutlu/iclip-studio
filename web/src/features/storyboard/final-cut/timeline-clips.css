@@ -1,0 +1,456 @@
+/* 视频片段：画面铺满整个片段（深色卡底），没分离原声的底部叠一条细的半透明原声波形 */
+.wf-clip.is-video > .wf-clip-body {
+  padding: 0;
+  background: var(--wf-clip-video);
+}
+
+.wf-clip-frames {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  color: color-mix(in srgb, var(--color-on-scrim) 55%, transparent);
+}
+
+.wf-clip-wave {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--z-local-1);
+  display: flex;
+  height: 6px;
+  overflow: hidden;
+  background: var(--wf-on-frame);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
+}
+
+/* 自动避让在视频片段上画成右上角的一枚压低图标，压在画面上的深色小底上 */
+.wf-clip.is-video .wf-clip-duck {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  z-index: var(--z-local-1);
+  padding: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--wf-on-frame);
+  color: var(--color-on-scrim);
+}
+
+/* 元素、模板片段：同一种圆角胶囊，深色卡底上横着铺满封面，像一条小帧条 */
+.wf-clip.is-host > .wf-clip-body {
+  padding: 0;
+  background: var(--wf-clip-component);
+}
+
+.wf-clip-strip {
+  position: absolute;
+  inset: 4px 0;
+  background-position: left center;
+  background-repeat: repeat-x;
+  background-size: auto 100%;
+  pointer-events: none;
+}
+
+/* 字幕：白底细边圆角胶囊，单行写着这句的字，放不下时省略；当前语言下没字时写浅色斜体「待输入字幕」。
+   「其他」片段同音频卡的中性底，只有名字 */
+.wf-clip.is-caption > .wf-clip-body {
+  padding: 0 12px;
+  background: var(--wf-clip-caption);
+  color: var(--color-on-surface);
+}
+
+.wf-clip.is-other > .wf-clip-body {
+  background: var(--wf-clip-audio);
+  color: var(--color-on-surface);
+}
+
+.wf-clip-name {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-clip.is-caption .wf-clip-name {
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
+}
+
+.wf-clip-name.is-blank {
+  color: var(--color-on-surface-faint);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* 音频片段：中性卡底，左缘一道身份色细竖条；顶上一行写名字和小标（配音是人声图标、音色名和倍数），下面是
+   贴底往上长的波形。身份色按声音从哪来：分离出来的原声、配音、配乐。过期的配音色条和外缘换成琥珀色、整块稍稍降透 */
+.wf-clip[data-source='original'] {
+  --wf-sound-wave: var(--color-tone-slate);
+  --wf-sound-ink: var(--wf-original-ink);
+}
+
+.wf-clip[data-source='dub'] {
+  --wf-sound-wave: var(--color-tone-umber);
+  --wf-sound-ink: var(--wf-dub-ink);
+}
+
+.wf-clip[data-source='music'] {
+  --wf-sound-wave: var(--color-tone-teal);
+  --wf-sound-ink: var(--wf-music-ink);
+}
+
+.wf-clip.is-audio > .wf-clip-body {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--wf-clip-audio);
+  box-shadow: inset 2.5px 0 0 var(--wf-sound-bar, var(--wf-sound-wave));
+  color: var(--wf-sound-ink);
+  /* 窄得放不下顶行时只画波形，按片段身体的宽算 */
+  container-type: inline-size;
+}
+
+/* 选中的细框压住色条的一部分，色条跟着加宽，露出来的还是一样宽 */
+.wf-clip.is-audio.is-selected > .wf-clip-body {
+  box-shadow: inset 4px 0 0 var(--wf-sound-bar, var(--wf-sound-wave));
+}
+
+.wf-clip.is-stale {
+  --wf-sound-bar: var(--color-tertiary);
+}
+
+/* 隐藏（静音）的画得更淡，见 film-timeline.css，这里不压过它 */
+.wf-clip.is-stale:not(.is-hidden) > .wf-clip-body {
+  opacity: 0.8;
+}
+
+.wf-clip.is-stale:not(.is-selected, :hover)::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tertiary) 45%, transparent);
+}
+
+.wf-clip-label {
+  display: flex;
+  height: 16px;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 0 10px;
+  background: var(--wf-clip-label);
+  box-shadow: inset 0 -1px 0 var(--wf-clip-label-line);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  line-height: 1;
+}
+
+.wf-clip-label .wf-clip-name {
+  margin-right: auto;
+  color: var(--color-on-surface);
+  line-height: inherit;
+}
+
+/* 配音顶行最前面的人声图标，用身份色 */
+.wf-clip-voice {
+  --icon-fill-color: var(--wf-sound-wave);
+  --icon-fill-opacity: 0.28;
+
+  flex: none;
+  color: var(--wf-sound-wave);
+}
+
+.wf-clip-sound {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  padding-left: 2px;
+}
+
+@container (width < 56px) {
+  .wf-clip-label {
+    display: none;
+  }
+}
+
+/* 片段上的小标：分离出来的原声的静音、错开（提示色）、联动，配音的倍数（截尾时提示色），开着自动避让（主色，
+   前面一个压低图标） */
+.wf-clip-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  background: var(--wf-control-soft);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  white-space: nowrap;
+}
+
+/* 顶行只有 16px 高：小标不铺底，只换字色 */
+.wf-clip-label .wf-clip-badge {
+  padding: 0;
+  background: none;
+  line-height: inherit;
+}
+
+.wf-clip-badge[data-tone='offset'] {
+  color: var(--color-warning);
+}
+
+.wf-clip-badge[data-tone='linked'] {
+  color: var(--color-primary);
+}
+
+/* 视频片段上开着自动避让：右上角一枚压低图标 */
+.wf-clip-duck {
+  flex: none;
+  color: var(--color-primary);
+}
+
+@container (width < 96px) {
+  .wf-clip-label .wf-clip-badge {
+    display: none;
+  }
+}
+
+/* 波形音量关键帧：标题条上的小标、波形上的曲线都用琥珀色（设计系统的 tertiary 一族） */
+.wf-clip-keyframes {
+  color: var(--color-tertiary);
+  font-weight: 500;
+}
+
+@container (width < 120px) {
+  .wf-clip-keyframes {
+    display: none;
+  }
+}
+
+/* 波形的颜色：音频片段用身份色，视频片段底部那条用画面上的浅色；不出声的片段（静音、关了原声）画灰（高低由
+   波形自己压矮）。共用波形在自己身上定了颜色（深色主题下是 .dark 加一个类），这里三个条件压过它 */
+.wf-clip .wf-clip-sound > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--wf-sound-wave) 62%, transparent);
+}
+
+.wf-clip .wf-clip-wave > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-scrim) 68%, transparent);
+}
+
+.wf-clip .wf-clip-sound.is-silent > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-surface) 16%, transparent);
+}
+
+.wf-clip .wf-clip-wave.is-silent > .timeline-wave {
+  --timeline-wave-color: color-mix(in srgb, var(--color-on-scrim) 24%, transparent);
+}
+
+/* 有音量曲线时波形两边让出裁剪把手的点按区，两头的点不被把手盖住；视频片段的波形条加高，线有地方上下，
+   但不高过片段的一半，按片段正中照常是挪动 */
+.wf-clip-sound.has-envelope,
+.wf-clip-wave.has-envelope {
+  padding: 0 14px;
+}
+
+.wf-clip-wave.has-envelope {
+  height: 12px;
+}
+
+/* 曲线一层叠在波形上，自己不接指针：只有选中时的线和点接，别处按到片段上 */
+.wf-envelope {
+  position: absolute;
+  right: 14px;
+  bottom: 0;
+  left: 14px;
+  z-index: var(--z-local-2);
+  height: 10px;
+  pointer-events: none;
+}
+
+/* 按百分比画在这一块里：线宽不跟着拉伸；按在线上的范围不出这一块 */
+.wf-envelope-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.wf-envelope-line {
+  fill: none;
+  stroke: var(--color-tone-ochre);
+  stroke-linejoin: round;
+  stroke-width: 1.45;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 线两边各 5px 都算按在线上（照引擎工作台的抓取距离） */
+.wf-envelope-hit {
+  fill: none;
+  cursor: copy;
+  pointer-events: stroke;
+  stroke: transparent;
+  stroke-width: 10;
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-envelope-point {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  translate: -50% -50%;
+  border-radius: var(--radius-full);
+  background: var(--color-tone-ochre);
+  box-shadow: 0 0 0 1px var(--color-surface-container-lowest);
+}
+
+.wf-envelope.is-editable .wf-envelope-point {
+  cursor: ns-resize;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* 圆点看着小，按的地方是 14px 见方 */
+.wf-envelope.is-editable .wf-envelope-point::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  translate: -50% -50%;
+}
+
+.wf-envelope-point.is-active {
+  scale: 1.4;
+}
+
+.wf-envelope-readout {
+  position: absolute;
+  z-index: var(--z-local-3);
+  padding: 0 4px;
+  translate: 8px -120%;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  color: var(--color-inverse-on-surface);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-caption--line-height);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* 配乐片段上的节拍：贴着底边一排细竖线，用片段的波形色，强拍更高更实；不挡拖动和点选 */
+.wf-beat-marks {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.wf-beat {
+  position: absolute;
+  bottom: 0;
+  width: 0;
+  height: 3px;
+  translate: -0.5px 0;
+  border-left: 1px solid color-mix(in srgb, var(--wf-sound-wave) 45%, transparent);
+}
+
+.wf-beat.is-strong {
+  height: 6px;
+  border-left-color: var(--wf-sound-wave);
+}
+
+/* 吸附时的对齐线：琥珀色，同开着的「吸附」 */
+.wf-snap-guide {
+  position: absolute;
+  top: var(--timeline-ruler-height);
+  bottom: 0;
+  z-index: var(--z-local-2);
+  width: 0;
+  translate: -0.5px 0;
+  border-left: 1px solid var(--color-tertiary);
+  pointer-events: none;
+}
+
+/* 指针停在播放头的竖线上（不在把手、音量曲线上）或正拖着它：左右拖的光标 */
+.wf-lanes[data-on-playhead],
+.wf-lanes[data-on-playhead] * {
+  cursor: ew-resize;
+}
+
+/* 剃刀：各行上是十字光标 */
+.wf-lanes.is-razor,
+.wf-lanes.is-razor * {
+  cursor: crosshair;
+}
+
+/* 悬停游标：从时间尺底边往下穿过露出来的各行的一条细虚线（切开工具下是青蓝实线切分线），时间尺上一个深色小气泡
+   写时间；放在吸住的时间尺里，同播放头一样头留在顶上、线往下伸 */
+.wf-skimmer {
+  position: absolute;
+  top: 100%;
+  bottom: var(--timeline-playhead-bottom);
+  z-index: var(--z-local-2);
+  width: 1px;
+  translate: -50% 0;
+  background: repeating-linear-gradient(to bottom, var(--color-outline) 0 3px, transparent 3px 6px);
+  pointer-events: none;
+}
+
+.wf-skimmer.is-razor {
+  background: var(--color-tone-slate);
+}
+
+.wf-skimmer-time {
+  position: absolute;
+  top: 3px;
+  z-index: var(--z-local-2);
+  height: 18px;
+  translate: -50% 0;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-inverse-surface);
+  box-shadow: var(--shadow-xs);
+  color: var(--color-inverse-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* 游标靠着时间区两头时，气泡从游标往里排 */
+.wf-skimmer-time[data-align='start'] {
+  translate: 0 0;
+}
+
+.wf-skimmer-time[data-align='end'] {
+  translate: -100% 0;
+}
+
+/* 框选时拖出来的框：盖在各行上面、压不过吸在顶上的时间尺；浅底加一圈细框，同开着的开关 */
+.wf-marquee {
+  position: absolute;
+  z-index: var(--z-local-2);
+  border-radius: var(--radius-sm);
+  background: var(--wf-control-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-surface) 48%, transparent);
+  pointer-events: none;
+}
+
+/* 组件缩略图放进插入缩影与占位时，跟着缩略框的圆角，不再叠阴影。 */
+.timeline-insertion-thumb .wf-item-thumb {
+  border-radius: inherit;
+  box-shadow: none;
+}

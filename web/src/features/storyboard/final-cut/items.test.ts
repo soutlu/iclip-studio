@@ -3,6 +3,7 @@ import { audio, fixtureCatalog, host, video } from '@/testing/final-cut'
 import type { CatalogItem } from './composition/catalog'
 import {
   filterItems,
+  itemBrands,
   itemChips,
   itemDurationMs,
   playheadSpot,
@@ -23,13 +24,25 @@ const item = (name: string): CatalogItem => {
   return found
 }
 
-describe('组件、块页签的分类和搜索', () => {
-  it('分类一排：全部、品牌，再是目录里除字幕以外的各类，只列这种条目里有的', () => {
+describe('组件、块页签的分类、品牌和搜索', () => {
+  it('分类一排：全部，再是目录里除字幕以外的各类，只列这种条目里有的；品牌不算分类', () => {
     expect(labels(itemChips(fixtureCatalog, 'component'))).toEqual(['全部', '效果', '文字效果'])
-    expect(labels(itemChips(fixtureCatalog, 'block'))).toEqual(['全部', '品牌', '通用'])
+    expect(labels(itemChips(fixtureCatalog, 'block'))).toEqual(['全部', '通用'])
   })
 
-  it('一类里两种条目都有：每个页签的这一类和「品牌」只列自己这种', () => {
+  it('品牌只列这种条目里出现的，按名字排；一个都没有时是空的', () => {
+    expect(itemBrands(fixtureCatalog, 'block')).toEqual(['示例品牌'])
+    expect(itemBrands(fixtureCatalog, 'component')).toEqual([])
+    const catalog = {
+      ...fixtureCatalog,
+      items: fixtureCatalog.items.map((entry) =>
+        entry.name === 'fixture-scene' ? { ...entry, brand: 'AS' } : entry,
+      ),
+    }
+    expect(itemBrands(catalog, 'block')).toEqual(['AS', '示例品牌'])
+  })
+
+  it('一类里两种条目都有：每个页签的这一类和品牌只列自己这种', () => {
     const catalog = {
       ...fixtureCatalog,
       items: fixtureCatalog.items.map((entry) =>
@@ -38,14 +51,14 @@ describe('组件、块页签的分类和搜索', () => {
           : entry,
       ),
     }
-    const listed = (kind: ItemKind, label: string) => {
+    const listed = (kind: ItemKind, label: string, brand: string | null = null) => {
       const found = itemChips(catalog, kind).find((candidate) => candidate.label === label)
-      return found === undefined ? [] : titles(filterItems(catalog, found, ''))
+      return found === undefined ? [] : titles(filterItems(catalog, found, '', brand))
     }
     expect(listed('component', '通用')).toEqual(['测试叠加'])
-    expect(listed('component', '品牌')).toEqual(['测试叠加'])
+    expect(listed('component', '通用', '示例品牌')).toEqual(['测试叠加'])
     expect(listed('block', '通用')).toEqual(['测试画面', '示例品牌 片尾', '测试旁挂文件'])
-    expect(listed('block', '品牌')).toEqual(['示例品牌 片尾'])
+    expect(listed('block', '通用', '示例品牌')).toEqual(['示例品牌 片尾'])
   })
 
   it('这种条目一个都没有：只有「全部」，里面是空的', () => {
@@ -71,10 +84,12 @@ describe('组件、块页签的分类和搜索', () => {
     ])
   })
 
-  it('「品牌」是带品牌的条目；目录里的一类是这一类里这种条目', () => {
-    expect(titles(filterItems(fixtureCatalog, chip('block', '品牌'), ''))).toEqual([
+  it('选了品牌只看这个品牌的条目，和分类、搜索叠加；目录里的一类是这一类里这种条目', () => {
+    expect(titles(filterItems(fixtureCatalog, chip('block', '全部'), '', '示例品牌'))).toEqual([
       '示例品牌 片尾',
     ])
+    expect(filterItems(fixtureCatalog, chip('block', '全部'), '画面', '示例品牌')).toEqual([])
+    expect(filterItems(fixtureCatalog, chip('block', '全部'), '', '别的品牌')).toEqual([])
     expect(titles(filterItems(fixtureCatalog, chip('block', '通用'), ''))).toEqual([
       '测试画面',
       '示例品牌 片尾',

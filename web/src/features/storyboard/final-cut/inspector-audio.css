@@ -1,0 +1,386 @@
+/* 「智能调音」：标题行右边的角色下拉（样子见 wf-select），主开关的一块，下面另一项的一行 */
+.wf-mix-role {
+  height: 26px;
+  flex: none;
+  margin-left: auto;
+}
+
+.wf-mix-role-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0;
+}
+
+.wf-mix-role-description {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  white-space: normal;
+}
+
+/* 主开关的一块、精细调音里各张小卡的标题 */
+.wf-mix-heading {
+  min-width: 0;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* 主开关的一块：浅底细框；开着时细框深一档、顶上一道高光 */
+.wf-mix-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-panel-line);
+  transition: box-shadow var(--dur-m) var(--ease);
+}
+
+.wf-mix-hero.is-on {
+  box-shadow:
+    inset 0 0 0 1px var(--color-panel-line-strong),
+    var(--shadow-specular);
+}
+
+.wf-mix-extra {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 2px;
+}
+
+/* 压低示意：白底凹槽里灰柱是人声，墨色折线是配乐的电平，线下浅浅铺一层 */
+.wf-duck {
+  display: block;
+  width: 100%;
+  height: 54px;
+  border-radius: var(--radius-control);
+  background: var(--color-card);
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
+  clip-path: inset(0 round var(--radius-control));
+}
+
+.wf-duck-voice {
+  fill: var(--color-on-surface-muted);
+  fill-opacity: 0.22;
+}
+
+.wf-duck-fade-top {
+  stop-color: var(--color-on-surface);
+  stop-opacity: 0.09;
+}
+
+.wf-duck-fade-bottom {
+  stop-color: var(--color-on-surface);
+  stop-opacity: 0;
+}
+
+.wf-duck-line {
+  fill: none;
+  stroke: var(--color-on-surface);
+  stroke-linecap: round;
+  stroke-width: 1.9;
+  vector-effect: non-scaling-stroke;
+}
+
+/* 「音色风格」：小标题一行（右边「更多风格」），下面三列快捷小块 */
+.wf-mix-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-mix-more {
+  height: 24px;
+  margin-left: auto;
+  padding: 0 6px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+.wf-mix-tiles {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 一个快捷小块：图标在上、名字在下；选中的是深色实底，图标换成指示光的颜色 */
+.wf-mix-tile {
+  display: flex;
+  height: 48px;
+  min-width: 0;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-panel-line);
+  color: var(--color-on-surface-variant);
+  transition:
+    translate var(--dur-s) var(--ease),
+    background-color var(--dur-s) var(--ease);
+}
+
+.wf-mix-tile:hover {
+  translate: 0 -1px;
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+}
+
+.wf-mix-tile-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-caption);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-mix-tile.is-active {
+  background: var(--color-on-surface);
+  box-shadow:
+    0 3px 10px -2px color-mix(in srgb, var(--color-scrim) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  color: var(--color-on-action-neutral);
+  --icon-fill-opacity: 0.34;
+}
+
+.wf-mix-tile.is-active > svg {
+  color: var(--wf-led);
+  --icon-fill-color: var(--wf-led);
+}
+
+/* 「更多风格」「添加效果」的浮层：两行一项，太长时在里面滚动 */
+.wf-mix-menu {
+  width: 248px;
+  max-height: min(320px, var(--radix-dropdown-menu-content-available-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.wf-mix-menu-label {
+  padding: 2px 8px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+/* 「精细调音」抽屉：一块浅底，标题行右边是摘要小块；展开后下面是几张白色小卡 */
+.wf-mix-fine {
+  overflow: clip;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-panel-line);
+}
+
+.wf-mix-fine-toggle {
+  display: flex;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-weight: 500;
+  text-align: left;
+}
+
+.wf-mix-fine-toggle:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-mix-fine-icon {
+  flex: none;
+  transition: rotate var(--dur-s) var(--ease);
+}
+
+.wf-mix-fine-icon.is-open {
+  rotate: 90deg;
+}
+
+.wf-mix-fine-summary {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-card);
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  line-height: var(--text-caption--line-height);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-mix-fine-summary.is-tuned {
+  background: var(--wf-control-soft);
+  color: var(--color-on-surface);
+}
+
+.wf-mix-fine-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 10px 12px;
+}
+
+.wf-mix-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-card);
+  box-shadow: var(--shadow-panel-card);
+}
+
+/* 三段均衡的频响图：铺满卡片宽的凹槽，正中一道 0 dB 虚线；拉伸画，线宽不跟着拉 */
+.wf-eq-curve {
+  display: block;
+  width: 100%;
+  height: 60px;
+  padding: 4px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-container-low);
+  box-shadow:
+    var(--shadow-control-well),
+    inset 0 0 0 1px var(--color-panel-line);
+}
+
+.wf-eq-curve-zero {
+  stroke: var(--color-panel-line-strong);
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-eq-curve-line {
+  fill: none;
+  stroke: var(--color-on-surface);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-mix-count {
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+
+.wf-mix-add {
+  margin-left: auto;
+}
+
+/* 一个效果：序号、名字、开关、移除一行，下面是参数；开着时序号是深色实底，关掉时参数变淡 */
+.wf-mix-effect {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-container-low);
+}
+
+.wf-mix-effect[data-off] > :not(.wf-mix-effect-head) {
+  opacity: var(--state-disabled-content);
+}
+
+.wf-mix-effect-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-mix-effect-index {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-xs);
+  background: var(--color-card);
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.wf-mix-effect:not([data-off]) .wf-mix-effect-index {
+  background: var(--color-on-surface);
+  color: var(--color-on-action-neutral);
+}
+
+.wf-mix-effect-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-sound-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 同步状态：同步时主色，错开时提示色，前面一个同色的小圆点 */
+.wf-sound-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-primary);
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-sound-status.is-warning {
+  color: var(--color-warning);
+}
+
+.wf-sound-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+  vertical-align: 1px;
+}
+
+/* 标题后面的同步状态（原声去处的卡片）靠右 */
+.wf-prop-title + .wf-sound-status {
+  margin-left: auto;
+}
+
+/* 分离出来的原声最上面的同步卡：同步时主色浅底，错开时提示色浅底 */
+.wf-sync-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 26%, transparent);
+}
+
+.wf-sync-card.is-warning {
+  background: color-mix(in srgb, var(--color-warning) 11%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
