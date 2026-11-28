@@ -184,11 +184,11 @@ describe('属性 · 配音片段', () => {
     expect(onPickVoice).toHaveBeenCalledExactlyOnceWith('cap-a1', voiceButton())
   })
 
-  it('原片音色写「原声」，没加速写 1×，截了尾写「倍速 · 截尾」；没给选音色的回调时「音色」不能点', async () => {
+  it('从原片取的音色写「原片音色」，没加速写 1×，截了尾写「倍速 · 截尾」；没给选音色的回调时「音色」不能点', async () => {
     const { rerender } = await renderWithProviders(
       <Harness initial={[ENGLISH_DUB]} selectedId="en-a1" voice={english({ voice: null })} />,
     )
-    expect(voiceButton()).toHaveAccessibleName('音色：原声')
+    expect(voiceButton()).toHaveAccessibleName('音色：原片音色')
     expect(voiceButton()).toBeDisabled()
     expect(screen.getByText('1×')).toBeInTheDocument()
     rerender(

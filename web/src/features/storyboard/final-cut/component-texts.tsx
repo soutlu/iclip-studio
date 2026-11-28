@@ -146,8 +146,9 @@ type ComponentTextsProps = {
 }
 
 /**
- * 「字幕」页签的「画面文字」：每个有文字字段的元素、模板片段一张卡片（标题行是名字、开始时间），每个文字字段一段（名字，
- * 加了语言时同一行右边是「固定 / 随语言」；下面是文字框）。焦点进一张卡片时选中那个片段，点标题行还让播放头跳到它的开始。
+ * 「字幕」页签的「画面文字」：每个有文字字段的元素、模板片段一行（和字幕行一样不画框，底色区分悬停、选中；标题行是名字、
+ * 开始时间），每个文字字段一段（名字，加了语言时同一行右边是「固定 / 随语言」；下面是文字框）。焦点进一行时选中那个片段，
+ * 点标题行还让播放头跳到它的开始。
  */
 export function ComponentTexts({
   hosts,
@@ -176,7 +177,7 @@ export function ComponentTexts({
         return (
           <li
             aria-current={current ? 'true' : undefined}
-            className={cn('wf-caption wf-card', current && 'is-current')}
+            className={cn('wf-row wf-text-host', current && 'is-current')}
             key={clip.id}
             onFocus={() => {
               if (!current) onPick(clip, false)

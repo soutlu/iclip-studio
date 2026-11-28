@@ -3,12 +3,13 @@ import type { ReferenceAudio } from '@/shared/api/reference-audios'
 import { Icon } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
 import { AudioCover } from '@/shared/ui/audition'
+import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { BlockedReason } from '../components/blocked-reason'
 import type { AudioClip, AudioDub } from './composition/film'
 import { Tool } from './editor-toolbar'
 import { PropRow } from './ui/prop-layout'
 import { ORIGINAL_VOICE_NAME, voiceNameOf, type VoiceControl } from './voice-choices'
-import { speedText, type LineState } from './voice-lines'
+import { speedText, speedTip, type LineState } from './voice-lines'
 
 type DubClip = AudioClip & { dub: AudioDub }
 
@@ -62,7 +63,7 @@ export function RedubTool({ clip, control }: { clip: DubClip; control: VoiceCont
 /**
  * 配音片段最上面两行：「音色」是生效音色的小封面、名字和 ⌄，点它交给 `onPick`（没给、不是显示着的语言的配音、这句
  * 不能选音色时不能点）；「槽位倍速」是这段配音为塞进字幕的时长加速的倍数（见 `speedText`，没加速写 1×），截了尾
- * 用提示色。
+ * 用提示色，加速了或截了尾时悬停说明原因（见 `speedTip`）。
  */
 export function DubRows({
   clip,
@@ -82,6 +83,7 @@ export function DubRows({
   const traits = voices?.find((each) => each.id === view.voice)
   const blocked = view.line?.chooseBlocked
   const pick = view.line === undefined ? undefined : onPick
+  const speed = speedText(view.speed, view.trimmed)
   return (
     <>
       <PropRow htmlFor={voiceId} label="音色">
@@ -111,9 +113,20 @@ export function DubRows({
         </BlockedReason>
       </PropRow>
       <PropRow label="槽位倍速">
-        <span className={cn('wf-prop-well is-static', view.trimmed && 'is-warning')}>
-          {speedText(view.speed, view.trimmed) ?? '1×'}
-        </span>
+        {speed === undefined ? (
+          <span className="wf-prop-well is-static">1×</span>
+        ) : (
+          <TooltipRoot>
+            <TooltipTrigger asChild>
+              <span className={cn('wf-prop-well is-static', view.trimmed && 'is-warning')}>
+                {speed}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="wf-tip" side="top">
+              {speedTip(speed, view.trimmed)}
+            </TooltipContent>
+          </TooltipRoot>
+        )}
       </PropRow>
     </>
   )

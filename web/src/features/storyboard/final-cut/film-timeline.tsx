@@ -16,6 +16,7 @@ import {
 import { Icon, type IconName } from '@/shared/icons'
 import type { TimeSpan } from '@/shared/lib/time-spans'
 import { cn } from '@/shared/lib/utils'
+import { AudioCover } from '@/shared/ui/audition'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { useAudioPeaks, type PeaksState } from '../editing/media-analysis'
 import { timeLabel } from '../editing/time-label'
@@ -477,12 +478,11 @@ function ClipContent({
             name
           ) : (
             <>
-              <Icon
-                className="wf-clip-voice"
-                decorative
-                name={dub.glyph ?? 'final-cut-voice'}
-                size="xs"
-              />
+              {dub.cover === undefined ? (
+                <Icon className="wf-clip-voice" decorative name="final-cut-voice" size="xs" />
+              ) : (
+                <AudioCover {...dub.cover} size="2xs" state="idle" title={dub.voice} />
+              )}
               <span className="wf-clip-name">{dub.voice}</span>
               {dub.speed === undefined ? null : (
                 <span

@@ -1,4 +1,10 @@
-type Current = { id: string; url: string }
+/**
+ * 只放音频里的一段：从 `startMs` 放到 `endMs`（音频自己的时间），按 `rate` 倍速放；进度、跳转都按这一段算，
+ * 放到 `endMs` 停下，再点从 `startMs` 重放。
+ */
+export type AuditionSpan = { startMs: number; endMs: number; rate: number }
+
+type Current = { id: string; url: string; span: AuditionSpan | null }
 
 /** 列表要的那部分：当前是哪一条（在放或暂停着）、是不是暂停着。只在点、放完、停下时变。 */
 export type AuditionState = { current: Current | null; paused: boolean }
@@ -43,13 +49,24 @@ const MEDIA_EVENTS = [
   'emptied',
 ] as const
 
-const progressOf = (audio: HTMLAudioElement): AuditionProgress => ({
-  durationMs: Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : null,
-  failed: audio.error !== null,
-  timeMs: Math.round(audio.currentTime * 1000),
-  waiting:
-    audio.error === null && !audio.paused && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
-})
+const progressOf = (audio: HTMLAudioElement, span: AuditionSpan | null): AuditionProgress => {
+  const waiting =
+    audio.error === null && !audio.paused && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA
+  const failed = audio.error !== null
+  if (span === null)
+    return {
+      durationMs: Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : null,
+      failed,
+      timeMs: Math.round(audio.currentTime * 1000),
+      waiting,
+    }
+  const length = span.endMs - span.startMs
+  const at = Math.round(audio.currentTime * 1000) - span.startMs
+  return { durationMs: length, failed, timeMs: Math.min(length, Math.max(0, at)), waiting }
+}
+
+const atEnd = (audio: HTMLAudioElement, span: AuditionSpan) =>
+  audio.currentTime * 1000 >= span.endMs
 
 const sameProgress = (left: AuditionProgress, right: AuditionProgress) =>
   left.timeMs === right.timeMs &&
@@ -81,20 +98,31 @@ export class AuditionPlayer {
 
   getProgress = () => this.progress
 
-  /** 没放过的从头放；是当前这条就暂停或续放。放不出来时调 `onError`。 */
-  toggle(id: string, url: string, onError: () => void) {
+  /**
+   * 没放过的从头放（给了 `span` 时从这一段的开头、按它的倍速放）；是当前这条就暂停或续放（一段放完了再点从这段开头
+   * 重放）。放不出来时调 `onError`。
+   */
+  toggle(id: string, url: string, onError: () => void, span: AuditionSpan | null = null) {
     const audio = this.element()
     const { current, paused } = this.state
     if (current?.id === id && current.url === url) {
-      if (paused) this.start(audio, onError)
-      else {
+      if (!paused) {
         audio.pause()
         this.setState({ current, paused: true })
+        return
       }
+      if (current.span !== null && atEnd(audio, current.span))
+        audio.currentTime = current.span.startMs / 1000
+      this.start(audio, onError)
       return
     }
     audio.setAttribute('src', url)
-    this.setState({ current: { id, url }, paused: false })
+    // 换地址时元素把倍速重置成默认倍速，两个一起设
+    const rate = span?.rate ?? 1
+    audio.defaultPlaybackRate = rate
+    audio.playbackRate = rate
+    if (span !== null) audio.currentTime = span.startMs / 1000
+    this.setState({ current: { id, url, span }, paused: false })
     this.start(audio, onError)
   }
 
@@ -109,14 +137,22 @@ export class AuditionPlayer {
    */
   seek(ratio: number, fallbackMs?: number) {
     const audio = this.audio
-    if (audio === null || this.state.current === null) return
+    const current = this.state.current
+    if (audio === null || current === null) return
+    const share = Math.min(1, Math.max(0, ratio))
+    if (current.span !== null) {
+      const { startMs, endMs } = current.span
+      audio.currentTime = (startMs + share * (endMs - startMs)) / 1000
+      this.refresh()
+      return
+    }
     const seconds = Number.isFinite(audio.duration)
       ? audio.duration
       : fallbackMs === undefined
         ? NaN
         : fallbackMs / 1000
     if (!Number.isFinite(seconds)) return
-    audio.currentTime = Math.min(1, Math.max(0, ratio)) * seconds
+    audio.currentTime = share * seconds
     this.refresh()
   }
 
@@ -158,14 +194,26 @@ export class AuditionPlayer {
     const { current } = this.state
     if (current !== null && (event.type === 'ended' || event.type === 'error'))
       this.setState({ current, paused: true })
+    this.stopAtSpanEnd()
     this.refresh()
     if (event.type === 'playing') this.follow()
+  }
+
+  /** 只放一段时，放到这一段的结尾就停下。 */
+  private stopAtSpanEnd() {
+    const { current, paused } = this.state
+    const audio = this.audio
+    const span = current?.span ?? null
+    if (audio === null || current === null || span === null || paused || !atEnd(audio, span)) return
+    audio.pause()
+    this.setState({ current, paused: true })
   }
 
   // 放着时 timeupdate 一秒只来四次左右，进度条按帧跟着走才顺
   private follow() {
     cancelAnimationFrame(this.frame)
     const tick = () => {
+      this.stopAtSpanEnd()
       this.refresh()
       if (this.audio !== null && !this.audio.paused) this.frame = requestAnimationFrame(tick)
     }
@@ -174,7 +222,9 @@ export class AuditionPlayer {
 
   private refresh() {
     const next =
-      this.audio === null || this.state.current === null ? IDLE_PROGRESS : progressOf(this.audio)
+      this.audio === null || this.state.current === null
+        ? IDLE_PROGRESS
+        : progressOf(this.audio, this.state.current.span)
     if (sameProgress(next, this.progress)) return
     this.progress = next
     this.emit()

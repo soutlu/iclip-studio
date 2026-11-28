@@ -648,7 +648,7 @@ const serveSubtitles = (
   return submitted
 }
 
-describe('final-cut 编辑器 · 识别字幕', () => {
+describe('final-cut 编辑器 · 识别', () => {
   const openCaptions = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(
       within(
@@ -658,7 +658,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     return screen.getByRole('tabpanel', { name: /^字幕/ })
   }
   const recognizeButton = (panel: HTMLElement) =>
-    within(panel).getByRole('button', { name: /^(识别字幕|识别中…)$/ })
+    within(panel).getByRole('button', { name: /^(识别|识别中…)$/ })
   const clipA = video({ label: 'A · 镜头 1', src: URL_A, duration: 2_000 })
   const clipB = video({
     id: 'clip-2',
@@ -744,7 +744,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
       ]),
     )
     expect(submitted).toEqual([TAKE_A])
-    expect(recognizeButton(panel)).toHaveTextContent('识别字幕')
+    expect(recognizeButton(panel)).toHaveTextContent(/^识别$/)
     expect(within(panel).queryByText(/^正在识别/)).toBeNull()
   })
 
@@ -815,9 +815,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     const panel = await openCaptions(user)
     await user.click(recognizeButton(panel))
     await waitSaved(() => expect(savedSceneLines()).toEqual([['照常写', 2.2, 0.8, 'clip-2']]))
-    expect(
-      await screen.findByText('A · 镜头 1 的字幕识别失败，请点击「识别字幕」重试'),
-    ).toBeVisible()
+    expect(await screen.findByText('A · 镜头 1 的字幕识别失败，请点击「识别」重试')).toBeVisible()
     expect(await screen.findByText('安静 未识别到口播内容，未新增字幕')).toBeVisible()
     // 上次失败了的那条重新发起一次
     expect(submitted).toEqual([TAKE_A])
@@ -826,7 +824,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     await waitFor(() => expect(submitted).toEqual([TAKE_A, TAKE_A]))
   })
 
-  it('一句话跨过两个相接的片段：第一次写进前一个片段名下、不提示归属；再点识别，在「识别字幕」旁提示字幕归起始片段，不再写、不再发起', async () => {
+  it('一句话跨过两个相接的片段：第一次写进前一个片段名下、不提示归属；再点识别，在「识别」旁提示字幕归起始片段，不再写、不再发起', async () => {
     await putFilm([
       video({ label: '前半', src: URL_A, duration: 2_000 }),
       video({
@@ -857,7 +855,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     expect(submitted).toEqual([])
   })
 
-  it('没有可识别的片段时「识别字幕」置灰，点了说明原因', async () => {
+  it('没有可识别的片段时「识别」置灰，点了说明原因', async () => {
     const user = userEvent.setup()
     await openEditor()
     const panel = await openCaptions(user)
@@ -866,7 +864,7 @@ describe('final-cut 编辑器 · 识别字幕', () => {
     expect(await screen.findByRole('tooltip')).not.toBeEmptyDOMElement()
   })
 
-  it('视频片段都关了原声：「识别字幕」置灰，说明原因', async () => {
+  it('视频片段都关了原声：「识别」置灰，说明原因', async () => {
     await putFilm([{ ...clipA, muted: true }])
     const user = userEvent.setup()
     await openEditor()

@@ -3,11 +3,12 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { audio, caption, fixtureCatalog, host } from '@/testing/final-cut'
+import { useAudition } from '@/shared/ui/audition'
 import { renderWithProviders } from '@/testing/render'
 import { captionsFocus } from './caption-edit'
 import type { ScriptNote } from './caption-script'
 import { CaptionsTab, type CaptionTextChange } from './captions-tab'
-import type { FilmClip } from './composition/film'
+import type { CaptionClip, FilmClip } from './composition/film'
 import { textHosts } from './composition/locale-text'
 import type { LocaleControls } from './editor-toolbar'
 import { SOURCE_LOCALE, SOURCE_SHOWN } from './locales'
@@ -26,11 +27,13 @@ type HarnessProps = {
   locales: LocaleControls
   scripts: ReadonlyMap<string, ScriptNote>
   onText: CaptionTextChange
+  onPick: (clip: CaptionClip) => void
 }
 
 /** 和编辑器一样：选中由外面记着，「字幕」按选中的片段算该标哪句、该切到哪一段。 */
-function Harness({ locales, scripts, onText }: HarnessProps) {
+function Harness({ locales, scripts, onText, onPick }: HarnessProps) {
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
+  const audition = useAudition({ active: true, onError: () => {} })
   const hosts = textHosts(CLIPS, fixtureCatalog)
   const picked = CLIPS.filter((clip) => selected.has(clip.id))
   const noop = () => {}
@@ -42,21 +45,24 @@ function Harness({ locales, scripts, onText }: HarnessProps) {
         </button>
       ))}
       <CaptionsTab
-        active
         addBlocked={undefined}
+        audition={audition}
         captions={[FIRST, SECOND]}
+        dubs={new Map()}
         focus={captionsFocus(picked, new Set(hosts.map((each) => each.id)))}
         library={{ voices: undefined, problem: undefined }}
         locale={SOURCE_SHOWN}
         locales={locales}
-        narration={undefined}
         onAdd={() => Promise.resolve(undefined)}
-        onNotice={noop}
-        onPick={noop}
+        onPick={onPick}
+        onPickVoice={noop}
         onRecognize={noop}
         onRecognizeNoteClose={noop}
         onRemove={noop}
+        onSelect={(clip) => setSelected(new Set([clip.id]))}
         onText={onText}
+        picking={null}
+        showCaptions={0}
         problem={undefined}
         recognizeBlocked={undefined}
         recognizeNote={undefined}
@@ -87,8 +93,11 @@ const renderTab = async (scripts: ReadonlyMap<string, ScriptNote> = new Map()) =
     onAdd: vi.fn<LocaleControls['onAdd']>(),
   } satisfies LocaleControls
   const onText = vi.fn<CaptionTextChange>()
-  await renderWithProviders(<Harness locales={locales} onText={onText} scripts={scripts} />)
-  return { ...locales, onText, user: userEvent.setup() }
+  const onPick = vi.fn<(clip: CaptionClip) => void>()
+  await renderWithProviders(
+    <Harness locales={locales} onPick={onPick} onText={onText} scripts={scripts} />,
+  )
+  return { ...locales, onText, onPick, user: userEvent.setup() }
 }
 
 const languages = () => screen.getByRole('group', { name: '原文与译文' })
@@ -139,6 +148,16 @@ describe('「字幕」跟着选中走', () => {
     expect(view(/^字幕/)).toHaveAttribute('aria-pressed', 'true')
     const rows = within(screen.getByRole('list', { name: '字幕' })).getAllByRole('listitem')
     expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, 'true'])
+  })
+
+  it('点一句的空白处：只选中这句（标成当前），不跳播；点时间才跳到这句开头', async () => {
+    const { user, onPick } = await renderTab()
+    await user.click(screen.getByRole('button', { name: '选中 00:03.00 – 00:05.00 的字幕' }))
+    const rows = within(screen.getByRole('list', { name: '字幕' })).getAllByRole('listitem')
+    expect(rows.map((row) => row.getAttribute('aria-current'))).toEqual([null, 'true'])
+    expect(onPick).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: /^00:00\.00 – / }))
+    expect(onPick).toHaveBeenCalledExactlyOnceWith(FIRST)
   })
 
   it('选中以后用户自己点了另一段：听用户的，直到下一次选中变了', async () => {

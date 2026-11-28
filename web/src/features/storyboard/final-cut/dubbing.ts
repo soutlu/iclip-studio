@@ -1,5 +1,4 @@
 import type { DubbedLine, DubbingLine, DubbingSpeechSpan } from '@/shared/api/generated/types.gen'
-import { zSpeechIn } from '@/shared/api/generated/zod.gen'
 import {
   isDubClip,
   MIN_CLIP_MS,
@@ -54,7 +53,7 @@ export const dubbingRefusalText = (refusal: DubbingRefusal, code: Language): str
   refusal === 'empty'
     ? 'final-cut 中暂无视频片段，无法生成配音；请先添加镜头'
     : refusal === 'uncaptioned'
-      ? `视频片段均无已识别字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别字幕」`
+      ? `视频片段均无已识别字幕，无法生成配音；请先在「${SOURCE_NAME}」下点击「识别」`
       : code === null
         ? '字幕均没有文字，无法生成配音'
         : phraseWith('字幕尚未翻译为', code, '，无法生成配音；请先点击「翻译」')
@@ -217,15 +216,6 @@ export function dubbingRequests(
   }
   return { requests: [...groups.values()] }
 }
-
-const narrationTextLimit = (): number => {
-  const max = zSpeechIn.shape.text.maxLength
-  if (max === null) throw new Error('合同里按文字合成的语音没有字数上限')
-  return max
-}
-
-/** 一句旁白文案最多几个字：直接读合同（和配音每句的上限一样）。字数按 `length` 算，只会比服务端算的多。 */
-export const NARRATION_TEXT_LIMIT = narrationTextLimit()
 
 /**
  * 要合成的一句旁白：配的哪句字幕（原文下「旁白配音」新加的旁白还没有字幕，是 null）、念的字、用的参考音频库

@@ -121,7 +121,7 @@ describe('final-cut 编辑器 · 语言', () => {
     expect(first).toHaveValue('Line one')
     expect(first).toHaveAccessibleDescription('原文 字幕 a1')
     expect(second).toHaveValue('')
-    expect(second).toHaveAttribute('placeholder', '输入 English 字幕…')
+    expect(second).toHaveAttribute('placeholder', '+ 输入译文，或点上方「翻译」自动生成')
     const row = screen.getByRole('group', { name: '字幕' })
     expect(within(row).getByRole('group', { name: /^Line one，/ })).toBeVisible()
     const blank = within(row).getByRole('group', { name: /^字幕 b2，1\.0 秒，待输入字幕$/ })

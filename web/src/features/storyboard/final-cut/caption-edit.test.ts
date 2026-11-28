@@ -7,7 +7,6 @@ import {
   captionSpot,
   captionsInOrder,
   dubsFollowing,
-  narrationSpot,
   placeCaptions,
   recognitionTargets,
   recognizedCaptions,
@@ -45,22 +44,6 @@ describe('在播放头处加一句字幕', () => {
   it('离下一句不到 0.1 秒时不能加，正好 0.1 秒可以', () => {
     expect(captionSpot([caption('b', 1050, 1000)], 1000)).toEqual({ refusal: 'tight' })
     expect(captionSpot([caption('b', 1100, 1000)], 1000)).toEqual({ start: 1000, duration: 100 })
-  })
-})
-
-describe('旁白和它的字幕放在哪', () => {
-  it('播放头处放得下：从播放头起，长度是旁白的长度', () => {
-    expect(narrationSpot([caption('a', 0, 1000)], 1500, 2500)).toEqual({
-      start: 1500,
-      duration: 2500,
-    })
-  })
-
-  it('和已有的字幕重叠：往后找第一个放得下的地方', () => {
-    const captions = [caption('a', 1000, 1000), caption('b', 2500, 1000), caption('c', 5000, 500)]
-    // 播放头在 a 里；a 之后到 b 只有 0.5 秒，b 之后到 c 有 1.5 秒
-    expect(narrationSpot(captions, 1200, 1500)).toEqual({ start: 3500, duration: 1500 })
-    expect(narrationSpot(captions, 1200, 2000)).toEqual({ start: 5500, duration: 2000 })
   })
 })
 

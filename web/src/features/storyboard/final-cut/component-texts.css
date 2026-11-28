@@ -27,8 +27,8 @@
 }
 
 .wf-text-head:hover .wf-text-start,
-.wf-caption.is-current .wf-text-start {
-  color: var(--color-primary);
+.wf-text-host.is-current .wf-text-start {
+  color: var(--color-on-surface);
   font-weight: 600;
 }
 
@@ -53,7 +53,7 @@
 }
 
 /* 两个类压过输入框自带的高度、内边距和字号（样子见 wf-field） */
-.wf-caption .wf-text-input {
+.wf-text-host .wf-text-input {
   height: 32px;
   padding: 0 10px;
   font-size: var(--text-label);
@@ -73,13 +73,4 @@
   font-size: var(--text-caption);
   line-height: var(--text-caption--line-height);
   overflow-wrap: anywhere;
-}
-
-/* 选中的音色卡深色下垫一层底 */
-.dark .wf-voice-option:is(.is-picked, .is-current) {
-  background: var(--color-surface-container);
-}
-
-.wf-voice-option:hover {
-  box-shadow: var(--shadow-float), var(--shadow-specular);
 }

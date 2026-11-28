@@ -7,14 +7,16 @@ const B = { id: 'b', url: 'http://localhost/b.mp3' }
 
 const stubMedia = (play: () => Promise<void> = () => Promise.resolve()) => {
   const played: string[] = []
+  const elements: HTMLMediaElement[] = []
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (
     this: HTMLMediaElement,
   ) {
     played.push(this.getAttribute('src') ?? '')
+    if (!elements.includes(this)) elements.push(this)
     return play()
   })
   const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-  return { pause, played }
+  return { pause, played, elements }
 }
 
 describe('useAudition', () => {
@@ -52,6 +54,37 @@ describe('useAudition', () => {
     rerender({ active: false })
     expect(result.current).toMatchObject({ current: null, playing: null })
     expect(pause).toHaveBeenCalledTimes(2)
+  })
+
+  it('只放一段：从这段的开头按它的倍速放，进度和跳转按这一段算，放到结尾停下，再点从这段开头重放', async () => {
+    const { elements } = stubMedia()
+    const { result } = renderHook(() => useAudition({ active: true, onError: () => {} }))
+    const span = { startMs: 2_000, endMs: 3_000, rate: 1.5 }
+    await act(async () => result.current.toggle(A.id, A.url, span))
+    const [audio] = elements
+    if (audio === undefined) throw new Error('没有开始放')
+    const progress = () => result.current.player.getProgress()
+    expect(result.current).toMatchObject({ current: 'a', playing: 'a' })
+    expect(audio.currentTime).toBe(2)
+    expect(audio.playbackRate).toBe(1.5)
+    expect(progress()).toMatchObject({ timeMs: 0, durationMs: 1_000 })
+
+    act(() => result.current.seek(0.5))
+    expect(progress()).toMatchObject({ timeMs: 500, durationMs: 1_000 })
+
+    act(() => {
+      result.current.seek(1)
+      audio.dispatchEvent(new Event('timeupdate'))
+    })
+    expect(result.current).toMatchObject({ current: 'a', playing: null })
+
+    await act(async () => result.current.toggle(A.id, A.url, span))
+    expect(result.current).toMatchObject({ current: 'a', playing: 'a' })
+    expect(audio.currentTime).toBe(2)
+
+    // 不给一段的照旧从头、按原速放
+    await act(async () => result.current.toggle(B.id, B.url))
+    expect(audio.playbackRate).toBe(1)
   })
 
   it('放不出来时调 onError，当前这条留着（好让试听条显示失败）；被暂停打断的不算失败', async () => {

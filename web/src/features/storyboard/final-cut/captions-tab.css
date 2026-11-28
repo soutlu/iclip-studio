@@ -1,4 +1,4 @@
-/* ---- 字幕栏：页签头两行（语言和「字幕 / 画面文字」、动作），下面人声卡片、旁白卡片和字幕卡片 ---- */
+/* ---- 字幕栏：页签头两排（语言和「字幕 / 画面文字」；原声 / 配音、默认音色和动作），下面逐句的行 ---- */
 
 .wf-captions {
   display: flex;
@@ -7,35 +7,48 @@
   flex-direction: column;
 }
 
-/* 页签头下面一条细线和列表分开 */
+/* 页签头的宽度决定第二排放不放得下（见 caption-voice.css 里主按钮的收起） */
 .wf-captions-head {
-  border-bottom: 1px solid var(--color-panel-line);
+  container: wf-captions-head / inline-size;
 }
 
-.wf-captions-top,
-.wf-captions-actions {
+/* 页签头的一排：左边一组可以缩（语言条横向滚动、音色名截断），右边一组不缩 */
+.wf-captions-row {
   display: flex;
   min-width: 0;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.wf-captions-top {
-  justify-content: space-between;
+.wf-captions-voice {
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
 }
 
-.wf-captions-actions {
+.wf-captions-voice > .wf-seg {
+  display: inline-flex;
+  flex: none;
+}
+
+.wf-captions-acts {
+  display: flex;
+  flex: none;
+  align-items: center;
   gap: 4px;
+  margin-left: auto;
 }
 
-/* 动作一行最右边的「+」 */
+/* 第二排最右边的「+」 */
 .wf-captions-add {
   display: inline-grid;
   width: 28px;
   height: 28px;
   flex: none;
   place-items: center;
-  margin-left: auto;
   border-radius: var(--radius-sm);
   color: var(--color-on-surface-variant);
 }
@@ -57,52 +70,80 @@
   line-height: var(--text-label--line-height);
 }
 
+/* 「字幕 / 画面文字」两段切换（样子见 wf-seg） */
+.wf-captions-views {
+  display: inline-flex;
+  flex: none;
+}
+
+.wf-captions-count {
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .wf-caption-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 12px;
+  gap: 2px;
 }
 
-/* 单条字幕卡片（「画面文字」卡片共用）：白色底卡，当前激活项左侧附加竖向指示条并加深外描边 */
-.wf-caption {
-  position: relative;
+/* 一句字幕、一个画面文字的行：不画框（底色见 wf-row），左右各伸出一点，字和页签头对齐 */
+.wf-caption-row,
+.wf-text-host {
+  display: flex;
   flex: none;
-  overflow: hidden;
-  padding: 10px 12px;
+  flex-direction: column;
+  margin: 0 -8px;
+  padding: 10px 8px;
 }
 
-.wf-caption::before {
-  position: absolute;
-  top: 10px;
-  bottom: 10px;
-  left: 0;
-  width: 2px;
-  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
-  content: '';
+.wf-caption-row {
+  gap: 4px;
 }
 
-.wf-caption.is-current,
-.wf-voice-option:is(.is-picked, .is-current) {
-  box-shadow:
-    var(--shadow-panel-card),
-    0 0 0 1px var(--wf-control-ring),
-    var(--shadow-specular);
+.wf-text-host {
+  gap: 8px;
 }
 
-.wf-caption.is-current::before {
-  background: var(--color-on-surface);
+/* 正在改字的一句和选中的一样垫柔和的选中底 */
+.wf-caption-row:has(.wf-caption-text:focus) {
+  background-color: var(--wf-fill-selected);
+}
+
+/* 行里的东西叠在整行的点选按钮（wf-row-hit）上面但不接指针，点空白处就是点整行；时间、按钮、文字框自己接 */
+.wf-caption-row > :not(.wf-row-hit) {
+  position: relative;
+  pointer-events: none;
+}
+
+.wf-caption-when,
+.wf-line-tools,
+.wf-caption-row .wf-caption-text,
+.wf-caption-row .wf-row-progress,
+.wf-caption-script-use {
+  pointer-events: auto;
 }
 
 .wf-caption-head {
   display: flex;
-  min-height: 22px;
+  min-height: 26px;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
 }
 
-/* 起止时间：前面一个小三角，悬停和当前这一句用主色 */
+/* 时间和它后面的倍速、小圆点排在一起 */
+.wf-caption-when {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 起止时间：前面一个小三角；悬停和当前这一句加深 */
 .wf-caption-time {
   display: inline-flex;
   align-items: center;
@@ -120,20 +161,34 @@
 }
 
 .wf-caption-time:hover,
-.wf-caption.is-current .wf-caption-time {
-  color: var(--color-primary);
+.wf-caption-row.is-current .wf-caption-time {
+  color: var(--color-on-surface);
   font-weight: 600;
 }
 
-/* 时间和它后面的小圆点排在一起，卡片头里还是左边一组、右边一组 */
-.wf-caption-when {
+/* 倍速标记：加速时中性小块写倍数，截尾时琥珀色 */
+.wf-caption-speed {
   display: inline-flex;
-  min-width: 0;
+  height: 18px;
+  flex: none;
   align-items: center;
-  gap: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-variant);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-/* 开着「单独设置」的句子：时间后面一个墨色小圆点，同单句配音自己选过音色的那圈细框一样只做区分、不另加颜色 */
+.wf-caption-speed[data-tone='warning'] {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+  font-family: inherit;
+}
+
+/* 开着「单独设置」的句子：时间后面一个墨色小圆点，只做区分、不另加颜色 */
 .wf-caption-own {
   width: 5px;
   height: 5px;
@@ -142,41 +197,57 @@
   background: var(--color-on-surface-variant);
 }
 
-/* 删除钮平时藏着，悬停、当前这一句、焦点在卡片里时出来 */
-.wf-caption-remove {
-  opacity: 0;
-  transition: opacity var(--dur-s) var(--ease);
-}
-
-.wf-caption:is(:hover, :focus-within, .is-current) .wf-caption-remove {
-  opacity: 1;
-}
-
-.wf-caption .wf-caption-remove:hover {
+.wf-caption-row .wf-caption-remove:hover {
   color: var(--color-error);
 }
 
-/* 无边框内联文本域，聚焦时仅切换浅底而不绘制焦点环；双类选择器用于覆盖基础文本域边框、圆角、内边距与字号 */
-.wf-caption .wf-caption-text {
+/* 一句的文字：看着就是正文，原地改；静止、悬停、聚焦都不画框、不挪字。没字时是柔和内凹的占位槽。
+   两个类压过文字框自带的边框、底色、内边距与字号 */
+.wf-caption-row .wf-caption-text {
   --state-focus-ring: 0px;
+  --color-state-hover: transparent;
+  --color-state-pressed: transparent;
+
+  width: calc(100% + 16px);
   min-height: 0;
-  margin: 2px -6px 0;
-  width: calc(100% + 12px);
-  padding: 4px 6px;
+  margin: 0 -8px;
+  padding: 4px 8px;
   border-color: transparent;
   border-radius: var(--radius-sm);
   background: transparent;
+  box-shadow: none;
+  color: var(--color-on-surface);
+  field-sizing: content;
   font-size: var(--text-body);
   line-height: var(--text-body--line-height);
   resize: none;
 }
 
-.wf-caption .wf-caption-text:focus {
-  border-color: transparent;
+.wf-caption-row .wf-caption-text:placeholder-shown {
   background: var(--color-surface-container-low);
+  box-shadow: var(--shadow-control-well);
 }
 
-/* 其它语言下文字框下面的原文：小号淡色，前面一个「原文」小标 */
+.wf-caption-row .wf-caption-text:focus {
+  border-color: transparent;
+}
+
+/* 外语下文字下面的原文参考、原文下的台词对照：浅色小字 */
+.wf-caption-ref {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.wf-caption-script {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* 原文对照（「属性」里字幕文字框下面、「画面文字」外语下的说明）：小号淡色，前面一个小标 */
 .wf-caption-source {
   display: flex;
   align-items: baseline;
@@ -195,13 +266,7 @@
   background: var(--color-surface-container-high);
 }
 
-/* 字幕卡片里的原文和译文之间隔一道虚线 */
-.wf-caption .wf-caption-source {
-  padding-top: 6px;
-  border-top: 1px dashed var(--color-panel-line-strong);
-}
-
-/* 原文下的台词对照：字幕有、台词没有的字划掉，台词有、字幕没有的字加下划线，行尾「采用」是文字按钮 */
+/* 台词对照：字幕有、台词没有的字划掉，台词有、字幕没有的字加下划线，行尾「采用」是文字按钮 */
 .wf-caption-script-text {
   flex: 1;
   min-width: 0;
@@ -223,56 +288,4 @@
   border-radius: var(--radius-xs);
   color: var(--color-on-surface);
   font-weight: 500;
-}
-
-/* 其它语言下每句右上的配音标签：保留原声时是淡色底的「原声」；AI 配音时是一行字，跟随整体的「跟随 · 音色名」灰一点，
-   单独设过的「单句 · …」用正文色。排在删除钮前面 */
-.wf-line-voice {
-  display: inline-flex;
-  min-width: 0;
-  max-width: 150px;
-  flex: none;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  padding: 0 6px;
-  border-radius: var(--radius-xs);
-  background: var(--color-surface-container-high);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-  white-space: nowrap;
-}
-
-.wf-line-voice.is-voiced {
-  background: transparent;
-}
-
-.wf-line-voice.is-own {
-  color: var(--color-on-surface);
-  font-weight: 500;
-}
-
-.wf-line-voice[aria-disabled='true'] {
-  color: var(--color-disabled-text);
-}
-
-.wf-line-voice-name {
-  overflow: hidden;
-  min-width: 0;
-  text-overflow: ellipsis;
-}
-
-/* 「字幕 / 画面文字」两段切换（样子见 wf-seg） */
-.wf-captions-views {
-  display: inline-flex;
-  flex: none;
-}
-
-.wf-captions-count {
-  color: var(--color-on-surface-muted);
-  font-family: var(--font-mono);
-  font-size: var(--text-caption);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
 }

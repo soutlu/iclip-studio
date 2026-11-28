@@ -1,9 +1,7 @@
-import {
-  traitQuery,
-  type AudioLocale,
-  type AudioTraitFilter,
-  type ReferenceAudio,
-  type ReferenceAudioFilter,
+import type {
+  AudioLocale,
+  ReferenceAudio,
+  ReferenceAudioFilter,
 } from '@/shared/api/reference-audios'
 import type { LineVoice, VoiceMode } from './composition/voices'
 import type { Language } from './locales'
@@ -12,7 +10,7 @@ import type { LineState, VoiceSummary } from './voice-lines'
 /** 音色列表读取失败的原因及重试回调。 */
 export type VoicesProblem = { message: string; onRetry: () => void }
 
-/** 资料库里的全部音色（建立晚的在前，没读时是 undefined）及读取失败的提示：人声卡、旁白、单句菜单都从这里找名字和属性。 */
+/** 资料库里的全部音色（建立晚的在前，没读时是 undefined）及读取失败的提示：默认音色、单句音色和时间线都从这里找名字和封面。 */
 export type VoiceLibrary = {
   voices: readonly ReferenceAudio[] | undefined
   problem: VoicesProblem | undefined
@@ -54,8 +52,8 @@ export type VoiceControl = {
   dubLine: (caption: string) => void
 }
 
-/** 「原声」的显示名。 */
-export const ORIGINAL_VOICE_NAME = '原声'
+/** 「原片音色」（从素材片原声里取的音色，`voice` 为 null）的显示名。 */
+export const ORIGINAL_VOICE_NAME = '原片音色'
 
 // 已选音色已从资料库移除或尚未加载时的兜底展示名
 const LIBRARY_VOICE_NAME = '资料库音色'
@@ -64,62 +62,40 @@ const LIBRARY_VOICE_NAME = '资料库音色'
 export const voiceNameOf = (id: string, library: readonly ReferenceAudio[] | undefined) =>
   library?.find((each) => each.id === id)?.title ?? LIBRARY_VOICE_NAME
 
-/** 选某个默认音色（`null` 为原声）：`picked` 是不是正用着（配音且是这个音色），`pick` 记下它并切到配音（不合成）。 */
-export const languageChoice = (voice: VoiceControl, id: string | null) => ({
-  picked: voice.mode === 'dub' && voice.voice === id,
-  pick: () => voice.onVoice(id),
-})
-
-/** 第 `caption` 句自己选过的配置；跟随默认音色时是 undefined。 */
-export const ownLineVoice = (voice: VoiceControl, caption: string): LineVoice | undefined =>
-  voice.lines.get(caption)?.own
-
-/** 选音面板语种下拉的取值：某个语种（连带多语种的音色）、只看多语种（`none`）或全部。 */
-export type PickerLocale = AudioLocale | 'none' | 'all'
-
-/** 选音面板能按哪几项属性筛，按筛选行上的先后。 */
-export const PICKER_TRAITS = ['scenario', 'gender', 'age'] as const
-
-/** 常用音色最多几个（不算「原声」）。 */
-const COMMON_LIMIT = 3
-
-/** 选音面板的查询：只查音色，按语种（选某个语种时连带多语种）、属性和关键词（去掉两头空白）筛。 */
-export const voicePickerFilter = ({
-  locale,
-  q,
-  traits,
-}: {
-  locale: PickerLocale
-  q: string
-  traits: AudioTraitFilter
-}): ReferenceAudioFilter => {
-  const filter: ReferenceAudioFilter = {
-    audioKind: 'voice',
-    q: q.trim(),
-    ...traitQuery(PICKER_TRAITS, traits),
-  }
-  if (locale !== 'all') filter.locale = locale === 'none' ? ['none'] : [locale, 'none']
-  return filter
-}
+/** 音色 `id`（null 是原片音色）的显示名。 */
+export const voiceTitleOf = (id: string | null, library: readonly ReferenceAudio[] | undefined) =>
+  id === null ? ORIGINAL_VOICE_NAME : voiceNameOf(id, library)
 
 /**
- * 常用音色（不含「原声」）的编号，最多 3 个：先放本片这种语言已经用到的（`used` 按先后，一般是整体音色、再是各句单独选的，
- * 空的和重复的跳过），不够时用资料库里语种是 `locale` 或没设语种的音色补齐，按 `library` 的先后（新的在前）。
+ * 音色 `id` 的封面（给 `AudioCover`）：原片音色用它专用的插画；资料库音色按它的属性挑；资料库里查不到（被移除或
+ * 还没读到）时是 undefined，调用方画人声图标。
  */
-export const commonVoices = (
-  used: readonly (string | null | undefined)[],
-  library: readonly ReferenceAudio[],
-  locale: AudioLocale,
-): string[] => {
-  const picked: string[] = []
-  for (const id of used)
-    if (id !== null && id !== undefined && !picked.includes(id)) picked.push(id)
-  for (const voice of library) {
-    if (picked.length >= COMMON_LIMIT) break
-    if ((voice.locale === null || voice.locale === locale) && !picked.includes(voice.id))
-      picked.push(voice.id)
-  }
-  return picked.slice(0, COMMON_LIMIT)
+export const voiceCoverOf = (id: string | null, library: readonly ReferenceAudio[] | undefined) => {
+  if (id === null) return { id: 'original', art: 'original' as const, traits: undefined }
+  const audio = library?.find((each) => each.id === id)
+  return audio === undefined ? undefined : { id, art: undefined, traits: audio }
+}
+
+/** 选音浮层语种分段的取值：全部、某个语种（连带多语种的音色）或只看多语种（`none`）。 */
+export type PickerLocale = AudioLocale | 'none' | 'all'
+
+/** 选音浮层性别分段的取值：不限或女声、男声。 */
+export type PickerGender = 'all' | 'female' | 'male'
+
+/** 选音浮层的查询：只查音色，按语种（选某个语种时连带多语种）、性别和关键词（去掉两头空白）筛。 */
+export const voicePickerFilter = ({
+  locale,
+  gender,
+  q,
+}: {
+  locale: PickerLocale
+  gender: PickerGender
+  q: string
+}): ReferenceAudioFilter => {
+  const filter: ReferenceAudioFilter = { audioKind: 'voice', q: q.trim() }
+  if (locale !== 'all') filter.locale = locale === 'none' ? ['none'] : [locale, 'none']
+  if (gender !== 'all') filter.gender = [gender]
+  return filter
 }
 
 /** 音色名字旁的语种小字：「EN」，没设语种的是「多语」。 */
