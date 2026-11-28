@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react'
 import { Icon } from '@/shared/icons'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { Input } from '@/shared/ui/field'
 import { PopupRoot, PopupSurface, PopupTrigger } from '@/shared/ui/popup'
 import { Switch } from '@/shared/ui/switch'
@@ -206,27 +207,50 @@ function SettingsPanel({
   )
   return (
     <>
-      <div aria-label="画面比例" className="wf-canvas-ratios" role="group">
+      <ChipGroup
+        aria-label="画面比例"
+        className="wf-canvas-ratios"
+        columns={3}
+        onValueChange={(value) => {
+          // 再点当前比例报的是空值，不改
+          const next = CANVAS_SIZES.find((each) => each.label === value)
+          if (next !== undefined) resize(next.canvas)
+        }}
+        type="single"
+        // 自定义宽高（不是预设比例）时六项都不选中
+        value={preset?.label ?? ''}
+        variant="segmented"
+      >
         {CANVAS_SIZES.map((each) => (
-          <button
-            aria-pressed={each === preset}
-            className="wf-canvas-ratio ui-state ui-focus"
+          // 缩略框与数值左对齐，两行纵向齐平
+          <FilterChip
+            className="justify-start pr-2 pl-2.5 tabular-nums"
             key={each.label}
-            onClick={() => resize(each.canvas)}
-            type="button"
+            value={each.label}
+            variant="segmented"
           >
             <RatioGlyph canvas={each.canvas} />
             {each.label}
-          </button>
+          </FilterChip>
         ))}
-      </div>
+      </ChipGroup>
       <hr className="wf-canvas-settings-sep" />
       <div className="wf-canvas-row">
         <span className="wf-prop-label">导出分辨率</span>
-        <div
+        <ChipGroup
           aria-label="导出分辨率"
-          className="wf-seg wf-canvas-control wf-canvas-seg"
-          role="group"
+          className="wf-canvas-control"
+          onValueChange={(value) => {
+            // 再点当前档报的是空值；不可用的档点了只说明原因
+            const next = EXPORT_TIERS.find((each) => each === value)
+            if (next !== undefined && exportOutput(canvas, next).kind !== 'unsupported')
+              onTier(next)
+          }}
+          size="compact"
+          type="single"
+          // 没定档位（按画面尺寸导出）时三档都不选中
+          value={tier ?? ''}
+          variant="segmented"
         >
           {EXPORT_TIERS.map((each) => {
             const blocked =
@@ -235,21 +259,18 @@ function SettingsPanel({
                 : undefined
             return (
               <BlockedReason container={layer} key={each} reason={blocked}>
-                <button
+                <FilterChip
                   aria-disabled={blocked === undefined ? undefined : true}
-                  aria-pressed={each === tier}
-                  className="wf-seg-item ui-state ui-focus"
-                  onClick={() => {
-                    if (blocked === undefined) onTier(each)
-                  }}
-                  type="button"
+                  className="text-caption"
+                  value={each}
+                  variant="segmented"
                 >
                   {tierLabel(each)}
-                </button>
+                </FilterChip>
               </BlockedReason>
             )
           })}
-        </div>
+        </ChipGroup>
       </div>
       <div className="wf-canvas-row">
         <span className="wf-prop-label">像素尺寸</span>
@@ -294,19 +315,24 @@ function SettingsPanel({
       <hr className="wf-canvas-settings-sep" />
       <div className="wf-canvas-row">
         <span className="wf-prop-label">构图网格</span>
-        <div aria-label="构图网格" className="wf-seg wf-canvas-control wf-canvas-seg" role="group">
+        <ChipGroup
+          aria-label="构图网格"
+          className="wf-canvas-control"
+          onValueChange={(value) => {
+            const next = GRIDS.find(({ grid }) => grid === value)
+            if (next !== undefined) onFraming({ ...framing, grid: next.grid })
+          }}
+          size="compact"
+          type="single"
+          value={framing.grid}
+          variant="segmented"
+        >
           {GRIDS.map(({ grid, label }) => (
-            <button
-              aria-pressed={framing.grid === grid}
-              className="wf-seg-item ui-state ui-focus"
-              key={grid}
-              onClick={() => onFraming({ ...framing, grid })}
-              type="button"
-            >
+            <FilterChip className="text-caption" key={grid} value={grid} variant="segmented">
               {label}
-            </button>
+            </FilterChip>
           ))}
-        </div>
+        </ChipGroup>
       </div>
       <div className="wf-canvas-row">
         <label className="wf-prop-label" htmlFor={safeId}>

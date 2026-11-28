@@ -28,7 +28,7 @@
   "globals-feature-css-imports": 8,
   "css-file-max-lines": {
     "src/features/storyboard/image-edit/image-edit.css": 555,
-    "src/features/storyboard/storyboard.css": 1507,
+    "src/features/storyboard/storyboard.css": 1468,
     "src/features/storyboard/video-editor/editor-timeline.css": 508
   }
 }

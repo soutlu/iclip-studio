@@ -1087,7 +1087,7 @@ describe('final-cut 编辑器 · 字幕跟着视频片段、配音片段走', ()
     const user = userEvent.setup()
     await openEditor()
     await user.click(
-      within(within(toolbar()).getByRole('group', { name: '语言' })).getByRole('button', {
+      within(within(toolbar()).getByRole('radiogroup', { name: '语言' })).getByRole('radio', {
         name: 'English（EN）',
       }),
     )

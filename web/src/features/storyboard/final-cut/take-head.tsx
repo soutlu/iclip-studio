@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { useElementSize } from '@/shared/lib/use-element-size'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import { Tool } from './editor-toolbar'
 import type { Material, MaterialTake, UsedSpan } from './materials'
@@ -75,11 +76,20 @@ function TakeVersions({
     else if (item.right > box.right) list.scrollLeft += item.right - box.right
   }, [version.jobId, width])
   return (
-    <div
+    <ChipGroup
       aria-label={`${take.label} 的版本`}
-      className="wf-seg is-compact wf-take-versions"
+      // 槽内圈的细线同「镜头」页签里的筛选分段
+      className="wf-take-versions min-w-0 shrink auto-cols-auto inset-ring inset-ring-panel-line"
+      onValueChange={(next) => {
+        // 再点当前正在展示的版本报的是空值，不切换，避免误清空该原作下的镜头选区
+        const picked = take.versions.find((item) => item.jobId === next)
+        if (picked !== undefined) onVersion(take.id, picked.jobId)
+      }}
       ref={listRef}
-      role="group"
+      size="compact"
+      type="single"
+      value={version.jobId}
+      variant="segmented"
     >
       {take.versions.map((item) => {
         const current = item.jobId === version.jobId
@@ -87,20 +97,15 @@ function TakeVersions({
         return (
           <TooltipRoot key={item.jobId}>
             <TooltipTrigger asChild>
-              <button
+              <FilterChip
                 aria-label={inTrack ? `${item.version}，已用` : item.version}
-                aria-pressed={current}
-                className="wf-seg-item ui-state ui-focus"
-                onClick={() => {
-                  // 点击当前正在展示的版本不触发切换，避免误清空该原作下的镜头选区
-                  if (!current) onVersion(take.id, item.jobId)
-                }}
                 ref={current ? currentRef : undefined}
-                type="button"
+                value={item.jobId}
+                variant="segmented"
               >
                 {item.versionNumber}
                 {inTrack && !current ? <i aria-hidden="true" className="wf-take-dot" /> : null}
-              </button>
+              </FilterChip>
             </TooltipTrigger>
             <TooltipContent className="wf-tip" side="top">
               {inTrack ? `${item.version} · 已用` : item.version}
@@ -108,6 +113,6 @@ function TakeVersions({
           </TooltipRoot>
         )
       })}
-    </div>
+    </ChipGroup>
   )
 }

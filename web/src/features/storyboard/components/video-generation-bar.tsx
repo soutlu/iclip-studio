@@ -4,6 +4,7 @@ import { ASPECT_RATIOS } from '@/shared/lib/aspect-ratio'
 import { cn } from '@/shared/lib/utils'
 import { SubmitButton, type SubmitPhase } from '@/shared/ui/button'
 import { ChipGroup, FilterChip } from '@/shared/ui/chip'
+import { SEGMENTED_TRACK } from '@/shared/ui/segmented'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
 import {
   DRAFT_LABEL,
@@ -166,7 +167,8 @@ function SegmentedPicker({
   return (
     <ChipGroup
       aria-label={label}
-      className={cn('storyboard-bar-well storyboard-bar-segments', className)}
+      // 与单点键同高：槽 32px，格 28px
+      className={cn('h-(--storyboard-control-height)', className)}
       onValueChange={(next) => {
         const option = options.find((item) => item.value === next)
         if (option !== undefined && option.blockedReason === undefined) onChange(option.value)
@@ -180,7 +182,7 @@ function SegmentedPicker({
         const segment = (
           <FilterChip
             aria-disabled={blocked ? true : undefined}
-            className="storyboard-bar-well-item"
+            className="tabular-nums"
             key={option.value}
             title={blocked ? undefined : option.title}
             value={option.value}
@@ -189,7 +191,7 @@ function SegmentedPicker({
             {option.text}
           </FilterChip>
         )
-        // Tooltip 触发器会覆盖分段项的 data-state 属性，因此只包裹不可用的格；选中样式按 aria-checked 写。
+        // 只给不可用的格包 Tooltip 说明原因（Tooltip 触发器会改写 data-state，共用分段的选中样式不看它）
         return blocked ? (
           <BlockedReason key={option.value} reason={option.blockedReason}>
             {segment}
@@ -217,7 +219,7 @@ function ModelPicker({
     return (
       <span
         aria-label="视频模型"
-        className="storyboard-bar-well storyboard-bar-models-pending"
+        className={cn(SEGMENTED_TRACK, 'storyboard-bar-models-pending')}
         role="group"
       >
         <Icon decorative name="video" size="sm" />
@@ -226,7 +228,8 @@ function ModelPicker({
     )
   return (
     <SegmentedPicker
-      className="storyboard-bar-models"
+      // 模型短名长短不一，按各自宽度排；分辨率照共用分段默认等宽
+      className="auto-cols-auto"
       label="视频模型"
       onChange={onChange}
       options={orderVideoModels(models.items).map((model) => ({

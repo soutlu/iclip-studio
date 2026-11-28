@@ -14,8 +14,7 @@ type UsersToolbarProps = {
 export function UsersToolbar({ onQueryChange, query }: UsersToolbarProps) {
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-2.5">
-      {/* 深色模式下外层托盘底色已较深，凹槽需进一步压暗一档以维持内凹层次 */}
-      <TabsList aria-label="按角色筛选" className="dark:bg-control-well" variant="segmented">
+      <TabsList aria-label="按角色筛选" variant="segmented">
         {ROLE_FILTERS.map((filter) => (
           <TabsTrigger key={filter.value} value={filter.value}>
             {filter.label}

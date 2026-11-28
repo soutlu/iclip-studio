@@ -104,12 +104,12 @@ describe('final-cut 编辑器 · 字幕对照台词', () => {
     await waitFor(() => expect(field()).toHaveValue('We open at ten.'))
     expect(await within(panel()).findByRole('deletion')).toHaveTextContent(/^ten$/)
 
-    const languages = within(panel()).getByRole('group', { name: '原文与译文' })
-    await user.click(within(languages).getByRole('button', { name: 'English（EN）' }))
+    const languages = within(panel()).getByRole('radiogroup', { name: '原文与译文' })
+    await user.click(within(languages).getByRole('radio', { name: 'English（EN）' }))
     await waitFor(() => expect(within(panel()).queryByText('台词')).toBeNull())
     expect(adoptButton()).toBeNull()
 
-    await user.click(within(languages).getByRole('button', { name: '原文' }))
+    await user.click(within(languages).getByRole('radio', { name: '原文' }))
     expect(await within(panel()).findByRole('deletion')).toHaveTextContent(/^ten$/)
     expect(submitted).toEqual([])
   })

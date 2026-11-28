@@ -271,7 +271,6 @@ export function AudioTab({
     <div className="wf-audio-top">
       <ChipGroup
         aria-label="音频来源"
-        className="wf-seg"
         onValueChange={(value) => {
           if (value === 'conversation' || value === 'library') showView(value)
         }}
@@ -279,10 +278,10 @@ export function AudioTab({
         value={view}
         variant="segmented"
       >
-        <FilterChip className="wf-seg-item" value="conversation" variant="segmented">
+        <FilterChip value="conversation" variant="segmented">
           本对话
         </FilterChip>
-        <FilterChip className="wf-seg-item" value="library" variant="segmented">
+        <FilterChip value="library" variant="segmented">
           音频库
         </FilterChip>
       </ChipGroup>

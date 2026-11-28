@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Icon, type IconName } from '@/shared/icons'
 import { cn } from '@/shared/lib/utils'
+import { ChipGroup, FilterChip } from '@/shared/ui/chip'
 import { MenuItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
 import { Slider } from '@/shared/ui/slider'
 import { TooltipContent, TooltipRoot, TooltipTrigger } from '@/shared/ui/tooltip'
@@ -83,28 +84,39 @@ const TOOLS: Readonly<Record<EditTool, { name: string; icon: IconName; keys: str
   razor: { name: '切开工具', icon: 'final-cut-split', keys: 'B' },
 }
 
-/** 选择与切开工具组成的分段控件（样子同右栏的分段），当前工具浮起。 */
+/** 选择与切开工具组成的分段（共用分段，格子收成图标宽），当前工具浮起；提示里写快捷键。 */
 function ToolSwitch({ tool, onTool }: Pick<EditorToolbarProps, 'tool' | 'onTool'>) {
   return (
-    <div aria-label="编辑工具" className="wf-seg" role="group">
+    <ChipGroup
+      aria-label="编辑工具"
+      className="auto-cols-auto"
+      onValueChange={(value) => {
+        if (value === 'select' || value === 'razor') onTool(value)
+      }}
+      type="single"
+      value={tool}
+      variant="segmented"
+    >
       {(['select', 'razor'] as const).map((each) => (
-        <Tool
-          className="wf-seg-item"
-          icon={TOOLS[each].icon}
-          key={each}
-          label={TOOLS[each].name}
-          onClick={() => onTool(each)}
-          pressed={tool === each}
-          shortcuts={TOOLS[each].keys}
-          tip={
-            <>
-              {TOOLS[each].name}
-              <Keys>{TOOLS[each].keys}</Keys>
-            </>
-          }
-        />
+        <TooltipRoot key={each}>
+          <TooltipTrigger asChild>
+            <FilterChip
+              aria-keyshortcuts={TOOLS[each].keys}
+              aria-label={TOOLS[each].name}
+              className="w-7.5 px-0"
+              value={each}
+              variant="segmented"
+            >
+              <Icon decorative name={TOOLS[each].icon} size="sm" />
+            </FilterChip>
+          </TooltipTrigger>
+          <TooltipContent className="wf-tip" side="top">
+            {TOOLS[each].name}
+            <Keys>{TOOLS[each].keys}</Keys>
+          </TooltipContent>
+        </TooltipRoot>
       ))}
-    </div>
+    </ChipGroup>
   )
 }
 
@@ -209,7 +221,7 @@ export function LocaleBar({
   // 当前语言被挡在滚动区外面时滚过去（换了语言、加了语言、滚动区变窄时）；只挪这一层，不带着外面的页面一起滚
   useLayoutEffect(() => {
     const scroller = scrollRef.current
-    const shown = scroller?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    const shown = scroller?.querySelector<HTMLElement>('[aria-checked="true"]')
     if (scroller === null || shown === null || shown === undefined) return
     const left = shown.offsetLeft - LOCALE_SCROLL_MARGIN
     const right = shown.offsetLeft + shown.offsetWidth + LOCALE_SCROLL_MARGIN
@@ -229,29 +241,35 @@ export function LocaleBar({
   const addable = LOCALES.filter(({ code }) => !present.includes(code))
   const side = inPanel ? 'bottom' : 'top'
   return (
-    // 侧栏语言组使用独立无障碍名称，避免按「语言」查询工具条分组时产生歧义
-    <div aria-label={inPanel ? '原文与译文' : '语言'} className="wf-locales" role="group">
+    <div className="wf-locales">
       <div className="wf-locales-scroll storyboard-scroll-fade" data-fade={fade} ref={scrollRef}>
-        <div className="wf-seg">
+        <ChipGroup
+          // 侧栏那一处用独立的名字，避免按「语言」查询工具条上的分段时产生歧义
+          aria-label={inPanel ? '原文与译文' : '语言'}
+          // 槽把选项伸出去的点按热区裁掉，不然外面的滚动区会多出一截能滚的范围、渐隐跟着亮
+          className="auto-cols-auto overflow-clip"
+          // 原文的语言代码是 null，分段的值用各项不重复的无障碍名称；再点当前语言报的是空值，不切换
+          onValueChange={(value) => {
+            const next = buttons.find((button) => button.label === value)
+            if (next !== undefined) onSwitch(next.code)
+          }}
+          type="single"
+          value={buttons.find((button) => button.code === current)?.label ?? ''}
+          variant="segmented"
+        >
           {buttons.map((button) => (
             <TooltipRoot key={button.label}>
               <TooltipTrigger asChild>
-                <button
-                  aria-label={button.label}
-                  aria-pressed={button.code === current}
-                  className="wf-seg-item ui-state ui-focus"
-                  onClick={() => onSwitch(button.code)}
-                  type="button"
-                >
+                <FilterChip aria-label={button.label} value={button.label} variant="segmented">
                   {button.tag}
-                </button>
+                </FilterChip>
               </TooltipTrigger>
               <TooltipContent className="wf-tip" side={side}>
                 {button.tip}
               </TooltipContent>
             </TooltipRoot>
           ))}
-        </div>
+        </ChipGroup>
       </div>
       {addable.length === 0 ? null : <AddLocale addable={addable} onAdd={onAdd} side={side} />}
     </div>

@@ -734,8 +734,8 @@
    单点键（画幅、音频）是卡片白底的浮起键：外环与轻投影代替描边，顶部 1px 高光，菜单展开时凹下去。
    单点键与弹窗里复用的同一组控件共用规则，尺寸与材质由出片栏设 --storyboard-control-* 变量给出；
    弹窗里不在出片栏内，沿用默认的 34px 高度、sm 圆角、发丝线描边、白底与正文字号。
-   分段槽只在出片栏里用：凹槽底承托浮起的选中格（与 final-cut 的分段同一种材质），不可用的格置灰、悬停说明原因；
-   模型读取中或读取失败时，模型槽的位置换成同高的凹槽占位。
+   视频模型、分辨率是共用分段（ChipGroup segmented）的默认样子，只把槽高对齐到单点键；不可用的格置灰、悬停说明原因；
+   模型读取中或读取失败时，模型槽的位置换成同高、同材质的凹槽占位。
    品牌主色只用于出片按钮；画幅菜单只列当前模型支持的画幅，通过 Portal 向上展开。
    控件上方的状态行仅在存在提示内容时渲染：禁用说明使用次级文字色，错误提示使用错误色。 */
 .storyboard-bar {
@@ -747,8 +747,6 @@
   --storyboard-control-open-fill: var(--color-control-well);
   --storyboard-control-open-shadow: var(--shadow-control-well);
   --storyboard-control-text: var(--text-ui);
-  /* 分段格圆角：槽圆角减去 2px 槽内边距，保持四角同心 */
-  --storyboard-segment-radius: calc(var(--radius-control) - 2px);
   display: flex;
   flex: none;
   flex-direction: column;
@@ -863,53 +861,10 @@
 .storyboard-bar-audio[aria-pressed='false']:enabled {
   color: var(--color-on-surface-muted);
 }
-/* 出片栏的分段槽（视频模型、分辨率）与模型读取中的占位：凹槽底，与单点键同高同圆角。 */
-.storyboard-bar-well {
-  flex: none;
-  height: var(--storyboard-control-height);
-  border-radius: var(--radius-control);
-  background-color: var(--color-control-well);
-  box-shadow: var(--shadow-control-well);
-}
-/* 槽内边距 2px，格高 28px。 */
-.storyboard-bar-segments {
-  gap: 2px;
-  padding: 2px;
-}
-/* 共享分段默认等宽（分辨率照此）；模型短名长短不一，按各自宽度排。 */
-.storyboard-bar-models {
-  grid-auto-columns: auto;
-}
-/* 分段格：悬停只加深文字、不垫底色（撤掉 ui-state 的叠层色）；选中格浮起。 */
-.storyboard-bar-well-item {
-  --color-state-hover: transparent;
-  --color-state-pressed: transparent;
-  padding: 0 10px;
-  border-radius: var(--storyboard-segment-radius);
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-label);
-  line-height: var(--text-label--line-height);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-.storyboard-bar-well-item:hover {
-  color: var(--color-on-surface);
-}
-/* 选中态按 aria-checked 写：不可用的格外面包着 Tooltip，它的触发器会改写 data-state。 */
-.storyboard-bar-well-item[aria-checked='true'] {
-  background-color: var(--color-card);
-  box-shadow: var(--shadow-pill), var(--shadow-specular);
-  color: var(--color-on-surface);
-  font-weight: 600;
-}
-.dark .storyboard-bar-well-item[aria-checked='true'] {
-  background-color: var(--color-surface-container-high);
-}
-/* 不可用的格：禁用文字色，悬停也不加深（与悬停规则同优先级，放在其后）。 */
-.storyboard-bar-well-item[aria-disabled='true'] {
-  color: var(--color-disabled-text);
-}
+/* 模型读取中的占位：和模型槽同高，材质见 SEGMENTED_TRACK。 */
 .storyboard-bar-models-pending {
+  height: var(--storyboard-control-height);
+  flex: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;

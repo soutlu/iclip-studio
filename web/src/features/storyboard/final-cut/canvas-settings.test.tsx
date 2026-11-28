@@ -75,12 +75,17 @@ afterEach(() => window.localStorage.clear())
 
 const trigger = () => screen.getByRole('button', { name: /^画面尺寸/ })
 const panel = () => within(screen.getByRole('dialog', { name: '画面设置' }))
-const ratios = () => within(panel().getByRole('group', { name: '画面比例' }))
+const ratios = () => within(panel().getByRole('radiogroup', { name: '画面比例' }))
 /** 浮层里名为 `name` 的一组按钮中按下着的那些的名字。 */
 const pressedIn = (name: string) =>
   within(panel().getByRole('group', { name }))
     .queryAllByRole('button', { pressed: true })
     .map((button) => button.textContent || button.getAttribute('aria-label'))
+/** 浮层里名为 `name` 的分段（单选）中选中的那些的名字。 */
+const checkedIn = (name: string) =>
+  within(panel().getByRole('radiogroup', { name }))
+    .queryAllByRole('radio', { checked: true })
+    .map((radio) => radio.textContent)
 const width = () => panel().getByRole('textbox', { name: '宽' })
 const height = () => panel().getByRole('textbox', { name: '高' })
 const RANGE_TEXT = '宽高须在 240–4096 之间'
@@ -92,16 +97,16 @@ describe('画面设置 · 画面尺寸', () => {
     await user.click(trigger())
     expect(
       ratios()
-        .getAllByRole('button')
-        .map((button) => button.textContent),
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
     ).toEqual(['9:16', '3:4', '1:1', '4:3', '16:9', '21:9'])
-    expect(pressedIn('画面比例')).toEqual([])
+    expect(checkedIn('画面比例')).toEqual([])
     expect(width()).toHaveValue('720')
     expect(height()).toHaveValue('1280')
 
-    await user.click(ratios().getByRole('button', { name: '21:9' }))
+    await user.click(ratios().getByRole('radio', { name: '21:9' }))
     expect(onCanvas).toHaveBeenLastCalledWith({ width: 2520, height: 1080 })
-    expect(pressedIn('画面比例')).toEqual(['21:9'])
+    expect(checkedIn('画面比例')).toEqual(['21:9'])
     expect(width()).toHaveValue('2520')
     expect(height()).toHaveValue('1080')
     expect(trigger()).toHaveAccessibleName('画面尺寸 21:9 · 1080P')
@@ -119,7 +124,7 @@ describe('画面设置 · 画面尺寸', () => {
     await user.type(height(), '1440')
     await user.tab()
     expect(onCanvas).toHaveBeenLastCalledWith({ width: 1080, height: 1440 })
-    expect(pressedIn('画面比例')).toEqual(['3:4'])
+    expect(checkedIn('画面比例')).toEqual(['3:4'])
     expect(screen.queryByText(RANGE_TEXT)).toBeNull()
   })
 
@@ -158,18 +163,18 @@ describe('画面设置 · 画面尺寸', () => {
     await user.click(trigger())
     await user.click(panel().getByRole('button', { name: '互换宽高' }))
     expect(onCanvas).toHaveBeenLastCalledWith({ width: 1920, height: 1080 })
-    expect(pressedIn('画面比例')).toEqual(['16:9'])
+    expect(checkedIn('画面比例')).toEqual(['16:9'])
   })
 })
 
 describe('画面设置 · 导出分辨率', () => {
-  const tiers = () => within(panel().getByRole('group', { name: '导出分辨率' }))
-  const tierButton = (name: string) => tiers().getByRole('button', { name })
+  const tiers = () => within(panel().getByRole('radiogroup', { name: '导出分辨率' }))
+  const tierButton = (name: string) => tiers().getByRole('radio', { name })
   const disabledTiers = () =>
     tiers()
-      .getAllByRole('button')
-      .filter((button) => button.getAttribute('aria-disabled') === 'true')
-      .map((button) => button.textContent)
+      .getAllByRole('radio')
+      .filter((radio) => radio.getAttribute('aria-disabled') === 'true')
+      .map((radio) => radio.textContent)
 
   it('1080×1920：1080P 亮，480P、720P 能选；选 720P 胶囊写「· 720P」，画面尺寸不变、不改主文件，提示写导出尺寸', async () => {
     const { user, onCanvas } = await renderHud({ canvas: { width: 1080, height: 1920 } })
@@ -177,14 +182,14 @@ describe('画面设置 · 导出分辨率', () => {
     await user.click(trigger())
     expect(
       tiers()
-        .getAllByRole('button')
-        .map((button) => button.textContent),
+        .getAllByRole('radio')
+        .map((radio) => radio.textContent),
     ).toEqual(['480P', '720P', '1080P'])
-    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(checkedIn('导出分辨率')).toEqual(['1080P'])
     expect(disabledTiers()).toEqual([])
 
     await user.click(tierButton('720P'))
-    expect(pressedIn('导出分辨率')).toEqual(['720P'])
+    expect(checkedIn('导出分辨率')).toEqual(['720P'])
     expect(trigger()).toHaveAccessibleName('画面尺寸 9:16 · 720P')
     expect(width()).toHaveValue('1080')
     expect(height()).toHaveValue('1920')
@@ -200,25 +205,25 @@ describe('画面设置 · 导出分辨率', () => {
   it('3:4 的 1080×1440：1080P 亮，480P、720P 置灰，点了说明一句、不选上', async () => {
     const { user } = await renderHud({ canvas: { width: 1080, height: 1440 } })
     await user.click(trigger())
-    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(checkedIn('导出分辨率')).toEqual(['1080P'])
     expect(disabledTiers()).toEqual(['480P', '720P'])
 
     await user.click(tierButton('720P'))
     expect(await screen.findByRole('tooltip')).toHaveTextContent(/^当前画面尺寸不支持按 720P 导出$/)
-    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    expect(checkedIn('导出分辨率')).toEqual(['1080P'])
   })
 
   it('1280×800：三档都不亮、都置灰，胶囊在简称后面写宽×高；480×854 只亮 480P，放大的两档置灰', async () => {
     const { user, unmount } = await renderHud({ canvas: { width: 1280, height: 800 } })
     expect(trigger()).toHaveAccessibleName('画面尺寸 8:5 · 1280×800')
     await user.click(trigger())
-    expect(pressedIn('导出分辨率')).toEqual([])
+    expect(checkedIn('导出分辨率')).toEqual([])
     expect(disabledTiers()).toEqual(['480P', '720P', '1080P'])
     unmount()
 
     const small = await renderHud({ canvas: { width: 480, height: 854 } })
     await small.user.click(trigger())
-    expect(pressedIn('导出分辨率')).toEqual(['480P'])
+    expect(checkedIn('导出分辨率')).toEqual(['480P'])
     expect(disabledTiers()).toEqual(['720P', '1080P'])
   })
 
@@ -232,12 +237,12 @@ describe('画面设置 · 导出分辨率', () => {
     await user.click(trigger())
     await user.click(tierButton('720P'))
 
-    await user.click(ratios().getByRole('button', { name: '3:4' }))
-    expect(pressedIn('导出分辨率')).toEqual(['1080P'])
+    await user.click(ratios().getByRole('radio', { name: '3:4' }))
+    expect(checkedIn('导出分辨率')).toEqual(['1080P'])
     expect(trigger()).toHaveAccessibleName('画面尺寸 3:4 · 1080P')
 
-    await user.click(ratios().getByRole('button', { name: '9:16' }))
-    expect(pressedIn('导出分辨率')).toEqual(['720P'])
+    await user.click(ratios().getByRole('radio', { name: '9:16' }))
+    expect(checkedIn('导出分辨率')).toEqual(['720P'])
   })
 
   it('选的档按对话记在浏览器里：重新打开还在，别的对话不受影响', async () => {
@@ -296,7 +301,7 @@ describe('画面设置 · 参考线', () => {
     expect(within(guides() ?? document.body).getByText('互动区')).toBeInTheDocument()
     expect(within(guides() ?? document.body).getByText('底部信息遮挡区')).toBeInTheDocument()
     await user.click(trigger())
-    expect(pressedIn('构图网格')).toEqual(['九宫格'])
+    expect(checkedIn('构图网格')).toEqual(['九宫格'])
     expect(panel().getByRole('switch', { name: '短视频安全区' })).toBeChecked()
 
     await user.click(quick())
@@ -306,14 +311,14 @@ describe('画面设置 · 参考线', () => {
   it('浮层里选十字、开安全区；横的画面的安全区是底部播控区', async () => {
     const { user } = await renderHud({ canvas: { width: 1920, height: 1080 } })
     await user.click(trigger())
-    await user.click(panel().getByRole('button', { name: '十字' }))
+    await user.click(panel().getByRole('radio', { name: '十字' }))
     expect(guides()).not.toBeNull()
     expect(quick()).toHaveAttribute('aria-pressed', 'true')
     await user.click(panel().getByRole('switch', { name: '短视频安全区' }))
     expect(within(guides() ?? document.body).getByText('底部播控遮挡区')).toBeInTheDocument()
     expect(screen.queryByText('互动区')).toBeNull()
 
-    await user.click(panel().getByRole('button', { name: '关闭' }))
+    await user.click(panel().getByRole('radio', { name: '关闭' }))
     await user.click(panel().getByRole('switch', { name: '短视频安全区' }))
     expect(guides()).toBeNull()
   })

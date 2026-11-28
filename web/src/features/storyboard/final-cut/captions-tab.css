@@ -29,11 +29,6 @@
   gap: 6px;
 }
 
-.wf-captions-voice > .wf-seg {
-  display: inline-flex;
-  flex: none;
-}
-
 .wf-captions-acts {
   display: flex;
   flex: none;
@@ -70,12 +65,7 @@
   line-height: var(--text-label--line-height);
 }
 
-/* 「字幕 / 画面文字」两段切换（样子见 wf-seg） */
-.wf-captions-views {
-  display: inline-flex;
-  flex: none;
-}
-
+/* 「字幕 / 画面文字」两段切换里的条数 */
 .wf-captions-count {
   color: var(--color-on-surface-muted);
   font-family: var(--font-mono);
