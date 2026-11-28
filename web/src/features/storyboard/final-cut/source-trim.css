@@ -1,7 +1,6 @@
-/* 「原片截取」：标题行右边是入点 – 出点 / 素材总长 */
+/* 「原片截取」：小标题右边是素材名和入点 – 出点 / 素材总长 */
 .wf-slip-summary {
   flex: none;
-  margin-left: auto;
   color: var(--color-on-surface-variant);
   font-family: var(--font-mono);
   font-size: var(--text-caption);
@@ -13,18 +12,15 @@
   color: var(--color-on-surface-faint);
 }
 
-/* 整条素材：50px 高的凹槽，帧条、波形铺满；框外压暗的那圈投影被它裁掉 */
+/* 整条素材：50px 高的无边凹槽（和属性里别的凹槽同底），帧条、波形铺满；框外压暗的那圈投影被它裁掉 */
 .wf-slip {
   position: relative;
   display: flex;
   height: 50px;
   align-items: center;
   overflow: clip;
-  border-radius: var(--radius-md);
-  background: var(--color-surface-container-low);
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
+  border-radius: var(--radius-control);
+  background: var(--color-control-well);
   touch-action: none;
   user-select: none;
 }

@@ -25,13 +25,14 @@ import {
   type ChainChange,
 } from './mix-fx'
 import { EFFECT_NAMES } from './mix-fx-names'
+import { PropRow, PropSubhead } from './ui/prop-layout'
 
 const effectLabel = (type: string) =>
   EFFECT_NAMES[type]?.label ?? getAudioFxDef(type)?.label ?? type
 
 /**
- * 「串联效果器链」：用户自己加的效果，按加进去的顺序一块一个（序号、名字、开关、移除，下面是它的参数）；压低、
- * 平稳音量、均衡、预设、升降调的节点不在这里。右上「+」点开能加的几种。参数照 core 的定义一个个列出来。
+ * 「串联效果器链」：用户自己加的效果，按加进去的顺序一个一组（序号、名字、开关、移除一行，下面是它的参数）；压低、
+ * 平稳音量、均衡、预设、升降调的节点不在这里。小标题右边「+」点开能加的几种。参数照 core 的定义一个个列出来。
  */
 export function MixEffects({
   chain,
@@ -44,44 +45,46 @@ export function MixEffects({
 }) {
   const effects = ownEffects(chain)
   return (
-    <div className="wf-mix-sub">
-      <div className="wf-prop-title-row">
-        <span className="wf-mix-heading">
-          串联效果器链 <span className="wf-mix-count">({effects.length})</span>
-        </span>
-        <MenuRoot>
-          <TooltipRoot>
-            <TooltipTrigger asChild>
-              <MenuTrigger asChild>
-                <button
-                  aria-label="添加效果"
-                  className="wf-tool wf-mix-add ui-state ui-focus"
-                  type="button"
+    <>
+      <PropSubhead
+        end={
+          <MenuRoot>
+            <TooltipRoot>
+              <TooltipTrigger asChild>
+                <MenuTrigger asChild>
+                  <button aria-label="添加效果" className="wf-tool ui-state ui-focus" type="button">
+                    <Icon decorative name="final-cut-add" size="sm" />
+                  </button>
+                </MenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent className="wf-tip" side="top">
+                添加效果
+              </TooltipContent>
+            </TooltipRoot>
+            <MenuSurface align="end" aria-label="添加效果" className="wf-menu wf-mix-menu">
+              {ADDABLE_EFFECTS.map((type) => (
+                <MenuItem
+                  className="h-auto py-1.5"
+                  key={type}
+                  onSelect={() => onChange((current) => withEffect(current, type))}
                 >
-                  <Icon decorative name="final-cut-add" size="sm" />
-                </button>
-              </MenuTrigger>
-            </TooltipTrigger>
-            <TooltipContent className="wf-tip" side="top">
-              添加效果
-            </TooltipContent>
-          </TooltipRoot>
-          <MenuSurface align="end" aria-label="添加效果" className="wf-menu wf-mix-menu">
-            {ADDABLE_EFFECTS.map((type) => (
-              <MenuItem
-                className="h-auto py-1.5"
-                key={type}
-                onSelect={() => onChange((current) => withEffect(current, type))}
-              >
-                <span className="wf-mix-role-option">
-                  <span>{effectLabel(type)}</span>
-                  <span className="wf-mix-role-description">{EFFECT_NAMES[type]?.description}</span>
-                </span>
-              </MenuItem>
-            ))}
-          </MenuSurface>
-        </MenuRoot>
-      </div>
+                  <span className="wf-mix-role-option">
+                    <span>{effectLabel(type)}</span>
+                    <span className="wf-mix-role-description">
+                      {EFFECT_NAMES[type]?.description}
+                    </span>
+                  </span>
+                </MenuItem>
+              ))}
+            </MenuSurface>
+          </MenuRoot>
+        }
+        title={
+          <>
+            串联效果器链 <span className="wf-mix-count">({effects.length})</span>
+          </>
+        }
+      />
       {effects.map((node, index) => {
         const name = effectLabel(node.type)
         const on = node.enabled !== false
@@ -128,7 +131,7 @@ export function MixEffects({
           </div>
         )
       })}
-    </div>
+    </>
   )
 }
 
@@ -155,10 +158,7 @@ function ParamRow({
       label: names?.options?.[param.key]?.[option.value] ?? option.label,
     }))
     return (
-      <div className="wf-prop-field">
-        <label className="wf-prop-label" htmlFor={id}>
-          {label}
-        </label>
+      <PropRow htmlFor={id} label={label}>
         <Dropdown
           id={id}
           label={label}
@@ -166,7 +166,7 @@ function ParamRow({
           options={options}
           value={String(value)}
         />
-      </div>
+      </PropRow>
     )
   }
   const current = typeof value === 'number' ? value : param.default

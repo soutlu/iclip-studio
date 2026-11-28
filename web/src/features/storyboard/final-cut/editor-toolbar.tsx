@@ -483,7 +483,7 @@ export function EditorToolbar({
           tip="适应宽度：整条时间线排满"
         />
         <Slider
-          className="wf-zoom mx-1 w-19.5 flex-none"
+          className="mx-1 w-19.5 flex-none"
           label="时间线缩放"
           max={100}
           min={0}

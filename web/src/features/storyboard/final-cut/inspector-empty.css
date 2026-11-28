@@ -1,4 +1,4 @@
-/* 没有选中：一块淡淡的点选图标，下面一句弱一级的说明，在页签里居中 */
+/* 没有选中：淡色的点选图标，下面一句弱一级的说明，在页签里居中；不垫底块 */
 .wf-inspector-empty {
   display: flex;
   min-height: 240px;
@@ -6,12 +6,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   padding: 28px 24px;
-  color: var(--color-on-surface-faint);
-  font-size: var(--text-label);
-  font-weight: 500;
-  line-height: 18px;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-ui);
+  line-height: var(--text-ui--line-height);
   text-align: center;
 }
 
@@ -19,30 +18,22 @@
   --icon-fill-color: currentColor;
   --icon-fill-opacity: 0.14;
 
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
+  display: inline-flex;
+  color: var(--color-on-surface-faint);
 }
 
-/* 选中了几个片段：片段的名字和种类一行一个 */
+/* 选中了几个片段：片段的名字和种类一行一个，不垫底 */
 .wf-inspector-multi-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
 }
 
 .wf-inspector-multi-list > li {
   display: flex;
-  min-height: 30px;
+  min-height: 32px;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-container-low);
-  font-size: var(--text-label);
+  font-size: var(--text-ui);
 }
 
 .wf-inspector-multi-name {
@@ -51,4 +42,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.wf-inspector-multi-kind {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
 }

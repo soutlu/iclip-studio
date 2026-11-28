@@ -1,9 +1,8 @@
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import { HF_AUDIO_EQ_RANGE_DB } from '@hyperframes/core/audio-fx-eq'
 import type { HfAudioFxChain } from '@hyperframes/core/audio-fx'
 import { cn } from '@/shared/lib/utils'
 import { Icon } from '@/shared/icons'
-import { Switch } from '@/shared/ui/switch'
 import { Tool } from './editor-toolbar'
 import { eqCurvePath } from './eq-curve'
 import { parseParamText } from './fx-params'
@@ -20,6 +19,7 @@ import {
 } from './mix-fx'
 import { EQ_BAND_NAMES } from './mix-fx-names'
 import { MixEffects } from './smart-mix-effects'
+import { PropSubhead, PropSwitch } from './ui/prop-layout'
 
 // 均衡滑杆照参照的工作台每格 0.5 dB；升降调每格一个半音
 const EQ_STEP = 0.5
@@ -31,8 +31,8 @@ const hzText = (hz: number) => (hz >= 1000 ? `${hz / 1000}kHz` : `${hz}Hz`)
 const clamp = (value: number, range: number) => Math.min(range, Math.max(-range, value))
 
 /**
- * 「精细调音」抽屉：一块浅底，默认收起，标题行右边一个小块写摘要（见 `fineTuneSummary`）。展开是「波形音量
- * 关键帧」的开关、「三段均衡与升降调」和「串联效果器链」三张小卡。
+ * 「精细调音」：默认收起的一行，右边一个小块写摘要（见 `fineTuneSummary`）。展开是「波形音量关键帧」的开关、
+ * 「三段均衡与升降调」和「串联效果器链」三小段，平铺在下面。
  */
 export function MixFineTune({
   chain,
@@ -56,7 +56,7 @@ export function MixFineTune({
   const parts = [...(tuned === '默认' ? [] : [tuned]), ...(envelope ? ['关键帧'] : [])]
   const summary = parts.length > 0 ? parts.join(' · ') : '默认'
   return (
-    <div className="wf-mix-fine">
+    <>
       <button
         aria-expanded={open}
         className="wf-mix-fine-toggle ui-state ui-focus"
@@ -75,46 +75,29 @@ export function MixFineTune({
         </span>
       </button>
       {open ? (
-        <div className="wf-mix-fine-body">
-          <MixEnvelope on={envelope} onChange={onEnvelope} onReset={onResetEnvelope} />
+        <>
+          {/* 开着时时间线上这个片段的波形上有一条音量曲线，选中片段后在上面加点、拖点；「重置」把曲线换回平的一条 */}
+          <PropSwitch
+            checked={envelope}
+            end={
+              envelope ? (
+                <button
+                  className="wf-chip-btn ui-state ui-focus"
+                  onClick={onResetEnvelope}
+                  type="button"
+                >
+                  重置
+                </button>
+              ) : null
+            }
+            label="波形音量关键帧"
+            onChange={onEnvelope}
+          />
           <MixTone chain={chain} onChange={onChange} onEditing={onEditing} />
           <MixEffects chain={chain} onChange={onChange} onEditing={onEditing} />
-        </div>
+        </>
       ) : null}
-    </div>
-  )
-}
-
-/**
- * 「波形音量关键帧」：开着时时间线上这个片段的波形上有一条音量曲线，选中片段后在上面加点、拖点；开着时开关左边
- * 有「重置」，把曲线换回平的一条。
- */
-function MixEnvelope({
-  on,
-  onChange,
-  onReset,
-}: {
-  on: boolean
-  onChange: (on: boolean) => void
-  onReset: () => void
-}) {
-  const titleId = useId()
-  return (
-    <div className="wf-mix-sub">
-      <div className="wf-prop-title-row">
-        <span className="wf-mix-heading" id={titleId}>
-          波形音量关键帧
-        </span>
-        <span className="wf-prop-title-end">
-          {on ? (
-            <button className="wf-chip-btn ui-state ui-focus" onClick={onReset} type="button">
-              重置
-            </button>
-          ) : null}
-          <Switch aria-labelledby={titleId} checked={on} onCheckedChange={onChange} />
-        </span>
-      </div>
-    </div>
+    </>
   )
 }
 
@@ -153,8 +136,8 @@ function EqCurve({ bands }: { bands: readonly { frequency: number; gain: number 
 }
 
 /**
- * 「三段均衡与升降调」：频响图下面两列滑杆，低、中、高三段（频率照 core）和升降调；双击滑杆归零，有调整时右上
- * 「归零」全部清掉。频响图跟着三段的增益变，拖滑杆时就跟着拖到的值。
+ * 「三段均衡与升降调」：频响图下面一行一条滑杆，低、中、高三段（频率照 core）和升降调；双击滑杆归零，有调整时
+ * 小标题右边「归零」全部清掉。频响图跟着三段的增益变，拖滑杆时就跟着拖到的值。
  */
 function MixTone({
   chain,
@@ -177,78 +160,75 @@ function MixTone({
       : band,
   )
   return (
-    <div className="wf-mix-sub">
-      <div className="wf-prop-title-row">
-        <span className="wf-mix-heading">三段均衡与升降调</span>
-        {tuned ? (
-          <span className="wf-prop-title-end">
+    <>
+      <PropSubhead
+        end={
+          tuned ? (
             <Tool
               icon="final-cut-reset"
               label="归零"
               onClick={() => onChange(withoutTone)}
               tip="归零"
             />
-          </span>
-        ) : null}
-      </div>
+          ) : null
+        }
+        title="三段均衡与升降调"
+      />
       <EqCurve bands={drawn} />
-      <div className="wf-prop-pair">
-        {bands.map((band) => {
-          const label = `${EQ_BAND_NAMES[band.name] ?? band.name} ${hzText(band.frequency)}`
-          const write = (gain: number) =>
-            onChange((current) => withEqGain(current, band.name, gain))
-          return (
-            <SliderControl
-              format={(position) => gainText((position - gainSteps) * EQ_STEP)}
-              key={band.name}
-              label={label}
-              mark={gainSteps}
-              max={gainSteps * 2}
-              min={0}
-              onCommit={(position) => {
-                setDragged(null)
-                write((position - gainSteps) * EQ_STEP)
-              }}
-              onDrag={(position) =>
-                setDragged({
-                  band: band.name,
-                  from: band.gain,
-                  gain: (position - gainSteps) * EQ_STEP,
-                })
-              }
-              onDoubleClick={() => write(0)}
-              onEditing={onEditing}
-              onText={(text) => {
-                const typed = parseParamText(text)
-                if (typed === null) return false
-                write(clamp(Math.round(typed / EQ_STEP) * EQ_STEP, HF_AUDIO_EQ_RANGE_DB))
-                return true
-              }}
-              position={Math.round(band.gain / EQ_STEP) + gainSteps}
-              text={gainText(band.gain)}
-            />
-          )
-        })}
-        <SliderControl
-          format={(position) => pitchText(position - PITCH_RANGE)}
-          label="升降音调"
-          mark={PITCH_RANGE}
-          max={PITCH_RANGE * 2}
-          min={0}
-          onCommit={(position) => onChange((current) => withPitch(current, position - PITCH_RANGE))}
-          onDoubleClick={() => onChange((current) => withPitch(current, 0))}
-          onEditing={onEditing}
-          onText={(text) => {
-            const typed = parseParamText(text)
-            if (typed === null) return false
-            const semitones = clamp(Math.round(typed), PITCH_RANGE)
-            onChange((current) => withPitch(current, semitones))
-            return true
-          }}
-          position={pitch + PITCH_RANGE}
-          text={pitchText(pitch)}
-        />
-      </div>
-    </div>
+      {bands.map((band) => {
+        const label = `${EQ_BAND_NAMES[band.name] ?? band.name} ${hzText(band.frequency)}`
+        const write = (gain: number) => onChange((current) => withEqGain(current, band.name, gain))
+        return (
+          <SliderControl
+            format={(position) => gainText((position - gainSteps) * EQ_STEP)}
+            key={band.name}
+            label={label}
+            mark={gainSteps}
+            max={gainSteps * 2}
+            min={0}
+            onCommit={(position) => {
+              setDragged(null)
+              write((position - gainSteps) * EQ_STEP)
+            }}
+            onDrag={(position) =>
+              setDragged({
+                band: band.name,
+                from: band.gain,
+                gain: (position - gainSteps) * EQ_STEP,
+              })
+            }
+            onDoubleClick={() => write(0)}
+            onEditing={onEditing}
+            onText={(text) => {
+              const typed = parseParamText(text)
+              if (typed === null) return false
+              write(clamp(Math.round(typed / EQ_STEP) * EQ_STEP, HF_AUDIO_EQ_RANGE_DB))
+              return true
+            }}
+            position={Math.round(band.gain / EQ_STEP) + gainSteps}
+            text={gainText(band.gain)}
+          />
+        )
+      })}
+      <SliderControl
+        format={(position) => pitchText(position - PITCH_RANGE)}
+        label="升降音调"
+        mark={PITCH_RANGE}
+        max={PITCH_RANGE * 2}
+        min={0}
+        onCommit={(position) => onChange((current) => withPitch(current, position - PITCH_RANGE))}
+        onDoubleClick={() => onChange((current) => withPitch(current, 0))}
+        onEditing={onEditing}
+        onText={(text) => {
+          const typed = parseParamText(text)
+          if (typed === null) return false
+          const semitones = clamp(Math.round(typed), PITCH_RANGE)
+          onChange((current) => withPitch(current, semitones))
+          return true
+        }}
+        position={pitch + PITCH_RANGE}
+        text={pitchText(pitch)}
+      />
+    </>
   )
 }

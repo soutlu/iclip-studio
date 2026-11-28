@@ -81,7 +81,7 @@
 }
 
 .wf-editor {
-  --slider-thumb-size: 14px;
+  --slider-thumb-size: 12px;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -384,16 +384,11 @@
   background: var(--wf-control-soft);
 }
 
-/* 滑杆：凹槽轨道、中性实心进度条、短竖线零点刻度与白底描边拇指；
+/* 滑杆（时间线缩放、属性里的各条滑杆）：细轨、墨色小圆钮，不画走过的那段（共用滑杆默认就不画），零点是短竖线刻度；
    挂载点见 shared/ui/slider，以双类选择器覆盖默认样式 */
 .wf-editor .slider-track {
-  height: 3.5px;
-  background: var(--color-surface-container-high);
-  box-shadow: var(--shadow-control-well);
-}
-
-.wf-editor .slider-range {
-  background: var(--color-on-surface);
+  height: 3px;
+  background: color-mix(in srgb, var(--color-on-surface) 14%, transparent);
 }
 
 .wf-editor .slider-mark {
@@ -404,8 +399,8 @@
 }
 
 .wf-editor .slider-thumb {
-  border: 1.75px solid var(--color-on-surface);
-  background: var(--color-card);
+  border: none;
+  background: var(--color-on-surface);
   box-shadow: var(--wf-shadow-knob);
   transition:
     scale var(--dur-s) var(--ease),

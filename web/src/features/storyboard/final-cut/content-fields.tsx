@@ -16,6 +16,7 @@ import type { HostClip } from './composition/film'
 import type { LocaleBindings } from './composition/locale-text'
 import { SliderControl } from './inspector-controls'
 import { languageName, type Language, type ShownLocale } from './locales'
+import { PropRow, PropSection } from './ui/prop-layout'
 
 type Values = Readonly<Record<string, VariableValue>>
 
@@ -35,45 +36,35 @@ export type TextLocale = {
 }
 
 /**
- * 文字卡片的标题行：标题 `title` 右边一个小块写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。
- * 元素、模板片段的「内容与样式」和字幕的「内容」共用。
+ * 文字那一组小标题右边的小块：写着显示着的语言，点它打开「字幕」页签（在那里切换、添加语言）。元素、模板片段的
+ * 「内容与样式」和字幕的「内容」共用。
  */
-export function ContentTitle({
-  title,
-  locale,
-  onLocale,
-}: {
-  title: string
-  locale: Language
-  onLocale: () => void
-}) {
+export function LocaleChip({ locale, onLocale }: { locale: Language; onLocale: () => void }) {
   const name = languageName(locale)
   return (
-    <div className="wf-prop-title-row">
-      <h4 className="wf-prop-title">{title}</h4>
-      <TooltipRoot>
-        <TooltipTrigger asChild>
-          <button
-            aria-label={`显示的语言：${name}`}
-            className="wf-prop-locale ui-state ui-focus"
-            onClick={onLocale}
-            type="button"
-          >
-            {name}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent className="wf-tip" side="top">
-          在「字幕」中切换
-        </TooltipContent>
-      </TooltipRoot>
-    </div>
+    <TooltipRoot>
+      <TooltipTrigger asChild>
+        <button
+          aria-label={`显示的语言：${name}`}
+          className="wf-prop-locale ui-state ui-focus"
+          onClick={onLocale}
+          type="button"
+        >
+          {name}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="wf-tip" side="top">
+        在「字幕」中切换
+      </TooltipContent>
+    </TooltipRoot>
   )
 }
 
 /**
  * 「内容与样式」：条目的可填项，一项一行。改了先留在这里，停下 300 毫秒再整串写进片段；
  * 几项一起改时合成一次写。焦点离开这一段、换选中的片段时把没写的立刻写进去。滑杆、取色板拖动中只动控件自己，
- * 松手才算改了。其它语言下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。标题行见 `ContentTitle`。
+ * 松手才算改了。其它语言下文字字段换成这种语言的文字框（见 `HostTextField`），单独写进去。小标题右边是
+ * `LocaleChip`。
  */
 export function ContentFields({
   clip,
@@ -130,13 +121,15 @@ export function ContentFields({
   }
 
   return (
-    <section className="wf-card wf-prop-card">
-      <ContentTitle locale={texts.locale.code} onLocale={onLocale} title="内容与样式" />
+    <PropSection
+      end={<LocaleChip locale={texts.locale.code} onLocale={onLocale} />}
+      title="内容与样式"
+    >
       {variables.length === 0 ? (
         <p className="wf-inspector-note">暂无可填项</p>
       ) : (
         <div
-          className="wf-prop-fields"
+          className="contents"
           // 焦点从这里的菜单、取色板回到下拉、色块上时不算离开
           onBlur={(event) => {
             const next = event.relatedTarget
@@ -170,7 +163,7 @@ export function ContentFields({
           )}
         </div>
       )}
-    </section>
+    </PropSection>
   )
 }
 
@@ -203,30 +196,31 @@ function TextRow({
   const id = useId()
   const bound = texts.bindings[variable.id]
   return (
-    <div className="wf-prop-field is-stacked">
-      <div className="wf-prop-field-head">
-        <label className="wf-prop-label" htmlFor={id} title={variable.label}>
-          {variable.label}
-        </label>
-        {texts.multilingual ? (
+    <PropRow
+      end={
+        texts.multilingual ? (
           <FollowToggle
             follows={bound !== undefined}
             label={variable.label}
             onToggle={(follow) => texts.onFollow(clip.id, variable.id, follow)}
           />
-        ) : null}
-      </div>
+        ) : null
+      }
+      htmlFor={id}
+      label={variable.label}
+      stacked
+    >
       {texts.locale.values === null ? (
         <Input
           autoComplete="off"
-          className="wf-field wf-prop-input"
+          className="wf-prop-well wf-prop-input"
           id={id}
           onChange={(event) => onChange(event.target.value)}
           value={current}
         />
       ) : (
         <HostTextField
-          className="wf-field wf-prop-input"
+          className="wf-prop-well wf-prop-input"
           clip={clip}
           field={variable}
           id={id}
@@ -236,7 +230,7 @@ function TextRow({
           variable={bound}
         />
       )}
-    </div>
+    </PropRow>
   )
 }
 
@@ -256,12 +250,9 @@ function VariableRow(props: Omit<ControlProps, 'id'>) {
       />
     )
   return (
-    <div className="wf-prop-field">
-      <label className="wf-prop-label" htmlFor={id} title={variable.label}>
-        {variable.label}
-      </label>
+    <PropRow htmlFor={id} label={variable.label}>
       <VariableControl id={id} {...props} />
-    </div>
+    </PropRow>
   )
 }
 
@@ -308,7 +299,7 @@ function VariableControl({ id, variable, current, fonts, onChange }: ControlProp
   }
 }
 
-/** 下拉：和输入框同高的浅底条，点开是全站的单选菜单。 */
+/** 下拉：占满控件那一栏的凹槽，现在的值在左、箭头在右，点开是全站的单选菜单。 */
 export function Dropdown({
   id,
   label,
@@ -328,7 +319,7 @@ export function Dropdown({
       <MenuTrigger asChild>
         <button
           aria-label={`${label}：${shown}`}
-          className="wf-select wf-prop-select ui-state ui-focus"
+          className="wf-prop-well wf-prop-select ui-state ui-focus"
           id={id}
           type="button"
         >
@@ -350,7 +341,7 @@ export function Dropdown({
 }
 
 /**
- * 颜色：能直接输入的十六进制小框，右边是现在颜色的圆色块，点它打开取色板。
+ * 颜色：一条凹槽，左边是现在颜色的小色块（点它打开取色板），后面是能直接输入的十六进制。
  * 取色板拖动中只动这里的色块和文字，松手才算改了。给了 `complete` 时输入框里只有写完整的值才算改了，
  * 没写完的留在框里，失焦时显示回现在的取值。
  */
@@ -376,24 +367,7 @@ export function ColorField({
   // design-allow -- 取色板的值只能是十六进制写法，没法引用颜色变量
   const color = HEX_COLOR.test(shown) ? shown : '#000000'
   return (
-    <span className="wf-prop-color">
-      <input
-        autoComplete="off"
-        className="wf-field wf-prop-hex"
-        id={id}
-        onBlur={() => setTyped(null)}
-        onChange={(event) => {
-          const text = event.target.value
-          if (complete === undefined) {
-            onChange(text)
-            return
-          }
-          setTyped({ from: current, text })
-          if (complete(text)) onChange(text)
-        }}
-        spellCheck={false}
-        value={typed !== null && typed.from === current ? typed.text : shown}
-      />
+    <span className="wf-prop-well wf-prop-color">
       <ColorPicker
         onChange={(to) => setDragged({ from: current, to })}
         onCommit={(hex) => {
@@ -409,6 +383,23 @@ export function ColorField({
           type="button"
         />
       </ColorPicker>
+      <input
+        autoComplete="off"
+        className="wf-prop-hex"
+        id={id}
+        onBlur={() => setTyped(null)}
+        onChange={(event) => {
+          const text = event.target.value
+          if (complete === undefined) {
+            onChange(text)
+            return
+          }
+          setTyped({ from: current, text })
+          if (complete(text)) onChange(text)
+        }}
+        spellCheck={false}
+        value={typed !== null && typed.from === current ? typed.text : shown}
+      />
     </span>
   )
 }
@@ -475,7 +466,7 @@ function NumberField({
   return (
     <span className="wf-prop-number">
       <Input
-        className="wf-field wf-prop-input"
+        className="wf-prop-well wf-prop-input"
         id={id}
         onBlur={() => setDraft(null)}
         onChange={(event) => {

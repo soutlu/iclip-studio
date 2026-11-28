@@ -1,4 +1,5 @@
-/* ---- 属性：头部是选中片段的种类图标、名字、种类和时长，下面一张白卡一件事；头部不动，卡片在自己的滚动区里滚 ---- */
+/* ---- 属性：标题行是选中片段的种类图标、标题、起止时间和一个快捷动作；下面不画卡片，「左名字、右控件」一行一行
+   平铺，组与组之间靠间距分开。标题行不动，下面在自己的滚动区里滚 ---- */
 
 .wf-side-body.is-props {
   display: flex;
@@ -8,6 +9,9 @@
 }
 
 .wf-inspector {
+  /* 名字那一栏的宽：一行里名字在左、控件从这里往右排 */
+  --wf-prop-label-width: 72px;
+
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -18,112 +22,81 @@
 .wf-inspector-head {
   display: flex;
   min-width: 0;
+  min-height: 56px;
   flex: none;
   align-items: center;
-  gap: 10px;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--color-panel-line);
+  gap: 8px;
+  padding: 12px 14px 4px;
 }
 
-/* 种类图标方块：底色（--wf-emblem）按片段的种类，左上提亮一点、往右下压暗，深色外观下也和面板分得开；
-   图标两套外观都是白色 */
-.wf-emblem {
-  display: grid;
-  width: 35px;
-  height: 35px;
+/* 种类图标：和右栏导航同款的双色图标，描边和填充用这类片段的色调 */
+.wf-inspector-sign {
+  --icon-fill-color: var(--wf-sign-tone);
+  --icon-fill-opacity: 0.28;
+
+  display: inline-flex;
   flex: none;
-  place-items: center;
-  border-radius: var(--radius-md);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--wf-emblem) 88%, var(--color-on-scrim)),
-    color-mix(in srgb, var(--wf-emblem) 55%, var(--color-scrim))
-  );
-  box-shadow:
-    0 4px 12px -2px color-mix(in srgb, var(--color-scrim) 20%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 28%, transparent);
-  color: var(--color-on-scrim);
-  --icon-fill-opacity: 0.24;
+  color: var(--wf-sign-tone);
 }
 
-.wf-emblem.is-dark {
-  --wf-emblem: var(--wf-clip-video);
+.wf-inspector-sign[data-tone='slate'] {
+  --wf-sign-tone: var(--color-tone-slate);
 }
 
-.wf-emblem.is-music {
-  --wf-emblem: var(--color-tone-teal);
+.wf-inspector-sign[data-tone='teal'] {
+  --wf-sign-tone: var(--color-tone-teal);
 }
 
-.wf-emblem.is-original {
-  --wf-emblem: var(--color-tone-slate);
+.wf-inspector-sign[data-tone='umber'] {
+  --wf-sign-tone: var(--color-tone-umber);
 }
 
-.wf-emblem.is-dub {
-  --wf-emblem: var(--color-tone-umber);
+.wf-inspector-sign[data-tone='copper'] {
+  --wf-sign-tone: var(--color-tone-copper);
 }
 
-/* 字幕的棕色：final-cut 的字幕图标色在浅色外观下和配乐的波形色是同一个，这里用第三色（同压低曲线一族） */
-.wf-emblem.is-caption {
-  --wf-emblem: var(--color-tertiary);
+.wf-inspector-sign[data-tone='ochre'] {
+  --wf-sign-tone: var(--color-tone-ochre);
 }
 
-.wf-inspector-id {
-  min-width: 0;
-  flex: 1;
+.wf-inspector-sign[data-tone='neutral'] {
+  --wf-sign-tone: var(--color-on-surface-variant);
 }
 
 .wf-inspector-name {
   min-width: 0;
   overflow: hidden;
   color: var(--color-on-surface);
-  font-size: var(--text-body);
+  font-size: var(--text-title);
   font-weight: 600;
-  line-height: var(--text-body--line-height);
+  line-height: var(--text-title--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wf-inspector-sub {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
+.wf-inspector-range {
+  flex: none;
   color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  line-height: var(--text-caption--line-height);
-}
-
-.wf-inspector-kind {
-  flex: none;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  font-weight: 500;
-}
-
-.wf-inspector-duration {
-  min-width: 0;
-  overflow: hidden;
   font-family: var(--font-mono);
+  font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.wf-inspector-actions {
+.wf-inspector-action {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 4px;
+  margin-left: auto;
 }
 
-/* 「属性」里和右栏顶导上的图标按钮（样子见 wf-tool）比工具条上的小一档；属性头部的操作和右栏的收起按钮
+/* 「属性」里和右栏顶导上的图标按钮（样子见 wf-tool）比工具条上的小一档；标题行的快捷动作和右栏的收起按钮
    悬停时图标变深 */
 :is(.wf-inspector, .wf-side-nav) .wf-tool {
   width: 28px;
   height: 28px;
 }
 
-:is(.wf-inspector-actions, .wf-side-nav) .wf-tool:not([aria-disabled='true']):hover {
+:is(.wf-inspector-action, .wf-side-nav) .wf-tool:not([aria-disabled='true']):hover {
   color: var(--color-on-surface);
 }
 
@@ -132,12 +105,18 @@
   color: var(--color-error);
 }
 
+/* 过期配音的「重新合成」：提示色浅底，比平时突出 */
+.wf-inspector .wf-tool.is-warning:not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
+}
+
 .wf-inspector-body {
   display: flex;
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 24px;
   overflow-y: auto;
   padding: 12px 14px 24px;
   scrollbar-width: thin;
@@ -147,97 +126,80 @@
   flex: none;
 }
 
-/* 属性卡片（复用 .wf-card 外观）：内边距与行距较通用卡片更舒展 */
-.wf-prop-card {
-  gap: 12px;
-  padding: 14px;
-}
+/* ---- 行的骨架（见 ui/prop-layout.tsx） ---- */
 
-/* 卡片的标题行：标题在左，右边一组控件（wf-prop-title-end） */
-.wf-prop-title-row {
+/* 一组：一行小标题（可没有），下面若干行 */
+.wf-prop-section {
   display: flex;
   min-width: 0;
-  min-height: 26px;
-  align-items: center;
-  gap: 8px;
-}
-
-.wf-prop-title {
-  flex: none;
-  color: var(--color-on-surface);
-  font-size: var(--text-label);
-  font-weight: 600;
-}
-
-/* 带图标的标题：图标用次一级的字色 */
-.wf-prop-title.is-icon {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.wf-prop-title.is-icon > svg {
-  color: var(--color-on-surface-variant);
-}
-
-.wf-prop-title-end {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
-  margin-left: auto;
-}
-
-/* 「内容与样式」、字幕「内容」标题右边：显示着的语言，主色浅底，点它打开「字幕」 */
-.wf-prop-locale {
-  display: inline-flex;
-  height: 20px;
-  flex: none;
-  align-items: center;
-  margin-left: auto;
-  padding: 0 8px;
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
-  color: var(--color-primary);
-  font-size: var(--text-caption);
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.wf-prop-subtitle {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--color-on-surface-muted);
-  font-size: var(--text-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 一项：名字在左、控件在右的一行；is-stacked 是名字一行、控件（文字框）在下面 */
-.wf-prop-fields {
-  display: flex;
   flex-direction: column;
   gap: 12px;
 }
 
-.wf-prop-field {
+.wf-prop-section-head {
+  display: flex;
+  min-width: 0;
+  min-height: 24px;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-prop-section-title {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.wf-prop-section-end {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 组里再分的一小段的标题行 */
+.wf-prop-subhead {
   display: flex;
   min-width: 0;
   min-height: 28px;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+  color: var(--color-on-surface);
+  font-size: var(--text-ui);
+  font-weight: 500;
 }
 
-.wf-prop-field.is-stacked {
+/* 一行：名字一栏、控件一栏；开关的一行名字占满、开关靠右；is-stacked 是名字一行、控件在下面占满 */
+.wf-prop-row {
+  display: grid;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: var(--wf-prop-label-width) minmax(0, 1fr);
+}
+
+.wf-prop-row.is-switch {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* 名字一栏、控件一栏的行里放开关时（元素的开关可填项）也靠右，和开关的一行对齐 */
+.wf-prop-row > .switch-root {
+  justify-self: end;
+}
+
+.wf-prop-row.is-stacked {
+  display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: flex-start;
-  gap: 6px;
+  gap: 8px;
 }
 
-.wf-prop-field-head {
+.wf-prop-row-head {
   display: flex;
   min-width: 0;
   min-height: 24px;
@@ -246,77 +208,47 @@
   gap: 8px;
 }
 
+.wf-prop-row-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .wf-prop-label {
   min-width: 0;
   overflow: hidden;
   color: var(--color-on-surface-variant);
-  font-size: var(--text-label);
-  font-weight: 500;
+  font-size: var(--text-ui);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 两条滑杆并排：淡入淡出、均衡和升降调 */
-.wf-prop-pair {
-  display: grid;
-  gap: 10px 14px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-/* 开关和它的名字 */
-.wf-prop-switch {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  color: var(--color-on-surface-variant);
-  font-size: var(--text-caption);
-  white-space: nowrap;
-}
-
-/* 卡片底部单独一行的开关：名字在左、开关在右，名字的字和上面各行的名字（wf-prop-label）一样 */
-.wf-prop-switch.is-row {
-  min-height: 28px;
-  justify-content: space-between;
-  font-size: var(--text-label);
-  font-weight: 500;
-}
-
-/* 「声音与节奏」标题行里的图标开关（样子见 wf-tool）：开着时浅底细框，循环用配乐色，静音、关闭原声用警示色 */
-.wf-mix-toggle[aria-checked='true'] {
-  background: var(--wf-control-soft);
-  box-shadow: inset 0 0 0 1px var(--wf-control-ring);
-  color: var(--color-on-surface);
-}
-
-.wf-mix-toggle.is-loop[aria-checked='true'] {
-  color: var(--color-primary);
-  --icon-fill-color: var(--color-primary);
-}
-
-.wf-mix-toggle.is-mute[aria-checked='true'] {
-  background: color-mix(in srgb, var(--color-error) 9%, transparent);
-  box-shadow: none;
-  color: var(--color-error);
-}
-
-.wf-mix-toggle[aria-disabled='true'] {
-  cursor: not-allowed;
+.wf-prop-row[data-disabled] > .wf-prop-label {
   opacity: var(--state-disabled-content);
 }
 
-/* 标题行里的倍速：写着现在倍速的小下拉（样子见 wf-select），点开是倍速滑杆 */
-.wf-rate-picker {
-  height: 26px;
-  padding: 0 6px 0 8px;
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
+/* 小标题右边的状态文字（正在分析、素材名）：浅色，放不下截断 */
+.wf-prop-status {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.wf-rate-popup {
-  width: 220px;
-}
-
-.wf-rate-popup > .wf-prop-slider {
-  padding: 4px 6px 2px;
+/* 「内容与样式」、字幕「内容」小标题右边：显示着的语言，主色浅底，点它打开「字幕」 */
+.wf-prop-locale {
+  display: inline-flex;
+  height: 20px;
+  flex: none;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  color: var(--color-primary);
+  font-size: var(--text-caption);
+  font-weight: 500;
+  white-space: nowrap;
 }

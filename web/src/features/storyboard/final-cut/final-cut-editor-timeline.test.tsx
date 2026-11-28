@@ -1471,37 +1471,22 @@ describe('final-cut 编辑器 · 片段右键菜单', () => {
     expect(savedTag('clip-3')).toContain('data-start="0"')
   })
 
-  it('菜单里的静音、隐藏写进文件的和「属性」里同样的操作一样，各算一步撤销', async () => {
-    await openWith([video({ src: URL_A, duration: 2_000 }), audio({ duration: 4_000 })])
-    /** 先用菜单做一次、撤销一步，再用「属性」做一次：两次存下来的一样，撤销一步就回到做之前。 */
-    const sameAsInspector = async (
-      label: string,
-      item: string,
-      viaInspector: () => Promise<void>,
-    ) => {
-      const before = savedFilm()
-      await choose(label, item)
-      await waitSaved(() => expect(savedFilm()).not.toBe(before))
-      const viaMenu = savedFilm()
-      await user().click(undoButton())
-      await waitSaved(() => expect(savedFilm()).not.toBe(viaMenu))
-      expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
-      const undone = savedFilm()
-      await viaInspector()
-      await waitSaved(() => expect(savedFilm()).not.toBe(undone))
-      expect(savedFilm()).toBe(viaMenu)
-      await user().click(undoButton())
-      await waitSaved(() => expect(savedFilm()).toBe(undone))
-    }
-    await sameAsInspector('A · 镜头 1', '静音此片段', () =>
-      user().click(within(inspector()).getByRole('switch', { name: '关闭原声' })),
-    )
-    await sameAsInspector('A · 镜头 1', '隐藏片段画面', () =>
-      user().click(within(inspector()).getByRole('button', { name: '隐藏' })),
-    )
-    await sameAsInspector('配乐', '静音此片段', () =>
-      user().click(within(inspector()).getByRole('button', { name: '静音' })),
-    )
+  it('视频片段菜单里的「静音此片段」写进文件的和关掉「属性」里的「保留原声」一样，各算一步撤销', async () => {
+    await openWith([video({ src: URL_A, duration: 2_000 })])
+    // 先用菜单做一次、撤销一步，再用「属性」做一次：两次存下来的一样，撤销一步就回到做之前
+    const before = savedFilm()
+    await choose('A · 镜头 1', '静音此片段')
+    await waitSaved(() => expect(savedFilm()).not.toBe(before))
+    const viaMenu = savedFilm()
+    await user().click(undoButton())
+    await waitSaved(() => expect(savedFilm()).not.toBe(viaMenu))
+    expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
+    const undone = savedFilm()
+    await user().click(within(inspector()).getByRole('switch', { name: '保留原声' }))
+    await waitSaved(() => expect(savedFilm()).not.toBe(undone))
+    expect(savedFilm()).toBe(viaMenu)
+    await user().click(undoButton())
+    await waitSaved(() => expect(savedFilm()).toBe(undone))
   })
 
   it('片段上右键只出片段的菜单，空档上右键只出空档的菜单；在打开的菜单上再点右键不换成空档的菜单', async () => {
@@ -1974,7 +1959,7 @@ describe('final-cut 编辑器 · 分离音频', () => {
     expect(within(inspector()).getByText('原声已分离至「原声」行')).toBeVisible()
     expect(within(inspector()).getByTestId('sync-status')).toHaveTextContent('错开 +0.40s')
     expect(within(inspector()).getByRole('switch', { name: '与分离原声联动' })).not.toBeChecked()
-    expect(within(inspector()).queryByRole('switch', { name: '关闭原声' })).toBeNull()
+    expect(within(inspector()).queryByRole('switch', { name: '保留原声' })).toBeNull()
     const merge = within(inspector()).getByRole('button', { name: '合并' })
     expect(merge).toHaveAttribute('aria-disabled', 'true')
     await user.hover(merge)
@@ -1992,7 +1977,6 @@ describe('final-cut 编辑器 · 分离音频', () => {
   it('联动开着：改原声的倍速两段一起改；删掉其中一段时两段都删', async () => {
     const user = await openWith(pair())
     await select(user, 'A · 镜头 1 · 原声')
-    await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
     await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
     await user.keyboard('2{Enter}')
     await waitSaved(() =>

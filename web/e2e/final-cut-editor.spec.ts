@@ -585,7 +585,7 @@ test('块页签搜到块点一下卡片加入、组件页签拖一个组件到�
   await undone
 })
 
-test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；「显示时长」加 0.5 秒；取色板拖方块和色相条只在松手时写一次、拖到灰再拖回来色相还在；Esc 只关取色板，点空白处回到元素页签，撤销一步回去', async ({
+test('属性：选中组件或块的片段自动切到「属性」，改文字可填项，存下来、预览里看得到；「时长」加 0.5 秒；取色板拖方块和色相条只在松手时写一次、拖到灰再拖回来色相还在；Esc 只关取色板，点空白处回到元素页签，撤销一步回去', async ({
   page,
 }) => {
   test.setTimeout(60_000)
@@ -610,7 +610,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
   await row.getByRole('button', { name: /^选中：测试可填项，/ }).click()
   await expect(side.getByRole('tab', { name: '属性' })).toHaveAttribute('aria-selected', 'true')
   await expect(inspector.getByRole('heading', { name: '测试可填项' })).toBeVisible()
-  await expect(inspector.getByRole('heading', { level: 4 })).toHaveText(['显示时长', '内容与样式'])
+  await expect(inspector.getByRole('heading', { level: 4 })).toHaveText(['内容与样式'])
   const text = inspector.getByRole('textbox', { name: '文字' })
   await expect(text).toHaveValue('示例文字')
 
@@ -637,7 +637,7 @@ test('属性：选中组件或块的片段自动切到「属性」，改文字�
     .toBe('新的标题')
   expect(await isMarkedFinalCutPreviewPlayer(editor)).toBe(false)
 
-  const length = inspector.getByRole('textbox', { name: '显示时长' })
+  const length = inspector.getByRole('textbox', { name: '时长' })
   await expect(length).toHaveValue('5.00')
   const longer = mainSavedWith(page, (html) => savedItem(html, '测试可填项')?.duration === 5.5)
   await inspector.getByRole('button', { name: '延长 0.5 秒' }).click()
@@ -899,7 +899,7 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
     .getByRole('group', { name: '配乐', exact: true })
     .getByRole('button', { name: /^选中：轻快原声吉他/ })
     .click()
-  await expect(inspector.getByText('· 轻快原声吉他，适合秋季穿搭', { exact: true })).toBeVisible()
+  await expect(inspector.getByTitle('轻快原声吉他，适合秋季穿搭', { exact: true })).toBeVisible()
   const louder = mainSavedWith(
     page,
     (html) => savedAttribute(html, 'audio', 'data-volume') === '3.981072',
@@ -973,7 +973,6 @@ test('属性：音频片段拉满音量、打开循环播放写进文件；视�
     page,
     (html) => savedAttribute(html, 'video', 'data-playback-rate') === '2',
   )
-  await inspector.getByRole('button', { name: '倍速：1x' }).click()
   await inspector.getByRole('button', { name: /^倍速 1x，/ }).click()
   await inspector.getByRole('textbox', { name: '倍速' }).fill('2')
   await inspector.getByRole('textbox', { name: '倍速' }).press('Enter')

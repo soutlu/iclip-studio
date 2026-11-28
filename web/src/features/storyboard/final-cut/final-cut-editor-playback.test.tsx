@@ -913,7 +913,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
     const user = await openTwo()
     await user.click(clip(FIRST))
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
-    expect(within(within(props()).getByRole('banner')).getByText('2.00s')).toBeVisible()
+    expect(within(within(props()).getByRole('banner')).getByText('0.00 – 2.00s')).toBeVisible()
 
     await user.click(tab('模板'))
     expect(within(side()).getByRole('searchbox', { name: '搜索模板' })).toBeVisible()
@@ -922,7 +922,7 @@ describe('final-cut 编辑器 · 侧栏页签', () => {
 
     await user.click(clip(SECOND))
     expect(tab('属性')).toHaveAttribute('aria-selected', 'true')
-    expect(within(within(props()).getByRole('banner')).getByText('1.50s')).toBeVisible()
+    expect(within(within(props()).getByRole('banner')).getByText('2.00 – 3.50s')).toBeVisible()
   })
 
   it('点时间线空白处取消选中：回到切走之前停的目录页签', async () => {

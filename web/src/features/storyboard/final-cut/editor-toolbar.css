@@ -174,26 +174,6 @@
   background: var(--color-state-active);
 }
 
-/* 缩放滑杆：细轨、墨色小圆钮，不画走过的那段（编辑器里别的滑杆是凹槽加白钮，见上面的滑杆） */
-.wf-toolbar .wf-zoom {
-  --slider-thumb-size: 12px;
-}
-
-.wf-toolbar .wf-zoom .slider-track {
-  height: 3px;
-  background: color-mix(in srgb, var(--color-on-surface) 14%, transparent);
-  box-shadow: none;
-}
-
-.wf-toolbar .wf-zoom .slider-range {
-  background: none;
-}
-
-.wf-toolbar .wf-zoom .slider-thumb {
-  border: none;
-  background: var(--color-on-surface);
-}
-
 /* 工具栏提示里的快捷键 */
 .wf-tip {
   display: inline-flex;

@@ -8,6 +8,7 @@ import { slipped, timingOf, type SlipGrip, type Timing } from './clip-edit'
 import type { FilmClip, MediaClip } from './composition/film'
 import { useEditorEscape } from './editor-keys'
 import type { KeyframeState } from './material-media'
+import { PropSection } from './ui/prop-layout'
 
 const seconds = (ms: number) => (ms / 1000).toFixed(2)
 
@@ -50,7 +51,7 @@ export function SourceTrim({
 }: {
   clip: MediaClip
   clips: readonly FilmClip[]
-  /** 标题里写的素材名。 */
+  /** 小标题右边写的素材名。 */
   name: string
   /** 素材的总长；还不知道时是 undefined。 */
   sourceMs: number | undefined
@@ -157,19 +158,22 @@ export function SourceTrim({
   })
 
   return (
-    <section className="wf-card wf-prop-card">
-      <div className="wf-prop-title-row">
-        <h4 className="wf-prop-title">原片截取</h4>
-        <span className="wf-prop-subtitle" title={name}>
-          · {name}
-        </span>
-        {known ? (
-          <span className="wf-slip-summary" data-testid="slip-summary">
-            {seconds(inPoint)} – {seconds(outPoint)}s
-            <span className="wf-slip-total"> / {(total / 1000).toFixed(1)}s</span>
+    <PropSection
+      end={
+        <>
+          <span className="wf-prop-status" title={name}>
+            {name}
           </span>
-        ) : null}
-      </div>
+          {known ? (
+            <span className="wf-slip-summary" data-testid="slip-summary">
+              {seconds(inPoint)} – {seconds(outPoint)}s
+              <span className="wf-slip-total"> / {(total / 1000).toFixed(1)}s</span>
+            </span>
+          ) : null}
+        </>
+      }
+      title="原片截取"
+    >
       <TooltipRoot>
         <TooltipTrigger asChild>
           <div
@@ -239,7 +243,7 @@ export function SourceTrim({
           </TooltipContent>
         ) : null}
       </TooltipRoot>
-    </section>
+    </PropSection>
   )
 }
 
