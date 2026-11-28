@@ -40,7 +40,7 @@ export type DubbingDone = {
 
 /**
  * 正在跑的一批：哪种语言，`lines` 是这批要配的句子（字幕编号；写进工程以前都算在合成），`remaining` 是还没有结果的
- * 句数（「旁白配音」新加的、还没有字幕的旁白也算）。
+ * 句数。
  */
 export type DubbingRunning = { locale: Language; lines: ReadonlySet<string>; remaining: number }
 
@@ -220,7 +220,7 @@ export function useDubbing(conversationId: string, onDone: (done: DubbingDone) =
           locale: run.locale,
           lines: new Set([
             ...run.work.takes.flatMap(({ lines }) => lines.map((line) => line.caption)),
-            ...run.work.narrations.flatMap(({ caption }) => (caption === null ? [] : [caption])),
+            ...run.work.narrations.map(({ caption }) => caption),
           ]),
           remaining:
             run.work.takes.reduce(

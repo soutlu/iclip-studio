@@ -75,7 +75,7 @@ export function useVoiceControl({
 }: VoiceControlInput) {
   const writeDubs = ({ locale, results, narrations }: DubbingDone) => {
     const spoken = narrations.flatMap(({ line, outcome }) =>
-      line.caption === null || outcome.kind !== 'ready' || outcome.job.outputUrl === null
+      outcome.kind !== 'ready' || outcome.job.outputUrl === null
         ? []
         : [
             {
@@ -118,7 +118,7 @@ export function useVoiceControl({
       return {
         removed: dubsOf(current, locale, [
           ...ready.flatMap(({ request }) => request.lines.map((line) => line.caption)),
-          ...spoken.flatMap(({ line }) => (line.caption === null ? [] : [line.caption])),
+          ...spoken.map(({ line }) => line.caption),
         ]),
         added: made,
         narrated,
@@ -129,9 +129,8 @@ export function useVoiceControl({
     for (const { target: request, outcome } of results)
       if (outcome.kind === 'failed')
         notice(`${sourceName(request.src) ?? '素材片'} 的配音生成失败：${outcome.message}`)
-    for (const { line, outcome } of narrations)
-      if (line.caption !== null && outcome.kind === 'failed')
-        notice(`旁白的配音生成失败：${outcome.message}`)
+    for (const { outcome } of narrations)
+      if (outcome.kind === 'failed') notice(`旁白的配音生成失败：${outcome.message}`)
   }
 
   const dubbing = useDubbing(conversationId, writeDubs)

@@ -1,6 +1,7 @@
 /* ---- 字幕栏的配音：默认音色胶囊、合成主按钮、各句的配音按钮，和同页选音浮层 ---- */
 
-/* 默认音色胶囊（样子见 wf-select）：小封面、名字、⌄；放不下时名字先截断 */
+/* 默认音色胶囊（样子见 wf-select）：小封面、名字、⌄；放不下时名字截断（第二排让步的第 2 步，见下面的容器查询），
+   最窄只剩封面和 ⌄ */
 .wf-voice-pill {
   flex: 0 1 auto;
   padding-left: 4px;
@@ -8,7 +9,7 @@
 
 .wf-voice-pill-name {
   overflow: hidden;
-  min-width: 16px;
+  min-width: 0;
   text-overflow: ellipsis;
 }
 
@@ -21,8 +22,18 @@
   color: inherit;
 }
 
-/* 第二排放不下时（语言条已经在滚、音色名已经截断），主按钮只留图标和数字 */
-@container wf-captions-head (width < 372px) {
+/* 第二排放不下时按这个顺序让步，主按钮的字留到最后（阈值是页签头的内容宽度，在浏览器里量的）：
+   1. 「识别」「翻译」只留图标。只在有合成主按钮的那排收：别的时候第二排本来放得下。400px 放得下 4 个汉字的音色名、
+      「重配 NN 句」和带字的「翻译」。
+   2. 默认音色的名字截断（见 wf-voice-pill-name），靠弹性收缩，不用阈值。
+   3. 主按钮只留图标和数字：音色名已经收到只剩封面和 ⌄、最宽的「重配 NN 句」也放不下时（322px）。 */
+@container wf-captions-head (width < 400px) {
+  .wf-captions-row:has(.wf-dub-main) .wf-captions-word {
+    display: none;
+  }
+}
+
+@container wf-captions-head (width < 322px) {
   .wf-dub-word {
     display: none;
   }

@@ -959,6 +959,65 @@ describe('final-cut 编辑器 · 配音', () => {
       expect(savedRecords().find((record) => record.caption === 'cap-a1')?.voice).toBe(klaus),
     )
   })
+
+  const sideTabs = () =>
+    within(screen.getByRole('complementary', { name: '镜头、元素、模板、配乐、字幕和属性' }))
+  /** 「属性」里配音片段的「音色」那一行的按钮。 */
+  const inspectorVoice = () =>
+    within(screen.getByRole('tabpanel', { name: '属性' })).getByRole('button', {
+      name: /^音色：/,
+    })
+  /** 在时间线上选中 a1 的配音片段，切到「属性」。 */
+  const inspectDub = async (user: User) => {
+    await user.click(screen.getByRole('button', { name: /^选中：配音 · A one，/ }))
+    await user.click(sideTabs().getByRole('tab', { name: '属性' }))
+  }
+
+  it('「属性」里点配音片段的「音色」：弹出选本句音色的浮层，最上面「跟随默认 | 原片音色 | 不配音」；选资料库的音色只记下、不发起，浮层收起，「音色」换成它，焦点回到这个按钮', async () => {
+    resetMockReferenceAudios([])
+    const emma = addMockReferenceAudio({ title: 'Emma', locale: 'en' })
+    const user = await open()
+    const sent = serveDubbings()
+    await dubWithOriginal(user)
+    await inspectDub(user)
+    expect(inspectorVoice()).toHaveAccessibleName('音色：原片音色')
+
+    await user.click(inspectorVoice())
+    const pop = within(await screen.findByRole('dialog', { name: '选择本句音色' }))
+    expect(
+      within(pop.getByRole('group', { name: '本句音色' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['跟随默认（原片音色）', '原片音色', '不配音'])
+    await user.click(await pop.findByRole('button', { name: '选用：Emma' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择本句音色' })).toBeNull())
+    await waitSaved(() =>
+      expect(savedModes()).toBe(
+        `{"en":{"mode":"dub","voice":null,"lines":{"cap-a1":{"voice":"${emma}"}}}}`,
+      ),
+    )
+    expect(sent).toHaveLength(2)
+    expect(speeches).toEqual([])
+    expect(inspectorVoice()).toHaveAccessibleName('音色：Emma')
+    expect(inspectorVoice()).toHaveFocus()
+  })
+
+  it('「属性」里弹着选音浮层时换到别的页签：浮层收起，切回「属性」也不再弹', async () => {
+    resetMockReferenceAudios([])
+    addMockReferenceAudio({ title: 'Emma', locale: 'en' })
+    const user = await open()
+    serveDubbings()
+    await dubWithOriginal(user)
+    await inspectDub(user)
+    await user.click(inspectorVoice())
+    expect(await screen.findByRole('dialog', { name: '选择本句音色' })).toBeVisible()
+
+    await user.click(sideTabs().getByRole('tab', { name: /^字幕/ }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '选择本句音色' })).toBeNull())
+    await user.click(sideTabs().getByRole('tab', { name: '属性' }))
+    expect(inspectorVoice()).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: '选择本句音色' })).toBeNull()
+  })
 })
 
 describe('final-cut 编辑器 · 旁白配音', () => {
