@@ -137,6 +137,7 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.05);
   --color-control-well: var(--n94);
   --shadow-control-well: inset 0 1px 2px rgba(0, 0, 0, 0.05);
+  --color-knob: var(--n100); /* 凹槽上的白色圆钮（关着的开关），深浅同值；投影用 --shadow-knob */
   /* 浮起面板（工作台各页签共用）：panel-line 是浮起面外圈与分隔细线，-strong 是较重的一档；
      shadow-panel 浮起面板，panel-card 面板里的白色分组卡，pill 分段切换选中格与选中的树节点，
      float 菜单与弹出层，specular 浮起面顶部 1px 高光 */
