@@ -211,8 +211,8 @@
   gap: 2px;
 }
 
-/* 宽/高输入框外框（复用 .wf-field.is-outline）：左侧标注「宽」「高」，右侧输入像素值 */
-.wf-canvas-side {
+/* 宽/高输入框外框（输入槽，见 wf-field）：左侧标注「宽」「高」，右侧输入像素值。两个类压过槽的字色 */
+.wf-canvas-settings .wf-canvas-side {
   display: inline-flex;
   height: 25px;
   min-width: 0;

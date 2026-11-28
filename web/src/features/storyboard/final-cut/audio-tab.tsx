@@ -758,7 +758,7 @@ export function GenerateMusic({
         <Composer
           ariaLabel="音乐描述"
           attachmentsEnabled={false}
-          className="wf-generate-composer"
+          className="wf-field ui-state"
           leading={
             <div aria-label="快捷描述" className="wf-generate-presets" role="group">
               {MUSIC_PRESETS.map((preset) => (

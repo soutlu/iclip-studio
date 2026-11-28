@@ -34,7 +34,7 @@ export function CaptionContent({
       <CaptionTextField
         aria-label="内容"
         caption={clip}
-        className="wf-prop-well wf-prop-textarea"
+        className="wf-field wf-prop-textarea"
         key={locale.code}
         locale={locale}
         onText={onText}

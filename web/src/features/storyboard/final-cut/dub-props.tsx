@@ -91,7 +91,7 @@ export function DubRows({
           <button
             aria-disabled={blocked === undefined ? undefined : true}
             aria-label={`音色：${name}`}
-            className="wf-prop-well wf-prop-select ui-state ui-focus"
+            className="wf-field wf-prop-select ui-state ui-focus"
             disabled={pick === undefined}
             id={voiceId}
             onClick={(event) => {
@@ -114,11 +114,11 @@ export function DubRows({
       </PropRow>
       <PropRow label="槽位倍速">
         {speed === undefined ? (
-          <span className="wf-prop-well is-static">1×</span>
+          <span className="wf-field is-static">1×</span>
         ) : (
           <TooltipRoot>
             <TooltipTrigger asChild>
-              <span className={cn('wf-prop-well is-static', view.trimmed && 'is-warning')}>
+              <span className={cn('wf-field is-static', view.trimmed && 'is-warning')}>
                 {speed}
               </span>
             </TooltipTrigger>

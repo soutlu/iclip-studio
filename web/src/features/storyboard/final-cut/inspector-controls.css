@@ -1,9 +1,8 @@
 /* ---- 属性里的控件 ---- */
 
-/* 凹槽：输入框、文字框、下拉、颜色、「音色」、只读的值共用。无边框，静止是凹槽底，悬停、聚焦时叠一层加深（悬停见
-   ui-state）；文字框聚焦不出焦点环，按钮的键盘焦点环照共用规则（ui-focus）。两个类压过输入框自带的边框、底色、高度
-   和字号：构建后工具类与这里同层，单个类比不过加载顺序 */
-.wf-inspector .wf-prop-well {
+/* 属性里的槽（输入框、文字框、下拉、颜色、「音色」、只读的值）：占满一栏、32px 高，现在的值靠左。材质见 wf-field；
+   两个类压过输入框自带的高度和字号 */
+.wf-inspector .wf-field {
   display: flex;
   width: 100%;
   min-width: 0;
@@ -11,38 +10,17 @@
   align-items: center;
   gap: 8px;
   padding: 0 10px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background-color: var(--color-control-well);
-  color: var(--color-on-surface);
   font-size: var(--text-ui);
   text-align: left;
 }
 
-.wf-inspector :is(input, textarea).wf-prop-well {
-  --state-focus-ring: 0px;
-}
-
-.wf-inspector .wf-prop-well:is(input:focus, textarea:focus, :has(input:focus)) {
-  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
-}
-
-/* 点不了的按钮（如没接选音的「音色」）：字变淡，凹槽不变 */
-.wf-inspector button.wf-prop-well:is(:disabled, [aria-disabled='true']) {
-  color: var(--color-on-surface-muted);
-}
-
-.wf-inspector .wf-prop-well:is([aria-invalid='true'], :has([aria-invalid='true'])) {
-  box-shadow: inset 0 0 0 1px var(--color-error);
-}
-
 /* 只读的值（视频的片段时长、配音的槽位倍速）：数字等宽；截了尾用提示色 */
-.wf-prop-well.is-static {
+.wf-field.is-static {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.wf-prop-well.is-static.is-warning {
+.wf-field.is-static.is-warning {
   color: var(--color-warning);
 }
 
@@ -141,10 +119,6 @@
 }
 
 /* 颜色：凹槽里左边一个小色块（点它打开取色板），后面是能直接输入的十六进制 */
-.wf-inspector .wf-prop-color:focus-within {
-  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
-}
-
 .wf-prop-swatch {
   width: 16px;
   height: 16px;
@@ -204,11 +178,8 @@
   font-size: var(--text-ui);
 }
 
-/* 两个类压过输入框自带的边框、底色和高度；聚焦时由胶囊整块加深，框自己不出焦点环 */
+/* 两个类压过输入框自带的边框、底色和高度；聚焦时由胶囊整块加深（见 wf-field） */
 .wf-inspector .wf-stepper-input {
-  --state-focus-ring: 0px;
-  --color-state-hover: transparent;
-
   width: 40px;
   height: 28px;
   padding: 0;

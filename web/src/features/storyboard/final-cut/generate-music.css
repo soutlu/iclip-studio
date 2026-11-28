@@ -82,7 +82,7 @@
   backdrop-filter: none;
 }
 
-/* 生成音乐的输入卡，里面的描述框是凹下去的浅底。挂在音频栏的按钮旁边，按钮的字号、不换行与字色在这里改回正文 */
+/* 生成音乐的输入卡，里面的描述框是输入槽（见 wf-field）。挂在音频栏的按钮旁边，按钮的字号、不换行与字色在这里改回正文 */
 .wf-generate {
   width: 360px;
   max-width: calc(100vw - 32px);
@@ -112,21 +112,6 @@
 
 .wf-generate-hint.is-blocked {
   color: var(--color-on-surface-variant);
-}
-
-/* 输入框整块是凹下去的浅底（样子同 wf-field），聚焦时浮起成白底、外面一圈淡框，不画墨色焦点框 */
-.wf-generate .wf-generate-composer {
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-surface-container-low);
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
-}
-
-.wf-generate .wf-generate-composer:focus-within {
-  background: var(--color-card);
-  box-shadow: 0 0 0 1.5px var(--wf-control-ring);
 }
 
 .wf-generate .composer-editor {

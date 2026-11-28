@@ -299,63 +299,55 @@
   border-radius: var(--radius-xs);
 }
 
-/* 输入框、文本域与复合输入容器：常态凹槽浅底，聚焦浮起白底配 1.5px 浅色描边环；
-   关闭设计系统默认焦点环宽度避免双重描边。使用双类选择器覆盖基础组件工具类，防止构建后因同层加载顺序被覆盖 */
+/* 输入槽：往里输入或显示一个值的槽（输入框、文本域、搜索框、宽高框、生成音乐的描述框，属性里的下拉、颜色、步进胶囊、
+   只读的值）都是这一种材质，各处只另写尺寸和排版。无边框的凹槽底；悬停叠一层加深（带 ui-state 的槽），里面的文字
+   聚焦时同样加深、不出焦点环，槽里按钮的键盘焦点环照共用规则（ui-focus）；校验出错时内圈一道错误色。
+   两个类压过基础输入框和输入卡自带的边框、底色、阴影：构建后工具类与这里同层，单个类比不过加载顺序 */
 .wf-editor .wf-field {
-  --state-focus-ring: 0px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius-control);
-  background: var(--color-surface-container-low);
-  box-shadow:
-    var(--shadow-control-well),
-    inset 0 0 0 1px var(--color-panel-line);
+  background-color: var(--color-control-well);
+  box-shadow: none;
+  color: var(--color-on-surface);
 }
 
-.wf-editor .wf-field:is(:focus, :focus-within) {
-  border-color: transparent;
-  background: var(--color-card);
-  box-shadow: 0 0 0 1.5px var(--wf-control-ring);
+/* 焦点环只关在文字框上：写在槽上会被继承，槽里的按钮（步进的 −/+、色块）就没有键盘焦点环了 */
+.wf-editor :is(input, textarea).wf-field,
+.wf-editor .wf-field :is(input, textarea) {
+  --state-focus-ring: 0px;
 }
 
-.wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
-  box-shadow: 0 0 0 1.5px var(--color-error);
-}
-
-/* 外框嵌套内层输入框时（如像素尺寸框、「显示时长」），悬停、按下与焦点效果统一由外框承担，关闭内层叠色与焦点环 */
+/* 槽里嵌的输入框（宽高框、步进胶囊、搜索框）：悬停、按下由槽整块承担，关掉输入框自己的叠色 */
 .wf-editor .wf-field input {
   --color-state-hover: transparent;
   --color-state-pressed: transparent;
-  --state-focus-ring: 0px;
 }
 
-/* 细边变体：透明底配 1px 细边，悬停与聚焦逐级加深，校验错误时转错误色 */
-.wf-editor .wf-field.is-outline {
-  border-color: var(--color-hairline);
-  background: transparent;
-  box-shadow: none;
+.wf-editor
+  .wf-field:is(
+    input:focus,
+    textarea:focus,
+    :has(input:focus, textarea:focus, [contenteditable='true']:focus)
+  ) {
+  background-image: linear-gradient(var(--color-state-hover), var(--color-state-hover));
 }
 
-.wf-editor .wf-field.is-outline:hover {
-  border-color: var(--color-outline-variant);
+/* 点不了的按钮槽（如没接选音的「音色」）：字变淡，凹槽不变 */
+.wf-editor button.wf-field:is(:disabled, [aria-disabled='true']) {
+  color: var(--color-on-surface-muted);
 }
 
-.wf-editor .wf-field.is-outline:is(:focus, :focus-within) {
-  border-color: var(--color-border-hover);
+.wf-editor .wf-field:is([aria-invalid='true'], :has([aria-invalid='true'])) {
+  box-shadow: inset 0 0 0 1px var(--color-error);
 }
 
-.wf-editor .wf-field.is-outline:is([aria-invalid='true'], :has([aria-invalid='true'])) {
-  border-color: var(--color-error);
-}
-
-/* 侧栏页签顶部搜索栏：整块浅灰实底、不画内细线，比一般输入框高一档（外边距由所属页签头部控制）；聚焦时同 wf-field */
+/* 侧栏页签顶部和选音浮层里的搜索框：比一般输入框高一档（外边距由所属页签头部控制） */
 .wf-editor .wf-search {
   width: auto;
   height: var(--control-height-md);
   flex: none;
   gap: 8px;
   padding: 0 12px;
-  background: var(--color-surface-container);
-  box-shadow: none;
 }
 
 .wf-search svg {

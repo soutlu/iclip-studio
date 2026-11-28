@@ -55,7 +55,7 @@ export function DurationStepper({
   const end = clip.start + clip.duration
   return (
     <PropRow htmlFor={id} label="时长">
-      <span className="wf-prop-well wf-stepper">
+      <span className="wf-field wf-stepper">
         <button
           aria-label="缩短 0.5 秒"
           className="wf-stepper-step ui-state ui-focus"
