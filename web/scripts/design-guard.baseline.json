@@ -1,7 +1,7 @@
 {
   "bare-hex-color": 0,
   "bare-rgb-color": 0,
-  "primitive-palette-ref": 44,
+  "primitive-palette-ref": 41,
   "tailwind-palette-class": 0,
   "tailwind-default-text-size": 0,
   "tailwind-default-shadow": 0,
@@ -27,10 +27,6 @@
   "invalid-design-allow": 0,
   "globals-feature-css-imports": 8,
   "css-file-max-lines": {
-    "src/features/storyboard/final-cut/captions-tab.css": 653,
-    "src/features/storyboard/final-cut/film-inspector.css": 895,
-    "src/features/storyboard/final-cut/film-timeline.css": 794,
-    "src/features/storyboard/final-cut/final-cut-stage.css": 774,
     "src/features/storyboard/image-edit/image-edit.css": 555,
     "src/features/storyboard/storyboard.css": 1507,
     "src/features/storyboard/video-editor/editor-timeline.css": 508
