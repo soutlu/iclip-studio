@@ -1702,6 +1702,9 @@ function EditorBody({
                 onOpenCaptions={() => openSideTab('captions')}
                 voice={voice}
                 voices={libraryVoices.data}
+                onPickVoice={(caption, trigger) =>
+                  openVoicePicker({ target: 'line', caption }, trigger)
+                }
               />
             </TabsContent>
           </div>

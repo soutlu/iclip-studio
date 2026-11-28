@@ -215,3 +215,9 @@ export function speedText(speed: number, trimmed: boolean): string | undefined {
   const shown = Number(speed.toFixed(2))
   return shown > 1 ? `${shown}×` : undefined
 }
+
+/** 倍速写法（`text`，见 `speedText`）的悬停说明：为什么加速了，截了尾时该怎么办。 */
+export const speedTip = (text: string, trimmed: boolean) =>
+  trimmed
+    ? '配音加速到上限仍超出本句时长，已截掉结尾；请精简文字或拉长字幕'
+    : `配音比本句时长长，已加速到 ${text} 播放`

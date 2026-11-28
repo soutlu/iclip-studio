@@ -26,7 +26,7 @@ import {
 } from './locales'
 import { usePausedCommit } from './use-paused-commit'
 import { voiceCoverOf, voiceTitleOf, type VoiceControl, type VoiceLibrary } from './voice-choices'
-import { speedText } from './voice-lines'
+import { speedText, speedTip } from './voice-lines'
 import type { VoicePickTarget } from './voice-picker'
 
 const ADD_LABEL = '在播放头处添加字幕'
@@ -612,12 +612,6 @@ type CaptionRowProps = {
   /** 当前字幕与原始台词存在差异时的台词对照；无差异或无台词时为 `undefined`。 */
   script: ScriptNote | undefined
 }
-
-/** 倍速标记的悬停说明。 */
-const speedTip = (text: string, trimmed: boolean) =>
-  trimmed
-    ? '配音加速到上限仍超出本句时长，已截掉结尾；请精简文字或拉长字幕'
-    : `配音比本句时长长，已加速到 ${text} 播放`
 
 /**
  * 一句字幕：不画框，底色区分悬停、选中、编辑、试听（见 `.wf-row`）。头一行是时间（点了跳到这句开头）、倍速标记和
