@@ -368,7 +368,7 @@ function MediaBody({
         {clip.kind === 'video' ? (
           <>
             <PropRow label="片段时长">
-              <span className="wf-prop-well is-static">{seconds(clip.duration)}s</span>
+              <span className="wf-field is-static">{seconds(clip.duration)}s</span>
             </PropRow>
             {pair === undefined ? (
               <OriginalSoundSwitch clip={clip} onChange={change} silent={silentSource(clip.src)} />

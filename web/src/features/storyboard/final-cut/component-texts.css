@@ -52,7 +52,7 @@
   gap: 8px;
 }
 
-/* 两个类压过输入框自带的高度、内边距和字号（样子见 wf-field） */
+/* 两个类压过输入框自带的高度、内边距和字号（材质见 wf-field） */
 .wf-text-host .wf-text-input {
   height: 32px;
   padding: 0 10px;

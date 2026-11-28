@@ -213,14 +213,14 @@ function TextRow({
       {texts.locale.values === null ? (
         <Input
           autoComplete="off"
-          className="wf-prop-well wf-prop-input"
+          className="wf-field wf-prop-input"
           id={id}
           onChange={(event) => onChange(event.target.value)}
           value={current}
         />
       ) : (
         <HostTextField
-          className="wf-prop-well wf-prop-input"
+          className="wf-field wf-prop-input"
           clip={clip}
           field={variable}
           id={id}
@@ -319,7 +319,7 @@ export function Dropdown({
       <MenuTrigger asChild>
         <button
           aria-label={`${label}：${shown}`}
-          className="wf-prop-well wf-prop-select ui-state ui-focus"
+          className="wf-field wf-prop-select ui-state ui-focus"
           id={id}
           type="button"
         >
@@ -367,7 +367,7 @@ export function ColorField({
   // design-allow -- 取色板的值只能是十六进制写法，没法引用颜色变量
   const color = HEX_COLOR.test(shown) ? shown : '#000000'
   return (
-    <span className="wf-prop-well wf-prop-color">
+    <span className="wf-field">
       <ColorPicker
         onChange={(to) => setDragged({ from: current, to })}
         onCommit={(hex) => {
@@ -466,7 +466,7 @@ function NumberField({
   return (
     <span className="wf-prop-number">
       <Input
-        className="wf-prop-well wf-prop-input"
+        className="wf-field wf-prop-input"
         id={id}
         onBlur={() => setDraft(null)}
         onChange={(event) => {

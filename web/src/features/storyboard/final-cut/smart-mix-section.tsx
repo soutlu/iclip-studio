@@ -97,7 +97,7 @@ export function SmartMixSection({
           <MenuTrigger asChild>
             <button
               aria-label={`角色：${roleLabel ?? ''}`}
-              className="wf-prop-well wf-prop-select ui-state ui-focus"
+              className="wf-field wf-prop-select ui-state ui-focus"
               id={roleId}
               type="button"
             >

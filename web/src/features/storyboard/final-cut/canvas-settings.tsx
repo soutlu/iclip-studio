@@ -346,7 +346,7 @@ function SideField({
     setDraft(next)
   }
   return (
-    <label className="wf-field is-outline wf-canvas-side">
+    <label className="wf-field wf-canvas-side ui-state">
       <span aria-hidden="true">{label}</span>
       <Input
         aria-describedby={describedBy}
