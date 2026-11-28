@@ -218,10 +218,9 @@ export function dubbingRequests(
 }
 
 /**
- * 要合成的一句旁白：配的哪句字幕（原文下「旁白配音」新加的旁白还没有字幕，是 null）、念的字、用的参考音频库
- * 音色，和最长多少毫秒（`maxMs`，不限时没有）。
+ * 要合成的一句旁白：配的哪句字幕、念的字、用的参考音频库音色，和最长多少毫秒（`maxMs`，不限时没有）。
  */
-export type NarrationLine = { caption: string | null; text: string; voice: string; maxMs?: number }
+export type NarrationLine = { caption: string; text: string; voice: string; maxMs?: number }
 
 /**
  * 一种语言（每句怎么配见 `voicing`）下要给旁白句配的句子：要配音的旁白句（`voicing` 说用参考音频库的某个音色配、
@@ -280,7 +279,7 @@ export function narrationDubs(
 ): NewDub[] {
   const captions = new Map(clips.filter(isCaption).map((caption) => [caption.id, caption]))
   return spoken.flatMap(({ line, audio }) => {
-    const caption = captions.get(line.caption ?? '')
+    const caption = captions.get(line.caption)
     if (caption === undefined || audio.durationMs === null) return []
     const duration = Math.min(audio.durationMs, line.maxMs ?? Infinity)
     if (duration < MIN_CLIP_MS) return []

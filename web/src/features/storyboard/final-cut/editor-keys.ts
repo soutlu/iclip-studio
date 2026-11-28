@@ -33,7 +33,8 @@ export const onCanvasLayer = (target: EventTarget | null): boolean =>
 /**
  * 编辑器里有一件事要先用掉 Esc（取消拖动、取消选中……）时用：`active` 期间焦点在编辑器里按 Esc，
  * 调 `onEscape`；同一下 Esc 只给先登记的那一件。焦点在编辑器里弹出的菜单、面板或对话框里时不抢：
- * 那一下归它自己关。焦点不在编辑器里时不管，不在 window 上抢。
+ * 那一下归它自己关。按键的元素已经不在页面上时也不抢：更早的监听（浮层在 document 上先收到 Esc）
+ * 已经为这一下收起并卸掉了它所在的浮层。焦点不在编辑器里时不管，不在 window 上抢。
  */
 export function useEditorEscape(active: boolean, onEscape: () => void) {
   const root = useEditorRoot()
@@ -42,6 +43,7 @@ export function useEditorEscape(active: boolean, onEscape: () => void) {
     if (!active || root === null) return
     const claim = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || claimed.has(event)) return
+      if (event.target instanceof Node && !event.target.isConnected) return
       const layer = event.target instanceof Element ? event.target.closest(LAYERED) : null
       if (layer !== null && root.contains(layer)) return
       claimed.add(event)

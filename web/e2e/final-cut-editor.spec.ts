@@ -3289,8 +3289,16 @@ test('AI 配音：English 下切到「配音」只记下，点「生成配音」
   // 撤销回到原声后再切到配音，点默认音色胶囊在同页浮层里选资料库的一个音色：只记下、收起；两句都过期，
   // 「重配 2 句」用它重配，换掉原来的配音，配音片段记着这个音色
   await modes.getByRole('button', { name: '配音' }).click()
+  // 浮层里按 Esc 只收起浮层，时间线上选中的字幕还选中着
+  const caption = editor.getByRole('button', { name: /^选中：\[EN\] / }).first()
+  await caption.click()
   await tab.getByRole('button', { name: /^默认音色：/ }).click()
   const picker = page.getByRole('dialog', { name: '选择默认音色' })
+  await expect(picker.getByRole('searchbox', { name: '搜索音色' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(picker).toHaveCount(0)
+  await expect(caption).toHaveAttribute('aria-pressed', 'true')
+  await tab.getByRole('button', { name: /^默认音色：/ }).click()
   await expect(picker.getByRole('searchbox', { name: '搜索音色' })).toBeFocused()
   await expect(picker.getByRole('button', { name: '原片音色，当前' })).toBeVisible()
   await picker.getByRole('button', { name: '选用：Emma' }).click()

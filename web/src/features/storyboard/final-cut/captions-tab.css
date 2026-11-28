@@ -7,7 +7,7 @@
   flex-direction: column;
 }
 
-/* 页签头的宽度决定第二排放不放得下（见 caption-voice.css 里主按钮的收起） */
+/* 页签头的宽度决定第二排放不放得下（见 caption-voice.css 里第二排的让步） */
 .wf-captions-head {
   container: wf-captions-head / inline-size;
 }

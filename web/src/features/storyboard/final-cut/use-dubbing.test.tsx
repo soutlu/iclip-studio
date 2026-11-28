@@ -267,7 +267,7 @@ describe('useDubbing', () => {
       const sent = serveSpeeches()
       const onDone = vi.fn<(done: DubbingDone) => void>()
       const result = render(onDone)
-      const line = { caption: null, text: '欢迎光临', voice: EMMA }
+      const line = { caption: 'n1', text: '欢迎光临', voice: EMMA }
 
       await act(() => result.current.start(null, { takes: [], narrations: [line] }))
       await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1))
