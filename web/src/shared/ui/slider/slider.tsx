@@ -1,9 +1,8 @@
 import { Slider as RadixSlider } from 'radix-ui'
 import { cn } from '@/shared/lib/utils'
 
-// 圆点默认 10px，所在页面可以用 --slider-thumb-size 换大小。Radix 把圆点收在轨道里，
-// 值为 p 的圆点正中在 直径 / 2 + (100% − 直径) × p
-const THUMB = 'var(--slider-thumb-size, 10px)'
+// 圆点的直径。Radix 把圆点收在轨道里，值为 p 的圆点正中在 直径 / 2 + (100% − 直径) × p
+const THUMB = '12px'
 
 type SliderProps = {
   /** 无障碍名称。 */
@@ -26,7 +25,8 @@ type SliderProps = {
 }
 
 /**
- * 细滑杆：2px 的轨道、10px 的圆点，整体点按高度 20px。拖动中要把报出来的值传回 `value`。
+ * 细滑杆：3px 的发丝线轨道、12px 带轻投影的墨色圆点，刻度是 2×8px 的短竖线，整体点按高度 20px；
+ * 悬停（未禁用）时圆点放大一点、外圈带一圈悬停色。拖动中要把报出来的值传回 `value`。
  * `slider-root / -track / -range / -thumb / -mark` 是给所在页面改样子的挂点；已走过的那段（range）默认不画。
  */
 export function Slider({
@@ -47,7 +47,7 @@ export function Slider({
   return (
     <RadixSlider.Root
       className={cn(
-        'slider-root relative flex h-5 min-w-0 cursor-pointer touch-none items-center select-none data-[disabled]:cursor-default data-[disabled]:opacity-(--state-disabled-content)',
+        'slider-root group/slider relative flex h-5 min-w-0 cursor-pointer touch-none items-center select-none data-[disabled]:cursor-default data-[disabled]:opacity-(--state-disabled-content)',
         className,
       )}
       disabled={disabled}
@@ -64,13 +64,13 @@ export function Slider({
       step={step}
       value={[value]}
     >
-      <RadixSlider.Track className="slider-track relative h-0.5 flex-1 rounded-full bg-outline-variant">
+      <RadixSlider.Track className="slider-track relative h-[3px] flex-1 rounded-full bg-hairline">
         <RadixSlider.Range className="slider-range absolute h-full rounded-full" />
       </RadixSlider.Track>
       {markAt === undefined ? null : (
         <span
           aria-hidden
-          className="slider-mark pointer-events-none absolute top-1/2 h-1.5 w-px -translate-x-1/2 -translate-y-1/2 bg-outline"
+          className="slider-mark pointer-events-none absolute top-1/2 h-2 w-0.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-outline-variant"
           data-testid="slider-mark"
           style={{ left: `calc(${THUMB} / 2 + (100% - ${THUMB}) * ${markAt})` }}
         />
@@ -79,7 +79,7 @@ export function Slider({
         aria-disabled={disabled || undefined}
         aria-label={label}
         aria-valuetext={valueText}
-        className="slider-thumb block size-[var(--slider-thumb-size,10px)] rounded-full bg-on-surface ui-focus"
+        className="slider-thumb block size-3 rounded-full bg-on-surface shadow-[var(--shadow-knob)] ui-focus transition-[scale,box-shadow] ui-motion-s group-hover/slider:not-data-disabled:scale-110 group-hover/slider:not-data-disabled:shadow-[var(--shadow-knob),0_0_0_4px_var(--color-state-hover)]"
       />
     </RadixSlider.Root>
   )

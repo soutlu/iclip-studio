@@ -85,14 +85,13 @@
   flex: 1;
 }
 
-/* 滑杆已走过的那段和圆钮用试听进度色；两个类压过编辑器里滑杆的中性色 */
+/* 滑杆已走过的那段和圆钮用试听进度色；两个类压过滑杆默认的墨色 */
 .wf-editor .wf-audition-dock-slider .slider-range {
   background: var(--wf-audition-progress);
 }
 
 .wf-editor .wf-audition-dock-slider .slider-thumb {
   background: var(--wf-audition-progress);
-  box-shadow: none;
 }
 
 /* 右栏里已放过的波形、行内进度条都用试听进度色（见 Waveform 的 --waveform-played） */
