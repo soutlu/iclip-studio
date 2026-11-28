@@ -1,0 +1,263 @@
+/* 其它语言下的人声卡片、原文下展开的旁白卡片：排在页签头下面，不跟着字幕列表滚 */
+.wf-voice-card {
+  flex: none;
+  gap: 10px;
+  margin: 10px var(--wf-tab-inset) 0;
+  padding: 12px;
+}
+
+/* 人声卡片的标题行：「人声」在左，「保留原声」，有配音时最右是「重新生成」 */
+.wf-voice-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-voice-title {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.wf-voice-title > svg {
+  --icon-fill-color: var(--color-tone-umber);
+  color: var(--color-tone-umber);
+}
+
+.wf-voice-note {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+}
+
+/* 当前音色行：浅灰底块，左边封面（原声是中性的圆形图标块）、中间名字和属性（见 wf-audio-text），右边「更换 ›」；
+   保留原声时封面和文字淡一点 */
+.wf-voice-current {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 6px 8px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+}
+
+.wf-voice-current.is-muted > :not(.wf-voice-change) {
+  opacity: 0.55;
+}
+
+.wf-voice-original {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface-muted);
+}
+
+.wf-voice-change {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px 0 8px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* 常用音色：选项小块（共用 chip 的 option 样子），放不下时换行；外面那层只挂说明不能选的提示 */
+.wf-voice-common {
+  gap: 6px;
+}
+
+.wf-voice-common-item {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.wf-voice-common-item > button {
+  overflow: hidden;
+  max-width: 140px;
+  font-size: var(--text-label);
+  text-overflow: ellipsis;
+}
+
+.wf-voice-common-item > [aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+
+/* 选音面板：页签头下面整块换成它（首页藏起来，见 wf-captions-home）；顶行返回、标题、语种和「原声」，下面搜索、筛选、音色卡 */
+.wf-captions-home,
+.wf-voice-picker {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.wf-voice-picker {
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.wf-voice-picker-head {
+  display: flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin: 0 var(--wf-tab-inset);
+}
+
+.wf-voice-back > svg {
+  rotate: 180deg;
+}
+
+.wf-voice-picker-title {
+  overflow: hidden;
+  min-width: 0;
+  flex: 1;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-voice-locale {
+  display: inline-flex;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+.wf-editor .wf-voice-search {
+  margin: 0 var(--wf-tab-inset);
+}
+
+.wf-voice-picker > .wf-trait-filters {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-panel-line);
+  margin: 0;
+  padding-inline: var(--wf-tab-inset);
+}
+
+.wf-voice-picker-alert {
+  margin: 6px var(--wf-tab-inset) 0;
+}
+
+.wf-voice-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 一张音色卡：整张是试听键（封面、名字、属性），右边「✓ 当前」胶囊或悬停露出的「选用」 */
+.wf-voice-option {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  transition:
+    background-color var(--dur-s) var(--ease),
+    box-shadow var(--dur-s) var(--ease);
+}
+
+.wf-voice-option-play {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.wf-voice-option-progress {
+  margin-top: 2px;
+}
+
+.wf-voice-option-used {
+  display: inline-flex;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-surface-container-low);
+  box-shadow: inset 0 0 0 1px var(--color-panel-line);
+  color: var(--color-on-surface);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.dark .wf-voice-option-used {
+  background: var(--color-surface-container-highest);
+}
+
+/* 「选用」：指针停在卡片上、焦点在卡片里或正在试听这张时才出来 */
+.wf-voice-option-use {
+  height: 24px;
+  flex: none;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  background: var(--color-card);
+  box-shadow: inset 0 0 0 1px var(--color-outline-variant);
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 500;
+}
+
+.wf-voice-option-use[aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+
+@media (pointer: fine) {
+  .wf-voice-option:not(:hover, :focus-within, .is-current) .wf-voice-option-use {
+    opacity: 0;
+  }
+}
+
+/* 两个类压过文字框自带的高度、内边距和字号（样子见 wf-field） */
+.wf-voice-card .wf-narration-text {
+  min-height: 0;
+  padding: 8px 10px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
+}
+
+/* 旁白卡片最下面：选着的音色名在左、「插入配音与字幕」在右 */
+.wf-narration-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-narration-voice {
+  overflow: hidden;
+  min-width: 0;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

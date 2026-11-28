@@ -1,0 +1,346 @@
+/* ---- 播放控制条：贴合预览舞台底部（final-cut 与素材预览共用，总高 50px），含上方白色进度条与下方左右控制组 ---- */
+
+.wf-transport {
+  /* 叠加于深色舞台之上：交互叠色与焦点环均从 on-scrim 派生，与制作页舞台保持一致 */
+  --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 11%, transparent);
+  --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
+  --color-state-active: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  --color-focus-ring: var(--color-on-scrim);
+
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-self: end;
+  gap: 4px;
+  grid-area: preview;
+  padding: 0 16px 6px;
+  color: var(--color-on-scrim);
+}
+
+.wf-seek {
+  position: relative;
+  display: flex;
+  height: 12px;
+  align-items: center;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.wf-seek[data-disabled] {
+  cursor: default;
+}
+
+.wf-seek-track {
+  position: relative;
+  height: 3.5px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  transition: height var(--dur-s) var(--ease);
+}
+
+.wf-seek:not([data-disabled]):hover .wf-seek-track {
+  height: 5px;
+}
+
+.wf-seek-buffered {
+  position: absolute;
+  height: 100%;
+  background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
+}
+
+.wf-seek-range {
+  position: absolute;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 92%, transparent);
+}
+
+.wf-seek-thumb {
+  --state-focus-offset: 2px;
+
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-scrim);
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--color-scrim) 55%, transparent);
+  scale: 0.84;
+  transition: scale var(--dur-s) var(--ease);
+}
+
+.wf-seek:not([data-disabled]):hover .wf-seek-thumb {
+  scale: 1.05;
+}
+
+.wf-seek[data-disabled] .wf-seek-thumb {
+  display: none;
+}
+
+/* 两侧工具组不压缩折行，极端窄宽下由舞台裁切右侧溢出项，避免与左侧播放键及时间读数重叠 */
+.wf-transport-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-transport-play,
+.wf-transport-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-transport .wf-tool {
+  width: auto;
+  height: 28px;
+  min-width: 30px;
+  padding: 0 6px;
+  border-radius: var(--radius-control);
+}
+
+/* 深色舞台上未激活开关保持高对比度（覆盖工具条上的淡色弱化样式） */
+.wf-transport .wf-tool,
+.wf-transport .wf-tool[aria-pressed='false'] {
+  color: color-mix(in srgb, var(--color-on-scrim) 88%, transparent);
+}
+
+.wf-transport .wf-tool:hover {
+  color: var(--color-on-scrim);
+}
+
+/* 激活态循环播放：采用与主题无关的纯白字与半透明白底，与未激活态区分 */
+.wf-transport .wf-tool.is-pressed {
+  background: color-mix(in srgb, var(--color-on-scrim) 16%, transparent);
+  color: var(--color-on-scrim);
+}
+
+/* 半透明圆形播放按钮，叠加顶部微高光 */
+.wf-transport .wf-tool.wf-play {
+  width: 28px;
+  height: 28px;
+  min-width: 0;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 15%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 20%, transparent);
+  color: var(--color-on-scrim);
+}
+
+.wf-transport .wf-tool.wf-play:hover {
+  background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
+}
+
+/* 等宽时间读数：当前时刻高亮，总时长弱化 */
+.wf-clock {
+  padding-left: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: var(--text-label--line-height);
+  white-space: nowrap;
+}
+
+.wf-clock span {
+  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
+  font-weight: 400;
+}
+
+/* 倍速按钮按最长档位「0.25×」预留最小宽度，切换倍速时避免邻近按钮抖动 */
+.wf-transport .wf-tool.wf-rate {
+  min-width: 44px;
+  padding: 0 6px;
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-label--line-height);
+}
+
+.wf-tool.wf-rate[data-state='open'] {
+  background: var(--color-state-active);
+}
+
+/* 舞台面板：深色放映底浮起容器，承载预览、画布设置与播放条，全屏时整体进入全屏；溢出播放条在此裁切 */
+.wf-stage {
+  container: wf-stage / inline-size;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-area: preview;
+  grid-template-areas: 'preview';
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: clip;
+  border-radius: var(--radius-panel);
+  background: var(--color-storyboard-stage);
+  box-shadow: var(--shadow-panel);
+  /* 使用内缩 outline 绘制细边框，避免 inset box-shadow 被内部模糊背景层遮挡 */
+  outline: 1px solid var(--color-storyboard-stage-line);
+  outline-offset: -1px;
+}
+
+.wf-stage:fullscreen {
+  border-radius: var(--radius-none);
+}
+
+/* 窄舞台适配（容器宽低于 440px，如分栏并排态下舞台约 360px）：收紧四周留白与播放条横向间距以维持单行排布，
+   保持播放条高度及画布距进度条间距不变 */
+@container wf-stage (width < 440px) {
+  .wf-preview > .editor-hero-wrap,
+  .wf-material-preview > .editor-hero-wrap {
+    inset: 16px 16px 82px;
+  }
+
+  .wf-transport {
+    padding-inline: 12px;
+  }
+
+  .wf-transport-play,
+  .wf-transport-tools {
+    gap: 2px;
+  }
+
+  .wf-transport .wf-tool {
+    min-width: 26px;
+    padding: 0 4px;
+  }
+
+  .wf-transport .wf-tool.wf-rate {
+    min-width: 40px;
+    padding: 0 4px;
+  }
+
+  .wf-clock {
+    padding-left: 4px;
+    font-size: var(--text-caption);
+  }
+}
+
+/* 素材预览左上角状态胶囊（琥珀圆点、素材标题与返回 final-cut 按钮），磨砂深底不随主题切换 */
+.wf-source-pill {
+  position: absolute;
+  z-index: var(--z-local-1);
+  top: 14px;
+  left: 16px;
+  display: flex;
+  max-width: calc(100% - 32px);
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-scrim) 78%, transparent);
+  backdrop-filter: blur(14px);
+  color: var(--color-on-scrim);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-source-pill-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: var(--radius-full);
+  background: var(--color-tertiary-fixed-dim);
+}
+
+.wf-source-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-source-pill button {
+  --color-focus-ring: var(--color-on-scrim);
+
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  transition: background var(--dur-s) var(--ease);
+}
+
+.wf-source-pill button:hover {
+  background: color-mix(in srgb, var(--color-on-scrim) 26%, transparent);
+}
+
+/* 快捷键一览面板：左侧动作说明，右侧按键帽 */
+.wf-shortcuts {
+  width: 272px;
+  padding: 10px 12px 12px;
+}
+
+.wf-shortcuts-title {
+  margin-bottom: 6px;
+  color: var(--color-on-surface);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
+  line-height: var(--text-body-sm--line-height);
+}
+
+.wf-shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wf-shortcuts-row {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+}
+
+.wf-shortcuts-row dd {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.wf-shortcuts-key {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  place-items: center;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  /* 面板背景半透明，按键底色从前景色派生以确保深浅主题均有足够对比度 */
+  background: color-mix(in srgb, var(--color-on-surface) 8%, transparent);
+  color: var(--color-on-surface);
+  font: inherit;
+  font-size: var(--text-caption);
+  line-height: 20px;
+}
+
+.wf-preview-note {
+  position: relative;
+  max-width: 320px;
+  padding: 0 24px;
+  color: color-mix(in srgb, var(--color-on-scrim) 60%, transparent);
+  font-size: var(--text-body-sm);
+  line-height: var(--text-body-sm--line-height);
+  text-align: center;
+}
+
+/* 加载失败提示沿用主题文本色，添加浮层衬底避免在深色舞台上对比度不足 */
+.wf-preview-alert {
+  position: relative;
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-top-layer);
+  box-shadow: 0 0 0 0.5px var(--color-hairline);
+}

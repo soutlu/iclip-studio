@@ -1,0 +1,85 @@
+/* 「画面文字」一张卡片的标题行：名字在左、开始时间在右，点了选中、跳到它的开始 */
+.wf-text-head {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: var(--radius-xs);
+  text-align: left;
+}
+
+.wf-text-name {
+  overflow: hidden;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-text-start {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-text-head:hover .wf-text-start,
+.wf-caption.is-current .wf-text-start {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 一个文字字段：名字一行（加了语言时右边是「固定 / 随语言」），下面文字框，其它语言下再下面是说明 */
+.wf-text-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 竖排时各块按内容高：说明的 flex-basis: 100% 是给「属性」里横排换行用的，这里不能让它把文字框挤矮 */
+.wf-text-row > * {
+  flex: none;
+}
+
+.wf-text-label {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 两个类压过输入框自带的高度、内边距和字号（样子见 wf-field） */
+.wf-caption .wf-text-input {
+  height: 32px;
+  padding: 0 10px;
+  font-size: var(--text-label);
+}
+
+.wf-text-row > input:read-only {
+  color: var(--color-on-surface-muted);
+}
+
+.wf-text-note {
+  display: flex;
+  flex-basis: 100%;
+  align-items: baseline;
+  gap: 6px;
+  order: 1;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+  line-height: var(--text-caption--line-height);
+  overflow-wrap: anywhere;
+}
+
+/* 选中的音色卡深色下垫一层底 */
+.dark .wf-voice-option:is(.is-picked, .is-current) {
+  background: var(--color-surface-container);
+}
+
+.wf-voice-option:hover {
+  box-shadow: var(--shadow-float), var(--shadow-specular);
+}

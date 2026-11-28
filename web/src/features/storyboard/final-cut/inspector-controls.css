@@ -1,0 +1,185 @@
+/* 一条滑杆：上面一行名字在左、数值在右（点数值就地变成输入框），下面是滑杆；不能操作时名字、数值跟着变淡 */
+.wf-prop-slider {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wf-prop-slider-top {
+  display: flex;
+  min-width: 0;
+  min-height: 22px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-prop-slider[data-disabled] > .wf-prop-slider-top {
+  opacity: var(--state-disabled-content);
+}
+
+.wf-prop-readout {
+  height: 22px;
+  flex: none;
+  margin-right: -4px;
+  padding: 0 4px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* 两个类压过输入框自带的高度和字号（样子见 wf-field）：构建后工具类与这里同层，单个类比不过加载顺序 */
+.wf-inspector .wf-prop-input {
+  width: 100%;
+  height: 34px;
+  min-width: 0;
+  padding: 0 10px;
+  font-size: var(--text-label);
+}
+
+/* 字幕「内容」的多行文字框：和输入框一样的样子，回车换行 */
+.wf-inspector .wf-prop-textarea {
+  min-height: 0;
+  padding: 8px 10px;
+  font-size: var(--text-label);
+  line-height: var(--text-label--line-height);
+  resize: none;
+}
+
+.wf-inspector .wf-prop-readout-input {
+  width: 72px;
+  height: 22px;
+  flex: none;
+  margin-right: -4px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.wf-prop-number {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-inspector .wf-prop-number .wf-prop-input {
+  width: 72px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-prop-unit {
+  flex: none;
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+/* 名字右边的下拉（样子见 wf-select）：按内容宽，最多占一行的六成 */
+.wf-prop-select {
+  max-width: 60%;
+}
+
+.wf-prop-select-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 颜色：十六进制小框（样子见 wf-field），右边现在颜色的圆色块，点它打开取色板 */
+.wf-prop-color {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.wf-prop-hex {
+  width: 84px;
+  height: 26px;
+  padding: 0 8px;
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.wf-prop-swatch {
+  width: 21px;
+  height: 21px;
+  flex: none;
+  border-radius: var(--radius-full);
+  box-shadow:
+    inset 0 0 0 1px var(--wf-clip-edge),
+    0 0 0 2px var(--color-card),
+    0 0 0 3.5px var(--color-primary);
+  transition: scale var(--dur-s) var(--ease);
+}
+
+.wf-prop-swatch:hover {
+  scale: 1.08;
+}
+
+/* 「显示时长」的加减：一条输入条（样子和聚焦时的样子见 wf-field），「−」「+」平时透明、悬停浮起成白块，
+   中间是秒数框 */
+.wf-stepper {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
+  padding: 2px;
+}
+
+.wf-stepper-step {
+  display: grid;
+  width: 25px;
+  height: 24px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+}
+
+.wf-stepper-step:not(:disabled):hover {
+  background: var(--color-card);
+  box-shadow: var(--shadow-pill);
+  color: var(--color-on-surface);
+}
+
+.wf-stepper-step:disabled {
+  cursor: default;
+  opacity: var(--state-disabled-content);
+}
+
+.wf-stepper-value {
+  display: flex;
+  min-width: 52px;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+
+/* 两个类压过输入框自带的边框、底色和高度 */
+.wf-inspector .wf-stepper-input {
+  width: 36px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}

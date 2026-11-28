@@ -1,0 +1,54 @@
+/* 没有选中：一块淡淡的点选图标，下面一句弱一级的说明，在页签里居中 */
+.wf-inspector-empty {
+  display: flex;
+  min-height: 240px;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px 24px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: 18px;
+  text-align: center;
+}
+
+.wf-inspector-empty-icon {
+  --icon-fill-color: currentColor;
+  --icon-fill-opacity: 0.14;
+
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-on-surface) 5%, transparent);
+}
+
+/* 选中了几个片段：片段的名字和种类一行一个 */
+.wf-inspector-multi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wf-inspector-multi-list > li {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-container-low);
+  font-size: var(--text-label);
+}
+
+.wf-inspector-multi-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,323 @@
+/* ---- 舞台右上角画面设置胶囊（画面尺寸 ⌄ │ 参考线），展开的设置浮层跟随全局主题 ---- */
+
+/* 与播放条共占舞台网格单元并靠右上对齐，层级压过整个画布编辑层（选中框、控制柄、参考线、改字框）。
+   三列网格依次为尺寸按钮、分隔线与参考线开关；收起态下前两列收缩为 0 保持右缘锚定（见下方 hover 媒体查询）。
+   交互叠色与焦点环统一由 on-scrim 派生，与播放条一致 */
+.wf-stage-hud {
+  --color-state-hover: color-mix(in srgb, var(--color-on-scrim) 13%, transparent);
+  --color-state-pressed: color-mix(in srgb, var(--color-on-scrim) 18%, transparent);
+  --color-focus-ring: var(--color-on-scrim);
+
+  position: relative;
+  z-index: var(--z-local-1);
+  display: inline-grid;
+  height: 28px;
+  align-items: center;
+  justify-content: end;
+  grid-template-columns: 1fr 5px auto;
+  align-self: start;
+  justify-self: end;
+  margin: 10px;
+  padding: 2px;
+  grid-area: preview;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-scrim) 70%, transparent);
+  backdrop-filter: blur(14px);
+  box-shadow:
+    0 3px 12px color-mix(in srgb, var(--color-scrim) 30%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--color-on-scrim) 12%, transparent);
+  color: color-mix(in srgb, var(--color-on-scrim) 90%, transparent);
+  transition: grid-template-columns var(--dur-s) var(--ease);
+}
+
+/* 收起态列宽归零并裁切内容，同步过渡内边距、透明度与胶囊宽度（时长与缓动曲线复用 ui-state） */
+.wf-stage-hud-size {
+  display: inline-flex;
+  height: 24px;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0 6px 0 8px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  transition-property: background-color, background-image, color, padding, opacity;
+  white-space: nowrap;
+}
+
+/* 简称后的导出档位（或像素尺寸）：弱化一级，与展开箭头透明度一致 */
+.wf-stage-hud-tier {
+  color: color-mix(in srgb, var(--color-on-scrim) 62%, transparent);
+  font-weight: 400;
+}
+
+.wf-stage-hud-size[data-state='open'] {
+  background: var(--color-state-hover);
+}
+
+/* 尺寸按钮悬停/展开及未激活参考线开关悬停时转纯白；激活态参考线保持琥珀色 */
+.wf-stage-hud
+  :is(
+    .wf-stage-hud-size:is(:hover, [data-state='open']),
+    .wf-tool:not([aria-pressed='true']):hover
+  ) {
+  color: var(--color-on-scrim);
+}
+
+/* 比例缩略框（AspectGlyph）置于 14px 固定方格中居中，确保不同画幅后的文字左缘对齐 */
+.wf-ratio-glyph {
+  display: inline-grid;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  place-items: center;
+  opacity: 0.78;
+}
+
+/* 圆角减半，避免 9:16 窄竖框视觉接近椭圆 */
+.wf-ratio-glyph > .storyboard-bar-glyph {
+  border-radius: calc(var(--radius-xs) / 2);
+}
+
+.wf-stage-hud-size > svg {
+  opacity: 0.62;
+  transition:
+    rotate var(--dur-s) var(--ease),
+    opacity var(--dur-s) var(--ease);
+}
+
+/* 浮层展开时箭头旋转 180° 并恢复全不透明度 */
+.wf-stage-hud-size[data-state='open'] > svg {
+  opacity: 1;
+  rotate: 180deg;
+}
+
+/* 分隔竖线在 5px 列内居中，左右各留 2px 间距 */
+.wf-stage-hud-sep {
+  width: 1px;
+  height: 12px;
+  justify-self: center;
+  background: color-mix(in srgb, var(--color-on-scrim) 14%, transparent);
+  transition: opacity var(--dur-s) var(--ease);
+}
+
+/* 常态仅显露参考线开关；悬停胶囊、键盘聚焦内部（仅 :focus-visible，排除鼠标点击焦点）或浮层展开时向左展开尺寸按钮。
+   无悬停能力设备保持常展；收起态下按钮仍驻留 DOM 并可被 Tab 聚焦 */
+@media (hover: hover) {
+  .wf-stage-hud:not(:hover, :has(:focus-visible, .wf-stage-hud-size[data-state='open'])) {
+    grid-template-columns: 0fr 0 auto;
+  }
+
+  .wf-stage-hud:not(:hover, :has(:focus-visible, .wf-stage-hud-size[data-state='open']))
+    > :is(.wf-stage-hud-size, .wf-stage-hud-sep) {
+    padding-inline: 0;
+    opacity: 0;
+  }
+}
+
+/* 参考线快捷开关（复用 .wf-tool）：关闭态淡白，开启态琥珀浅底 */
+.wf-stage-hud .wf-tool {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-xs);
+}
+
+.wf-stage-hud .wf-tool[aria-pressed='false'] {
+  color: color-mix(in srgb, var(--color-on-scrim) 76%, transparent);
+}
+
+.wf-stage-hud .wf-tool[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--color-tertiary-fixed) 20%, transparent);
+  color: var(--color-tertiary-fixed);
+}
+
+/* 画面设置浮层（基础白卡外观复用 .wf-menu）：上方 3×2 比例网格，下方逐行排布配置项且右侧控件等宽对齐；
+   与 .wf-menu[data-state] 同优先级且置于其后，以覆盖默认 6px 内边距 */
+.wf-canvas-settings[data-state] {
+  display: flex;
+  width: 256px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.wf-canvas-settings-sep {
+  height: 1px;
+  margin: 0;
+  border: 0;
+  background: var(--color-hairline);
+}
+
+.wf-canvas-settings .wf-prop-field {
+  min-height: 26px;
+  padding: 0;
+}
+
+.wf-canvas-settings .wf-prop-label {
+  color: var(--color-on-surface-muted);
+  font-size: var(--text-caption);
+}
+
+/* 导出分辨率、像素尺寸与构图网格控件保持等宽并右对齐 */
+.wf-canvas-control {
+  width: 156px;
+  flex: none;
+}
+
+.wf-canvas-ratios {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 比例预设按钮：缩略框与数值左对齐保证两行纵向齐平，激活项配高一级容器浅底 */
+.wf-canvas-ratio {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-canvas-ratio:hover {
+  color: var(--color-on-surface);
+}
+
+.wf-canvas-ratio[aria-pressed='true'] {
+  background: var(--color-surface-container-high);
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+
+.wf-canvas-ratio[aria-pressed='true'] > .wf-ratio-glyph {
+  opacity: 1;
+}
+
+.wf-canvas-pixels {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* 宽/高输入框外框（复用 .wf-field.is-outline）：左侧标注「宽」「高」，右侧输入像素值 */
+.wf-canvas-side {
+  display: inline-flex;
+  height: 25px;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  cursor: text;
+}
+
+/* 双类选择器覆盖基础 Input 的边框、底色、内边距与高度 */
+.wf-canvas-side .wf-canvas-side-input {
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-on-surface);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-align: right;
+}
+
+.wf-canvas-pixels .wf-tool {
+  width: 18px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-faint);
+}
+
+.wf-canvas-error {
+  margin-top: -4px;
+  color: var(--color-error);
+  font-size: var(--text-caption);
+  text-align: right;
+}
+
+.wf-canvas-swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-canvas-swatch-name {
+  margin-right: 2px;
+  color: var(--color-on-surface-faint);
+  font-size: var(--text-caption);
+  white-space: nowrap;
+}
+
+/* 底色色块：内细边区分浅色块与浮层底，选中态外加双层隔离描边环 */
+.wf-canvas-swatch {
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border-radius: var(--radius-full);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-on-surface) 25%, transparent);
+  transition: scale var(--dur-s) var(--ease);
+}
+
+.wf-canvas-swatch:hover {
+  scale: 1.08;
+}
+
+.wf-canvas-swatch[aria-pressed='true'] {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--color-on-surface) 20%, transparent),
+    0 0 0 1.5px var(--color-card),
+    0 0 0 2.75px var(--color-on-surface);
+}
+
+/* 导出分辨率与构图网格三等分分段控件，高度较通用分段紧凑一档 */
+.wf-canvas-seg {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.wf-canvas-seg > .wf-seg-item {
+  height: 21px;
+  padding: 0 4px;
+  font-size: var(--text-caption);
+}
+
+/* 当前画幅不支持的导出档位：保持禁用文字色且悬停不加深（与 .wf-seg-item:hover 同优先级并置于其后） */
+.wf-canvas-seg > .wf-seg-item[aria-disabled='true'] {
+  color: var(--color-disabled-text);
+}
+
+/* 画布原地改字输入框：覆盖在隐藏的原文字上方，采用白色描边与半透明深底 */
+.wf-canvas-text {
+  position: absolute;
+  padding: 0 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--color-scrim) 26%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--color-on-scrim) 92%, transparent);
+  color: var(--color-on-scrim);
+  field-sizing: content;
+  font-family: inherit;
+  line-height: 1;
+  outline: none;
+}
+
+/* 字幕多行居中排版，与画面字幕样式保持一致 */
+.wf-canvas-text.is-multiline {
+  overflow: hidden;
+  line-height: 1.3;
+  text-align: center;
+  resize: none;
+}
