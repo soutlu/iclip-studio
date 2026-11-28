@@ -25,7 +25,7 @@
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--color-on-scrim) 8%, transparent);
 }
 
-/* 自动压低在视频片段上画成右上角的一枚小图标，压在画面上的深色小底上 */
+/* 自动避让在视频片段上画成右上角的一枚压低图标，压在画面上的深色小底上 */
 .wf-clip.is-video .wf-clip-duck {
   position: absolute;
   top: 3px;
@@ -87,8 +87,8 @@
   font-weight: 400;
 }
 
-/* 音频片段：中性卡底，左缘一道身份色细竖条；顶上一行写名字和小标（配音是音色的小图标、音色名和倍数），下面是
-   贴底往上长的波形。身份色按声音从哪来：分离出来的原声、配音、配乐。过期的配音整块降透 */
+/* 音频片段：中性卡底，左缘一道身份色细竖条；顶上一行写名字和小标（配音是人声图标、音色名和倍数），下面是
+   贴底往上长的波形。身份色按声音从哪来：分离出来的原声、配音、配乐。过期的配音色条和外缘换成琥珀色、整块稍稍降透 */
 .wf-clip[data-source='original'] {
   --wf-sound-wave: var(--color-tone-slate);
   --wf-sound-ink: var(--wf-original-ink);
@@ -110,7 +110,7 @@
   gap: 0;
   padding: 0;
   background: var(--wf-clip-audio);
-  box-shadow: inset 2.5px 0 0 var(--wf-sound-wave);
+  box-shadow: inset 2.5px 0 0 var(--wf-sound-bar, var(--wf-sound-wave));
   color: var(--wf-sound-ink);
   /* 窄得放不下顶行时只画波形，按片段身体的宽算 */
   container-type: inline-size;
@@ -118,11 +118,20 @@
 
 /* 选中的细框压住色条的一部分，色条跟着加宽，露出来的还是一样宽 */
 .wf-clip.is-audio.is-selected > .wf-clip-body {
-  box-shadow: inset 4px 0 0 var(--wf-sound-wave);
+  box-shadow: inset 4px 0 0 var(--wf-sound-bar, var(--wf-sound-wave));
 }
 
-.wf-clip.is-stale > .wf-clip-body {
-  opacity: 0.55;
+.wf-clip.is-stale {
+  --wf-sound-bar: var(--color-tertiary);
+}
+
+/* 隐藏（静音）的画得更淡，见 film-timeline.css，这里不压过它 */
+.wf-clip.is-stale:not(.is-hidden) > .wf-clip-body {
+  opacity: 0.8;
+}
+
+.wf-clip.is-stale:not(.is-selected, :hover)::after {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tertiary) 45%, transparent);
 }
 
 .wf-clip-label {
@@ -145,7 +154,7 @@
   line-height: inherit;
 }
 
-/* 配音的音色小图标：音色封面上的图形，用身份色 */
+/* 配音顶行最前面的人声图标，用身份色 */
 .wf-clip-voice {
   --icon-fill-color: var(--wf-sound-wave);
   --icon-fill-opacity: 0.28;
@@ -419,6 +428,15 @@
   line-height: 18px;
   white-space: nowrap;
   pointer-events: none;
+}
+
+/* 游标靠着时间区两头时，气泡从游标往里排 */
+.wf-skimmer-time[data-align='start'] {
+  translate: 0 0;
+}
+
+.wf-skimmer-time[data-align='end'] {
+  translate: -100% 0;
 }
 
 /* 框选时拖出来的框：盖在各行上面、压不过吸在顶上的时间尺；浅底加一圈细框，同开着的开关 */

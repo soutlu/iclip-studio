@@ -257,10 +257,11 @@
 }
 
 /* 裁剪把手（选中时才有）：左右边线正中骑着的一个白底墨边小胶囊，悬停时拉长变成墨色，盖不住片段里的字和音频的
-   色条。点按区从边线往里最多 14px、不超过片段宽的三分之一：1 秒的片段只有 30px 上下，两端都留着、正中按得住
-   拖动，也不盖住紧挨着的片段。片段窄于 44px 时不画胶囊，点按区和键盘照常能裁。
-   共用把手是悬浮的小方块，这里两个类压过它的大小、边框和底色 */
+   色条。点按区只有从边线往里的那一块（::before，往外多盖 1px，按在胶囊正中的边线上也算），最多 14px、不超过片段宽的
+   三分之一：1 秒的片段只有 30px 上下，两端都留着、正中按得住拖动；胶囊伸出边线的半边不接指针，不盖住紧挨着的片段。
+   片段窄于 44px 时不画胶囊，点按区和键盘照常能裁。共用把手是悬浮的小方块，这里两个类压过它的大小、边框和底色 */
 .wf-clip > .timeline-handle {
+  pointer-events: none;
   width: 6px;
   height: 14px;
   border: 1.5px solid var(--color-on-surface);
@@ -287,17 +288,18 @@
 }
 
 .wf-clip > .timeline-handle::before {
-  width: min(14px, 100cqw / 3);
+  width: calc(min(14px, 100cqw / 3) + 1px);
   height: 28px;
+  pointer-events: auto;
 }
 
 .wf-clip > .timeline-handle.is-start::before {
-  left: 50%;
+  left: calc(50% - 1px);
   translate: 0 -50%;
 }
 
 .wf-clip > .timeline-handle.is-end::before {
-  right: 50%;
+  right: calc(50% - 1px);
   left: auto;
   translate: 0 -50%;
 }

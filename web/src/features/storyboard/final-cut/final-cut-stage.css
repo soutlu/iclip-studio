@@ -24,10 +24,10 @@
   background: color-mix(in srgb, var(--color-storyboard-stage) 55%, transparent);
 }
 
-/* 画面留白：顶 20px、左右 24px，底部预留 50px 播放条 + 32px 间距（容纳选中框下方旋转把手） */
+/* 画面留白：顶 20px、左右 24px，底部预留 58px 播放条 + 32px 间距（容纳选中框下方旋转把手） */
 .wf-preview > .editor-hero-wrap,
 .wf-material-preview > .editor-hero-wrap {
-  inset: 20px 24px 82px;
+  inset: 20px 24px 90px;
 }
 
 /* 深色放映底上的画布投影与浅色微描边 */

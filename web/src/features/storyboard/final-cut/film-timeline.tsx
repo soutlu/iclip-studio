@@ -1089,6 +1089,9 @@ function FilmPlayhead({
   )
 }
 
+// 悬停游标离时间区两头不到这么多像素时，读数气泡贴着游标往里排，不伸到行头底下、时间区外面（约半个气泡宽）
+const SKIM_EDGE = 36
+
 /**
  * 悬停游标：指针在时间尺和各行上移动（没按着键）时，一条细虚线跟着它往下穿过各行，时间尺上一个小气泡写这个位置的
  * 时间（写法同播放条的时间码）；切开工具下（`razor`）画成实线切分线。只是显示：不定位、不挡点选和拖动。
@@ -1108,29 +1111,38 @@ function Skimmer({
   quiet: boolean
   place: (ms: number) => number | null
 }) {
-  const [at, setAt] = useState<number | null>(null)
+  // 画在哪（毫秒）和时间区当时有多宽（像素，读数气泡靠边时不伸出去）
+  const [at, setAt] = useState<{ ms: number; width: number } | null>(null)
   const follow = useEffectEvent((event: globalThis.PointerEvent) => {
     const content = contentRef.current
     // 按着键是在拖东西（片段、播放头、时间尺、框选）；触摸没有悬停
-    if (content === null || event.buttons !== 0 || event.pointerType === 'touch') setAt(null)
-    else setAt(place(pxToMs(event.clientX - content.getBoundingClientRect().left, pps)))
+    if (content === null || event.buttons !== 0 || event.pointerType === 'touch') {
+      setAt(null)
+      return
+    }
+    const ms = place(pxToMs(event.clientX - content.getBoundingClientRect().left, pps))
+    setAt(ms === null ? null : { ms, width: content.clientWidth })
   })
   useEffect(() => {
     const content = contentRef.current
     if (content === null) return
     const hide = () => setAt(null)
     const move = (event: globalThis.PointerEvent) => follow(event)
+    // 离开时间区：pointerleave 不冒泡，按 pointerout 去的地方判断，在时间区里面的子元素之间挪不算
+    const out = (event: globalThis.PointerEvent) => {
+      if (!(event.relatedTarget instanceof Node && content.contains(event.relatedTarget))) hide()
+    }
     content.addEventListener('pointermove', move)
     content.addEventListener('pointerdown', hide)
-    content.addEventListener('pointerleave', hide)
+    content.addEventListener('pointerout', out)
     return () => {
       content.removeEventListener('pointermove', move)
       content.removeEventListener('pointerdown', hide)
-      content.removeEventListener('pointerleave', hide)
+      content.removeEventListener('pointerout', out)
     }
   }, [contentRef])
   if (at === null || quiet) return null
-  const left = msToPx(at, pps)
+  const left = msToPx(at.ms, pps)
   return (
     <>
       <span
@@ -1139,8 +1151,14 @@ function Skimmer({
         data-testid="timeline-skimmer"
         style={{ left }}
       />
-      <span aria-hidden="true" className="wf-skimmer-time" style={{ left }}>
-        {timeLabel(at / 1000)}
+      <span
+        aria-hidden="true"
+        className="wf-skimmer-time"
+        data-align={left < SKIM_EDGE ? 'start' : left > at.width - SKIM_EDGE ? 'end' : undefined}
+        data-testid="timeline-skimmer-time"
+        style={{ left }}
+      >
+        {timeLabel(at.ms / 1000)}
       </span>
     </>
   )

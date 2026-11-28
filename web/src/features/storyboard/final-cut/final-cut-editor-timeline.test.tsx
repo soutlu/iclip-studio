@@ -785,15 +785,26 @@ describe('final-cut 编辑器 · 时间线', () => {
     expect(playheadText()).toBe('00:00.00')
   })
 
-  it('指针移到时间尺上：画一条虚线，不出写着时间的气泡', async () => {
+  it('指针在时间尺和各行上移动：一条游标跟着，时间尺上写着这个位置的时间（开着吸附时是吸上去的时间），播放头不动；移出时间线就收起', async () => {
     putMockProjectMain(CONVERSATION, twoVideos())
     await openEditor()
-    fireEvent.pointerMove(screen.getByRole('slider', { name: '时间线播放位置' }), {
-      clientX: 120,
-      pointerType: 'mouse',
-    })
-    expect(screen.getByTestId('timeline-hover-guide')).toBeInTheDocument()
+    const ruler = screen.getByRole('slider', { name: '时间线播放位置' })
+    const seeked = lastSeekMs()
+    fireEvent.pointerMove(ruler, { clientX: 120, pointerType: 'mouse' })
+    expect(screen.getByTestId('timeline-skimmer')).toBeInTheDocument()
+    expect(screen.getByTestId('timeline-skimmer-time')).toHaveTextContent('00:01.20')
+    // 不再出时间尺自己的「预览」气泡
     expect(screen.queryByText('预览')).toBeNull()
+
+    // 各行上离第二个片段的开头（2 秒）只差 6 像素：读数吸到 2 秒
+    fireEvent.pointerMove(clip(/1\.5 秒$/), { clientX: 206, clientY: 60, pointerType: 'mouse' })
+    expect(screen.getByTestId('timeline-skimmer-time')).toHaveTextContent('00:02.00')
+    expect(playheadText()).toBe('00:00.00')
+    expect(lastSeekMs()).toBe(seeked)
+
+    fireEvent.pointerOut(clip(/1\.5 秒$/), { relatedTarget: toolbar() })
+    expect(screen.queryByTestId('timeline-skimmer')).toBeNull()
+    expect(screen.queryByTestId('timeline-skimmer-time')).toBeNull()
   })
 
   it('静音的配乐片段上有「已静音」小标', async () => {
@@ -1702,11 +1713,12 @@ describe('final-cut 编辑器 · 切开', () => {
       'false',
     )
 
-    // 指针在各行上时有一条竖线跟着它
+    // 指针在各行上时有一条切分线跟着它，时间尺上写着会切在哪（不吸附）；移出时间线就收起
     fireEvent.pointerMove(lanes(), { clientX: 50, clientY: 10 })
-    expect(screen.getByTestId('razor-line')).toHaveStyle({ left: '50px' })
-    fireEvent.pointerLeave(lanes())
-    expect(screen.queryByTestId('razor-line')).toBeNull()
+    expect(screen.getByTestId('timeline-skimmer')).toBeInTheDocument()
+    expect(screen.getByTestId('timeline-skimmer-time')).toHaveTextContent('00:00.50')
+    fireEvent.pointerOut(lanes(), { relatedTarget: toolbar() })
+    expect(screen.queryByTestId('timeline-skimmer')).toBeNull()
 
     razorAt(body('A · 镜头 1'), 50)
     await waitSaved(() => expect(savedClips()).toHaveLength(3))

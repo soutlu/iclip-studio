@@ -958,14 +958,15 @@ describe('final-cut 编辑器 · 属性', () => {
 
     afterEach(() => vi.unstubAllGlobals())
 
-    it('选中和有声视频重叠的配乐：默认打开，设置和效果链写进配乐，时间线上标「自动压低」；关掉后不再自动打开', async () => {
+    it('选中和有声视频重叠的配乐：默认打开，设置和效果链写进配乐，时间线上标「自动避让」；关掉后不再自动打开', async () => {
       const user = await openWith([
         video({ src: URL_A, duration: 2_000 }),
         audio({ duration: 4_000 }),
       ])
       await pick(user, '配乐')
       await waitFor(() => expect(carveSwitch()).toHaveAttribute('aria-checked', 'true'))
-      expect(musicClip()).toHaveAccessibleName('选中：配乐，4.0 秒，自动压低')
+      expect(musicClip()).toHaveAccessibleName('选中：配乐，4.0 秒，自动避让')
+      expect(within(musicClip()).getByText('自动避让')).toBeVisible()
       await waitSaved(() => expect(savedAttribute('music-1', 'data-fx-chain')).toContain('peaking'))
       // 压人声组：重叠的视频片段一起放进人声组
       expect(savedCarve('music-1')).toEqual({ enabled: true, sources: ['voice'], strength: 0.25 })
@@ -1143,7 +1144,7 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(carve()).toHaveAttribute('aria-checked', 'true')
       // 量的是「对白」，没有拿自己当人声
       expect(fetched.toSorted()).toEqual([TALK, URL_A])
-      expect(screen.getByRole('button', { name: /^选中：A · 镜头 1，.*自动压低$/ })).toBeVisible()
+      expect(screen.getByRole('button', { name: /^选中：A · 镜头 1，.*自动避让$/ })).toBeVisible()
     })
 
     it('自动打开以后撤销：回到没设置过，不会又自动打开', async () => {

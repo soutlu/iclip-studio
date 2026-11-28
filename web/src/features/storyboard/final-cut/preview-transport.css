@@ -1,4 +1,4 @@
-/* ---- 播放控制条：贴合预览舞台底部（final-cut 与素材预览共用，总高 50px），含上方白色进度条与下方左右控制组 ---- */
+/* ---- 播放控制条：贴合预览舞台底部（final-cut 与素材预览共用，总高 58px），含上方白色进度条与下方左右控制组 ---- */
 
 .wf-transport {
   /* 叠加于深色舞台之上：交互叠色与焦点环均从 on-scrim 派生，与制作页舞台保持一致 */
@@ -12,9 +12,9 @@
   min-width: 0;
   flex-direction: column;
   align-self: end;
-  gap: 4px;
+  gap: 6px;
   grid-area: preview;
-  padding: 0 16px 6px;
+  padding: 0 20px 12px;
   color: var(--color-on-scrim);
 }
 
@@ -142,7 +142,7 @@
   font-family: var(--font-mono);
   font-size: var(--text-label);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
   line-height: var(--text-label--line-height);
   white-space: nowrap;
 }
@@ -193,7 +193,7 @@
 @container wf-stage (width < 440px) {
   .wf-preview > .editor-hero-wrap,
   .wf-material-preview > .editor-hero-wrap {
-    inset: 16px 16px 82px;
+    inset: 16px 16px 90px;
   }
 
   .wf-transport {

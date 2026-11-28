@@ -44,7 +44,7 @@
   --wf-clip-label: color-mix(in srgb, var(--n10) 3%, transparent);
   --wf-clip-label-line: color-mix(in srgb, var(--n10) 6%, transparent);
   --wf-clip-component: linear-gradient(180deg, var(--n20) 0%, var(--n12) 100%);
-  --wf-clip-caption: linear-gradient(180deg, var(--n100) 0%, var(--n96) 100%);
+  --wf-clip-caption: linear-gradient(180deg, var(--n99) 0%, var(--n96) 100%);
   --wf-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
   /* 时间线每一行的底色带子：浅色下比面板深一档，深色下比面板再暗一档（都是往下凹的样子） */
   --wf-lane-bed: var(--color-surface-container-low);

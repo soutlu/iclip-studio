@@ -7,6 +7,8 @@
   /* 压在画面上的深色半透明底：视频片段的原声波形条、压低图标 */
   --wf-on-frame: color-mix(in srgb, var(--color-scrim) 56%, transparent);
 
+  /* 工具条按时间线面板的宽收紧间距（见文件末尾的容器查询） */
+  container: wf-timeline / inline-size;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -147,10 +149,11 @@
   gap: 4px;
 }
 
+/* 再窄也留着一格（「原文」那么宽），当前语言滚进来看得见 */
 .wf-locales-scroll {
   position: relative;
   display: flex;
-  min-width: 0;
+  min-width: 48px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -218,4 +221,24 @@
   flex: none;
   margin: 0 6px;
   background: var(--color-panel-line-strong);
+}
+
+/* 时间线面板窄（工作台拖到最窄）时收紧工具条的留白和组间距：剪辑工具和缩放一个不少，语言分段至少露出一格 */
+@container wf-timeline (width < 640px) {
+  .wf-toolbar {
+    gap: 8px;
+    padding: 0 8px;
+  }
+
+  .wf-toolbar-group {
+    gap: 4px;
+  }
+
+  .wf-toolbar-group.is-end {
+    gap: 2px;
+  }
+
+  .wf-toolbar .wf-divider {
+    margin: 0 4px;
+  }
 }
