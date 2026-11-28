@@ -41,6 +41,35 @@ const NO_MOCK_LOCAL_MODULE = {
     '不 vi.mock 同仓模块：渲染真实子树，网络走 MSW（docs/frontend-implementation.md 测试要求）',
 }
 
+// 单个源码文件的有效行上限：空行和只有注释的行不计，测试和 Mock 数据不算。超了就按职责拆成几个模块
+const MAX_LINES = 500
+const maxLines = (max) => ['error', { max, skipBlankLines: true, skipComments: true }]
+
+// 加上限时已经超过的存量文件和它们当时的有效行，只减不增：改到这些文件时顺手拆，
+// 拆到上限以内就从表里删掉；变短了但还没到上限以内的，把数字改小
+const OVERSIZED_FILES = {
+  'src/features/agent-config/components/mcp-server-panel.tsx': 520,
+  'src/features/agent-config/components/mcp-server-sections.tsx': 549,
+  'src/features/agent-config/components/provider-forms.tsx': 711,
+  'src/features/agent-config/components/provider-panel.tsx': 547,
+  'src/features/agent-config/components/skill-editor.tsx': 550,
+  'src/features/audit/components/overview-sections.tsx': 594,
+  'src/features/audit/overview-model.ts': 580,
+  'src/features/library/components/library-tag-admin.tsx': 623,
+  'src/features/library/components/reference-viewer.tsx': 687,
+  'src/features/storyboard/editing/editor-preview.tsx': 538,
+  'src/features/storyboard/editing/timeline.tsx': 511,
+  'src/features/storyboard/film/film-reader.tsx': 544,
+  'src/features/storyboard/final-cut/audio-tab.tsx': 739,
+  'src/features/storyboard/final-cut/preview-page.ts': 731,
+  'src/features/storyboard/image-edit/annotation-canvas.tsx': 642,
+  'src/features/storyboard/video-editor/editor-timeline.tsx': 1393,
+  'src/features/storyboard/video-editor/video-editor.tsx': 1030,
+  'src/features/tasks/components/task-hero.tsx': 979,
+  'src/routes/-sidebar-conversations.tsx': 798,
+  'src/shared/transcript/connection.ts': 501,
+}
+
 export default tseslint.config(
   {
     ignores: [
@@ -251,6 +280,17 @@ export default tseslint.config(
       '@eslint-react/dom-no-unsafe-iframe-sandbox': 'off',
     },
   },
+
+  // ── 文件长度（见 MAX_LINES、OVERSIZED_FILES） ───────────────────────────
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/**/*.test.{ts,tsx}', 'src/testing/**'],
+    rules: { 'max-lines': maxLines(MAX_LINES) },
+  },
+  ...Object.entries(OVERSIZED_FILES).map(([file, max]) => ({
+    files: [file],
+    rules: { 'max-lines': maxLines(max) },
+  })),
 
   // ── Node 环境文件（构建配置、vite/ 下的配置助手、Playwright e2e） ────────
   {
