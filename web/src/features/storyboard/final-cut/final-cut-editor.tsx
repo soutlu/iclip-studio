@@ -1625,7 +1625,6 @@ function EditorBody({
                 catalog={catalog}
                 canvas={film.canvas}
                 keyframes={keyframes}
-                onDeselect={clearSelection}
                 onGesture={setGesturing}
                 onHide={hideClip}
                 onRemove={removeSelected}
@@ -1662,6 +1661,8 @@ function EditorBody({
                 sourceName={(src) => sourceNames.get(src)}
                 smartMix={smartMix}
                 onOpenCaptions={() => openSideTab('captions')}
+                voice={voice}
+                voices={libraryVoices.data}
               />
             </TabsContent>
           </div>

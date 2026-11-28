@@ -12,6 +12,7 @@ import {
 import type { AudioRole } from './audio-role'
 import { PRESET_FAMILY_NAMES, PRESET_NAMES } from './mix-fx-names'
 import { morePresets, quickPresets } from './mix-fx'
+import { PropRow } from './ui/prop-layout'
 
 // 菜单的单选值要是文字：「原声」用一个不会是预设编号的值
 const ORIGINAL = ''
@@ -51,11 +52,8 @@ export function MixStyle({
   const labelId = useId()
   const tiles = [null, ...quickPresets(role, active)]
   return (
-    <div className="wf-mix-block">
-      <div className="wf-prop-title-row">
-        <span className="wf-prop-label" id={labelId}>
-          音色风格
-        </span>
+    <PropRow
+      end={
         <MenuRoot>
           <MenuTrigger asChild>
             <button className="wf-chip-btn wf-mix-more ui-state ui-focus" type="button">
@@ -92,7 +90,11 @@ export function MixStyle({
             </MenuRadioGroup>
           </MenuSurface>
         </MenuRoot>
-      </div>
+      }
+      label="音色风格"
+      labelId={labelId}
+      stacked
+    >
       <div aria-labelledby={labelId} className="wf-mix-tiles" role="radiogroup">
         {tiles.map((id) => {
           const checked = id === active
@@ -113,6 +115,6 @@ export function MixStyle({
           )
         })}
       </div>
-    </div>
+    </PropRow>
   )
 }

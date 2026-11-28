@@ -142,20 +142,20 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(await within(transport()).findByRole('button', { name: '暂停' })).toBeVisible()
   })
 
-  it('组件或块的片段：头部是名字、种类和时长，下面平铺「显示时长」「内容与样式」，没有手风琴', async () => {
+  it('组件或块的片段：标题行是种类图标、名字和起止时间，下面平铺「时长」和「内容与样式」，没有手风琴', async () => {
     const user = await openWith([host({ start: 1_000, duration: 3_500 })])
     await pick(user, '测试可填项')
     const head = within(within(inspector()).getByRole('banner'))
     expect(head.getByRole('heading', { name: '测试可填项' })).toBeVisible()
-    expect(head.getByText('元素')).toBeVisible()
-    expect(head.getByText('3.50s')).toBeVisible()
-    expect(sections()).toEqual(['显示时长', '内容与样式'])
+    expect(head.getByRole('img', { name: '元素' })).toBeVisible()
+    expect(head.getByText('1.00 – 4.50s')).toBeVisible()
+    expect(sections()).toEqual(['内容与样式'])
     expect(within(inspector()).queryByRole('button', { expanded: true })).toBeNull()
-    expect(within(inspector()).getByRole('textbox', { name: '显示时长' })).toHaveValue('3.50')
+    expect(within(inspector()).getByRole('textbox', { name: '时长' })).toHaveValue('3.50')
     expect(within(inspector()).getByRole('textbox', { name: '文字' })).toBeVisible()
   })
 
-  it('头部名字后面的种类按条目在组件库里的种类写：块写「模板」；组件库里没有的条目、手写的标签是「其他」，不写种类、只有「显示时长」', async () => {
+  it('标题行的种类图标按条目在组件库里的种类读：块读「模板」；组件库里没有的条目、手写的标签是「其他」，图标不读种类、只有「时长」', async () => {
     const user = await openWith(
       [brand()],
       '<div id="gone-1" data-label="已下架" data-composition-id="fixture-gone"' +
@@ -166,18 +166,18 @@ describe('final-cut 编辑器 · 属性', () => {
     const head = () => within(inspector()).getByRole('banner')
     await pick(user, '示例品牌 片尾')
     expect(within(head()).getByRole('heading', { name: '示例品牌 片尾' })).toBeVisible()
-    expect(within(head()).getByText('模板')).toBeVisible()
-    expect(within(head()).queryByText('元素')).toBeNull()
+    expect(within(head()).getByRole('img', { name: '模板' })).toBeVisible()
+    expect(within(head()).queryByRole('img', { name: '元素' })).toBeNull()
 
     for (const name of ['已下架', '手写文字']) {
       await user.click(screen.getByRole('button', { name: new RegExp(`^选中：${name}，`) }))
       expect(within(head()).getByRole('heading', { name })).toBeVisible()
-      expect(within(head()).queryByText('模板')).toBeNull()
-      expect(within(head()).queryByText('元素')).toBeNull()
-      expect(sections()).toEqual(['显示时长'])
+      expect(within(head()).queryByRole('img')).toBeNull()
+      expect(sections()).toEqual([])
+      expect(within(inspector()).getByRole('textbox', { name: '时长' })).toBeVisible()
     }
-    // 「其他」片段也能改显示时长：结尾往后拉，开始不动
-    const length = within(inspector()).getByRole('textbox', { name: '显示时长' })
+    // 「其他」片段也能改时长：结尾往后拉，开始不动
+    const length = within(inspector()).getByRole('textbox', { name: '时长' })
     await user.clear(length)
     await user.type(length, '3{Enter}')
     await waitSaved(() =>
@@ -185,54 +185,43 @@ describe('final-cut 编辑器 · 属性', () => {
     )
   })
 
-  it('视频片段、音频片段是「原片截取」「声音与节奏」和「智能调音」，开关分别是「关闭原声」「循环播放」；音频片段的隐藏叫静音', async () => {
+  it('视频片段：最上面「片段时长」「保留原声」，标题行右边「分离音频」；配乐：最上面「音量」「自动避让」，没有快捷动作；下面都是「原片截取」「声音与节奏」和「智能调音」', async () => {
     const user = await openWith([
       video({ src: URL_A, duration: 2_000 }),
       audio({ duration: 4_000 }),
     ])
     await pick(user, 'A · 镜头 1')
-    expect(within(inspector()).getByText('视频')).toBeVisible()
+    const head = () => within(within(inspector()).getByRole('banner'))
+    expect(head().getByRole('img', { name: '视频' })).toBeVisible()
+    expect(head().getByRole('button', { name: '分离音频' })).toBeVisible()
+    expect(within(inspector()).getByText('2.00s')).toBeVisible()
+    expect(within(inspector()).getByRole('switch', { name: '保留原声' })).toBeChecked()
     expect(sections()).toEqual(['原片截取', '声音与节奏', '智能调音'])
-    expect(within(inspector()).getByRole('switch', { name: '关闭原声' })).toBeVisible()
-    expect(within(inspector()).getByRole('button', { name: '隐藏' })).toBeVisible()
     expect(within(inspector()).queryByRole('textbox')).toBeNull()
 
     await pick(user, '配乐')
-    expect(within(inspector()).getByText('音频')).toBeVisible()
+    expect(head().getByRole('img', { name: '音频' })).toBeVisible()
+    expect(head().queryByRole('button')).toBeNull()
+    expect(within(inspector()).getAllByRole('slider', { name: '音量' })).toHaveLength(1)
+    expect(within(inspector()).getAllByRole('switch', { name: '自动避让' })).toHaveLength(1)
     expect(sections()).toEqual(['原片截取', '声音与节奏', '智能调音'])
     expect(within(inspector()).getByRole('switch', { name: '循环播放' })).toBeVisible()
-    await user.click(within(inspector()).getByRole('button', { name: '静音' }))
-    await waitSaved(() => expect(savedTag('music-1')).toMatch(/^<audio data-hidden=""/))
-    expect(within(inspector()).getByRole('button', { name: '取消静音' })).toBeVisible()
   })
 
-  it('头部的隐藏、删除：隐藏写进文件、再点显示回来；删除和按 Delete 一样，后面的片段往前补，回到没有选中', async () => {
-    const user = await openWith([
-      video({ src: URL_A, duration: 2_000 }),
-      video({ id: 'clip-2', label: 'B · 镜头 1', src: URL_B, start: 2_000 }),
-    ])
-    await pick(user, 'A · 镜头 1')
-    await user.click(within(inspector()).getByRole('button', { name: '隐藏' }))
-    expect(within(row()).getByRole('group', { name: 'A · 镜头 1，2.0 秒，已隐藏' })).toBeVisible()
-    await waitSaved(() => expect(savedTag('clip-1')).toMatch(/^<video data-hidden=""/))
-    await user.click(within(inspector()).getByRole('button', { name: '显示' }))
-    await waitSaved(() => expect(savedTag('clip-1')).not.toContain('data-hidden'))
-
+  it('字幕、元素片段标题行右边的「删除」和按 Delete 一样：删掉它，回到没有选中', async () => {
+    const user = await openWith([host({ duration: 2_000 }), brand()])
+    await pick(user, '测试可填项')
     await user.click(within(inspector()).getByRole('button', { name: '删除' }))
-    await waitSaved(() => expect(savedClips()).toHaveLength(1))
-    expect(savedTag('clip-2')).toContain('data-start="0"')
-    expect(within(row()).getByRole('button', { name: /^选中：B · 镜头 1，/ })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+    await waitSaved(() => expect(savedTag('title-1')).toBe(''))
+    expect(savedTag('brand-1')).not.toBe('')
     expect(sideTab('镜头')).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('tabpanel', { name: '属性' })).toBeNull()
   })
 
-  it('头部最后的「取消选中」和按 Esc 一样：时间线上不再选中，右栏回到切走之前的页签', async () => {
+  it('按 Esc 取消选中：时间线上不再选中，右栏回到切走之前的页签', async () => {
     const user = await openWith([video()])
     await pick(user, 'A · 镜头 1')
-    await user.click(within(inspector()).getByRole('button', { name: '取消选中' }))
+    await user.keyboard('{Escape}')
     expect(within(row()).getByRole('button', { name: /^选中：A · 镜头 1，/ })).toHaveAttribute(
       'aria-pressed',
       'false',
@@ -459,14 +448,14 @@ describe('final-cut 编辑器 · 属性', () => {
     expect(within(inspector()).getByText('标志')).toBeVisible()
     expect(within(inspector()).getByText('暂不支持在此修改图片')).toBeVisible()
     expect(within(inspector()).getAllByRole('textbox')).toEqual([
-      within(inspector()).getByRole('textbox', { name: '显示时长' }),
+      within(inspector()).getByRole('textbox', { name: '时长' }),
     ])
   })
 
-  describe('显示时长', () => {
+  describe('时长', () => {
     // 一行两个元素：测试可填项在 1–3 秒，测试叠加从 5 秒开始
     const twoApart = () => [host({ start: 1_000 }), overlay()]
-    const field = () => within(inspector()).getByRole('textbox', { name: '显示时长' })
+    const field = () => within(inspector()).getByRole('textbox', { name: '时长' })
     const step = (name: '缩短 0.5 秒' | '延长 0.5 秒') =>
       within(inspector()).getByRole('button', { name })
     const enter = async (user: ReturnType<typeof userEvent.setup>, value: string) => {
@@ -552,11 +541,13 @@ describe('final-cut 编辑器 · 属性', () => {
         `data-start="${start}" data-duration="${duration}"[^>]* data-media-start="${mediaStart}"`,
       )
 
-    it('标题行写入点 – 出点 / 素材总长；抓手按方向键微调入点、出点，碰到后面的片段就停', async () => {
+    it('小标题右边写素材名和入点 – 出点 / 素材总长；抓手按方向键微调入点、出点，碰到后面的片段就停', async () => {
       const user = await openWith(twoClips())
       await shot(/^出片 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
-      expect(within(inspector()).getByText('· 镜头组 1 · A · V1')).toBeVisible()
+      expect(within(inspector()).getByTitle('镜头组 1 · A · V1')).toHaveTextContent(
+        '镜头组 1 · A · V1',
+      )
       await waitFor(() => expect(summary()).toHaveTextContent('1.00 – 3.00s / 6.0s'))
 
       handle('裁剪开头').focus()
@@ -614,10 +605,10 @@ describe('final-cut 编辑器 · 属性', () => {
       )
     })
 
-    it('片段用的素材不在出片里：标题写片段自己的名字，照样读到总长，能截取', async () => {
+    it('片段用的素材不在出片里：素材名写片段自己的名字，照样读到总长，能截取', async () => {
       const user = await openWith([video({ src: URL_OLD, duration: 2_000 })])
       await pick(user, 'A · 镜头 1')
-      expect(within(inspector()).getByText('· A · 镜头 1')).toBeVisible()
+      expect(within(inspector()).getByTitle('A · 镜头 1')).toHaveTextContent('A · 镜头 1')
       await waitFor(() => expect(summary()).toHaveTextContent('0.00 – 2.00s / 5.0s'))
       handle('裁剪结尾').focus()
       await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
@@ -669,7 +660,7 @@ describe('final-cut 编辑器 · 属性', () => {
     const savedAttribute = (id: string, name: string) =>
       new RegExp(` ${name}(?:="([^"]*)")?[ >]`).exec(savedTag(id))?.[1]
 
-    it('音频片段：音量、淡入、淡出，标题行右边是「循环播放」和倍速（点开是倍速滑杆）；数值照参照的换算显示', async () => {
+    it('音频片段：音量、淡入、淡出、倍速一行一条，最后是「循环播放」；数值照参照的换算显示', async () => {
       const user = await openWith([
         audio({
           duration: 4_000,
@@ -680,7 +671,6 @@ describe('final-cut 编辑器 · 属性', () => {
         }),
       ])
       await pick(user, '配乐')
-      await user.click(within(inspector()).getByRole('button', { name: '倍速：2x' }))
       const labels = within(inspector())
         .getAllByText(/^(音量|淡入|淡出|倍速)$/)
         .map((label) => label.textContent)
@@ -694,7 +684,7 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(readout('淡入')).toHaveTextContent('1.00 秒')
       expect(readout('淡出')).toHaveTextContent('0.00 秒')
       expect(toggle('循环播放')).toHaveAttribute('aria-checked', 'true')
-      expect(within(inspector()).queryByRole('switch', { name: '关闭原声' })).toBeNull()
+      expect(within(inspector()).queryByRole('switch', { name: '保留原声' })).toBeNull()
     })
 
     it('音量：方向键一步写一次，算一步撤销；最右 +12 dB，最左无声；双击回到 0 dB', async () => {
@@ -753,16 +743,18 @@ describe('final-cut 编辑器 · 属性', () => {
       const user = await openWith([video({ src: URL_A, duration: 2_000 })])
       await shot(/^出片 A 镜头 1，/)
       await pick(user, 'A · 镜头 1')
-      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       expect(slider('倍速')).toHaveAttribute('aria-valuenow', '500')
       expect(readout('倍速')).toHaveTextContent('1x')
-      // 倍速浮层里的数值框按 Esc 放弃输入，片段还选中着
+      // 数值框按 Esc 放弃输入，片段还选中着
       await type(user, '倍速', '3')
       await user.keyboard('{Escape}')
-      expect(within(inspector()).getByRole('button', { name: '倍速：1x' })).toBeVisible()
+      expect(readout('倍速')).toHaveTextContent('1x')
+      expect(within(row()).getByRole('button', { name: /^选中：A · 镜头 1，/ })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
       await pastDelay()
       expect(savedTag('clip-1')).not.toContain('data-playback-rate')
-      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       await press(user, '倍速', '{End}')
       await waitSaved(() => expect(savedAttribute('clip-1', 'data-playback-rate')).toBe('10'))
       await press(user, '倍速', '{Home}')
@@ -792,7 +784,7 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(slider('淡入')).toHaveAttribute('aria-valuemax', '400')
     })
 
-    it('循环播放、关闭原声：开关写进文件；关闭原声写 muted、不写有声音的标记，音量和淡入淡出变得不能操作，倍速照常', async () => {
+    it('循环播放、保留原声：开关写进文件；关掉保留原声写 muted、不写有声音的标记，音量和淡入淡出变得不能操作，倍速照常', async () => {
       const user = await openWith([
         video({ src: URL_A, duration: 2_000 }),
         audio({ duration: 4_000 }),
@@ -804,14 +796,13 @@ describe('final-cut 编辑器 · 属性', () => {
       await pick(user, 'A · 镜头 1')
       expect(within(inspector()).queryByRole('switch', { name: '循环播放' })).toBeNull()
       expect(slider('淡入')).not.toHaveAttribute('aria-disabled')
-      await user.click(toggle('关闭原声'))
+      await user.click(toggle('保留原声'))
       await waitSaved(() => expect(savedAttribute('clip-1', 'muted')).toBe('true'))
       expect(savedTag('clip-1')).not.toContain('data-has-audio')
       for (const name of ['音量', '淡入', '淡出']) {
         expect(slider(name)).toHaveAttribute('aria-disabled', 'true')
         expect(readout(name)).toBeDisabled()
       }
-      await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
       expect(slider('倍速')).not.toHaveAttribute('aria-disabled')
       const volume = savedAttribute('clip-1', 'data-volume')
       await press(user, '音量', '{End}')
@@ -820,13 +811,13 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(savedAttribute('clip-1', 'data-volume')).toBe(volume)
       expect(slider('音量')).toHaveAttribute('aria-valuenow', '0')
 
-      await user.click(toggle('关闭原声'))
+      await user.click(toggle('保留原声'))
       await waitSaved(() => expect(savedAttribute('clip-1', 'data-has-audio')).toBe('true'))
       expect(savedTag('clip-1')).not.toContain('muted')
       expect(slider('音量')).not.toHaveAttribute('aria-disabled')
     })
 
-    it('视频片段的素材没有声音：「关闭原声」开着、不能关，悬停说明原因；读不出有没有声音时照常能拨', async () => {
+    it('视频片段的素材没有声音：「保留原声」关着、打不开，悬停说明原因；读不出有没有声音时照常能拨', async () => {
       const user = await openWith([
         video({ src: URL_SILENT, label: '无声', muted: true }),
         video({
@@ -838,17 +829,17 @@ describe('final-cut 编辑器 · 属性', () => {
         }),
       ])
       await pick(user, '无声')
-      await waitFor(() => expect(toggle('关闭原声')).toHaveAttribute('aria-disabled', 'true'))
-      expect(toggle('关闭原声')).toHaveAttribute('aria-checked', 'true')
-      await user.hover(toggle('关闭原声'))
+      await waitFor(() => expect(toggle('保留原声')).toHaveAttribute('aria-disabled', 'true'))
+      expect(toggle('保留原声')).toHaveAttribute('aria-checked', 'false')
+      await user.hover(toggle('保留原声'))
       expect(await screen.findByRole('tooltip')).toHaveTextContent('该素材没有声音，无法打开原声')
-      await user.click(toggle('关闭原声'))
-      expect(toggle('关闭原声')).toHaveAttribute('aria-checked', 'true')
+      await user.click(toggle('保留原声'))
+      expect(toggle('保留原声')).toHaveAttribute('aria-checked', 'false')
       expect(undoButton()).toHaveAttribute('aria-disabled', 'true')
 
       await pick(user, '读不出')
-      expect(toggle('关闭原声')).not.toHaveAttribute('aria-disabled')
-      await user.click(toggle('关闭原声'))
+      expect(toggle('保留原声')).not.toHaveAttribute('aria-disabled')
+      await user.click(toggle('保留原声'))
       await waitSaved(() => expect(savedAttribute('clip-2', 'data-has-audio')).toBe('true'))
     })
   })
@@ -893,7 +884,6 @@ describe('final-cut 编辑器 · 属性', () => {
     await waitFor(() => expect(panel.getByRole('slider', { name: '裁剪结尾' })).toBeVisible())
     panel.getByRole('slider', { name: '裁剪结尾' }).focus()
     await user.keyboard('{Delete}{Backspace}m')
-    await user.click(panel.getByRole('button', { name: '倍速：1x' }))
     panel.getByRole('slider', { name: '倍速' }).focus()
     await user.keyboard('{Delete}{Backspace}m')
     expect(clipButton()).toHaveAttribute('aria-pressed', 'true')
@@ -906,7 +896,7 @@ describe('final-cut 编辑器 · 属性', () => {
     const MUSIC = 'https://media.test/audio/music.mp3'
     const TALK = 'https://media.test/audio/talk.mp3'
     const control = (name: string) => within(inspector()).getByRole('switch', { name })
-    const carveSwitch = () => control('有人说话时自动压低')
+    const carveSwitch = () => control('自动避让')
     const savedAttribute = (id: string, name: string) =>
       new RegExp(` ${name}="([^"]*)"`).exec(savedTag(id))?.[1]?.replaceAll('&quot;', '"')
     const savedCarve = (id: string): unknown =>
@@ -1003,7 +993,7 @@ describe('final-cut 编辑器 · 属性', () => {
       await pick(user, '配乐')
       await waitSaved(() => expect(savedAttribute('music-1', 'data-fx-chain')).toContain('peaking'))
 
-      // 视频片段从人声改成音效：换到音效组，主开关换成「有人说话时自动压低」
+      // 视频片段从人声改成音效：换到音效组，平稳音量换成「同时开启自动平稳音量」
       await pick(user, 'A · 镜头 1')
       expect(control('自动平稳人声音量')).toBeVisible()
       await user.click(within(inspector()).getByRole('button', { name: '角色：人声' }))
@@ -1118,7 +1108,7 @@ describe('final-cut 编辑器 · 属性', () => {
       expect(savedTag('music-1')).not.toContain('data-fx-chain')
     })
 
-    it('人声开「遇到其他人声时自动压低」：压人声组里别的人声，不含自己', async () => {
+    it('人声开「自动避让」：压人声组里别的人声，不含自己', async () => {
       const user = await openWith([
         video({ src: URL_A, duration: 2_000 }),
         audio({
@@ -1131,7 +1121,7 @@ describe('final-cut 编辑器 · 属性', () => {
         }),
       ])
       await pick(user, 'A · 镜头 1')
-      const carve = () => control('遇到其他人声时自动压低')
+      const carve = () => control('自动避让')
       await pastDelay()
       expect(carve()).toHaveAttribute('aria-checked', 'false')
       expect(savedTag('clip-1')).not.toContain('data-fx-carve')
@@ -1183,8 +1173,9 @@ describe('final-cut 编辑器 · 属性', () => {
       ])
       await pick(user, '原声')
       expect(within(inspector()).getByRole('button', { name: '角色：人声' })).toBeVisible()
-      expect(within(inspector()).queryByRole('switch', { name: '有人说话时自动压低' })).toBeNull()
-      expect(control('遇到其他人声时自动压低')).toHaveAttribute('aria-checked', 'false')
+      expect(within(inspector()).getAllByRole('switch', { name: '自动避让' })).toHaveLength(1)
+      expect(control('自动避让')).toHaveAttribute('aria-checked', 'false')
+      expect(within(inspector()).queryByRole('slider', { name: '压低幅度' })).toBeNull()
       await pick(user, '配乐')
       expect(
         (
@@ -1489,7 +1480,6 @@ describe('final-cut 编辑器 · 属性', () => {
         const user = await openWith([video({ src: URL_A, duration: 2_000, automation: dipped })])
         await shot(/^出片 A 镜头 1，/)
         await pick(user, 'A · 镜头 1')
-        await user.click(within(inspector()).getByRole('button', { name: '倍速：1x' }))
         await user.click(within(inspector()).getByRole('button', { name: /^倍速 1x，/ }))
         const box = within(inspector()).getByRole('textbox', { name: '倍速' })
         await user.clear(box)

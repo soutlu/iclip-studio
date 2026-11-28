@@ -1,14 +1,13 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useState } from 'react'
 import { DEFAULT_CARVE } from '@hyperframes/core/audio-carve'
 import { Icon } from '@/shared/icons'
-import { cn } from '@/shared/lib/utils'
 import { MenuRadioGroup, MenuRadioItem, MenuRoot, MenuSurface, MenuTrigger } from '@/shared/ui/menu'
-import { Switch } from '@/shared/ui/switch'
 import { AUDIO_ROLES, isAudioRole } from './audio-role'
 import { SliderControl } from './inspector-controls'
 import { presetAmountOf, presetOf, withPreset, withPresetAmount } from './mix-fx'
 import { MixFineTune } from './smart-mix-fine-tune'
 import { MixStyle } from './smart-mix-style'
+import { PropRow, PropSection, PropSwitch } from './ui/prop-layout'
 import type { SmartMix } from './use-smart-mix'
 
 // 强度照参照的工作台：0–1，每格 0.05，显示成百分比
@@ -21,35 +20,26 @@ const PERCENT = /^(\d+(?:\.\d+)?)\s*%?$/
 const BUSY_REASON = '正在分析声音，请稍候'
 
 /**
- * 「智能调音」：标题行右边是声音角色（人声、配乐、音效）。人声的主开关是「自动平稳人声音量」，下面一行是
- * 「遇到其他人声时自动压低」；配乐、音效的主开关是「有人说话时自动压低」（开着时下面是压低幅度和压低示意），下面
- * 一行是「同时开启自动平稳音量」。平稳音量只有开关（强度用默认值，照参照的工作台）。拖压低幅度时只动这里，松手
- * （或按一下方向键）才交出去；分析声音期间开关和强度都不能改。
- *
- * 下面是「音色风格」（选了预设时多一条混合强度）和收起的「精细调音」（均衡、升降调、自己加的效果），都直接改
- * 效果链，见 `mix-fx.ts`。
+ * 「自动避让」：有别的人声时自动压低这一段（见 `use-smart-mix.ts` 的压低）。配乐、音效开着时下面多一条压低幅度和
+ * 压低示意，人声只有开关。拖压低幅度时只动这里，松手（或按一下方向键）才交出去；分析声音期间开关和幅度都不能改。
  */
-export function SmartMixSection({
+export function DuckSwitch({
   mix,
   onEditing,
 }: {
   mix: SmartMix
   onEditing: (editing: boolean) => void
 }) {
-  const voice = mix.role === 'voice'
-  const carveOn = mix.carve?.enabled === true
-  const levelOn = mix.levelled
-  const blocked = mix.analysing ? BUSY_REASON : undefined
-  const roleLabel = AUDIO_ROLES.find((r) => r.role === mix.role)?.label
-  const preset = presetOf(mix.chain)
-  const carve = (
-    <MixHero
-      blockedReason={blocked}
-      checked={carveOn}
-      onChange={mix.setCarveEnabled}
-      title="有人说话时自动压低"
-    >
-      {carveOn ? (
+  const on = mix.carve?.enabled === true
+  return (
+    <>
+      <PropSwitch
+        blockedReason={mix.analysing ? BUSY_REASON : undefined}
+        checked={on}
+        label="自动避让"
+        onChange={mix.setCarveEnabled}
+      />
+      {on && mix.role !== 'voice' ? (
         <CarveStrength
           disabled={mix.analysing}
           onCommit={mix.setCarveStrength}
@@ -57,33 +47,61 @@ export function SmartMixSection({
           strength={mix.carve?.strength ?? DEFAULT_CARVE.strength}
         />
       ) : null}
-    </MixHero>
+    </>
   )
+}
+
+/**
+ * 「智能调音」：声音角色（人声、配乐、音效）一行；人声先是「自动平稳人声音量」再是「自动避让」，配乐、音效先是
+ * 「自动避让」再是「同时开启自动平稳音量」。`withDuck` 为假时不放「自动避让」（配乐片段把它排在最上面）。平稳音量
+ * 只有开关（强度用默认值，照参照的工作台）；分析声音期间开关都不能改。
+ *
+ * 下面是「音色风格」（选了预设时多一条混合强度）和收起的「精细调音」（均衡、升降调、自己加的效果），都直接改
+ * 效果链，见 `mix-fx.ts`。
+ */
+export function SmartMixSection({
+  mix,
+  withDuck,
+  onEditing,
+}: {
+  mix: SmartMix
+  withDuck: boolean
+  onEditing: (editing: boolean) => void
+}) {
+  const voice = mix.role === 'voice'
+  const roleId = useId()
+  const roleLabel = AUDIO_ROLES.find((r) => r.role === mix.role)?.label
+  const preset = presetOf(mix.chain)
+  const duck = withDuck ? <DuckSwitch mix={mix} onEditing={onEditing} /> : null
   const leveller = (
-    <MixHero
-      blockedReason={blocked}
-      checked={levelOn}
+    <PropSwitch
+      blockedReason={mix.analysing ? BUSY_REASON : undefined}
+      checked={mix.levelled}
+      label={voice ? '自动平稳人声音量' : '同时开启自动平稳音量'}
       onChange={mix.setLevellerEnabled}
-      title="自动平稳人声音量"
     />
   )
   return (
-    <section className="wf-card wf-prop-card">
-      <div className="wf-prop-title-row">
-        <h4 className="wf-prop-title">智能调音</h4>
-        {mix.analysing ? (
-          <span className="wf-prop-subtitle" role="status">
+    <PropSection
+      end={
+        mix.analysing ? (
+          <span className="wf-prop-status" role="status">
             正在分析声音
           </span>
-        ) : null}
+        ) : undefined
+      }
+      title="智能调音"
+    >
+      <PropRow htmlFor={roleId} label="角色">
         <MenuRoot>
           <MenuTrigger asChild>
             <button
               aria-label={`角色：${roleLabel ?? ''}`}
-              className="wf-select wf-mix-role ui-state ui-focus"
+              className="wf-prop-well wf-prop-select ui-state ui-focus"
+              id={roleId}
               type="button"
             >
-              {roleLabel}
+              <span className="wf-prop-select-text">{roleLabel}</span>
               <Icon decorative name="final-cut-expand" size="xs" />
             </button>
           </MenuTrigger>
@@ -105,14 +123,18 @@ export function SmartMixSection({
             </MenuRadioGroup>
           </MenuSurface>
         </MenuRoot>
-      </div>
-      {voice ? leveller : carve}
-      <ExtraSwitch
-        blockedReason={blocked}
-        checked={voice ? carveOn : levelOn}
-        label={voice ? '遇到其他人声时自动压低' : '同时开启自动平稳音量'}
-        onChange={voice ? mix.setCarveEnabled : mix.setLevellerEnabled}
-      />
+      </PropRow>
+      {voice ? (
+        <>
+          {leveller}
+          {duck}
+        </>
+      ) : (
+        <>
+          {duck}
+          {leveller}
+        </>
+      )}
       <MixStyle
         active={preset}
         onPick={(next) => mix.editChain((chain) => withPreset(chain, next))}
@@ -136,70 +158,7 @@ export function SmartMixSection({
         onEnvelope={mix.setEnvelope}
         onResetEnvelope={mix.resetEnvelope}
       />
-    </section>
-  )
-}
-
-/** 主开关的一块：浅底圆角，标题和开关一行，下面可以再放几行；开着时多一道浮起的高光。 */
-function MixHero({
-  title,
-  checked,
-  blockedReason,
-  onChange,
-  children,
-}: {
-  title: string
-  checked: boolean
-  blockedReason: string | undefined
-  onChange: (on: boolean) => void
-  children?: ReactNode
-}) {
-  const titleId = useId()
-  return (
-    <div className={cn('wf-mix-hero', checked && 'is-on')}>
-      <div className="wf-prop-title-row">
-        <span className="wf-mix-heading" id={titleId}>
-          {title}
-        </span>
-        <span className="wf-prop-title-end">
-          <Switch
-            aria-labelledby={titleId}
-            blockedReason={blockedReason}
-            checked={checked}
-            onCheckedChange={onChange}
-          />
-        </span>
-      </div>
-      {children}
-    </div>
-  )
-}
-
-/** 主开关下面的另一项：名字和开关一行。 */
-function ExtraSwitch({
-  label,
-  checked,
-  blockedReason,
-  onChange,
-}: {
-  label: string
-  checked: boolean
-  blockedReason: string | undefined
-  onChange: (on: boolean) => void
-}) {
-  const labelId = useId()
-  return (
-    <div className="wf-mix-extra">
-      <span className="wf-prop-label" id={labelId}>
-        {label}
-      </span>
-      <Switch
-        aria-labelledby={labelId}
-        blockedReason={blockedReason}
-        checked={checked}
-        onCheckedChange={onChange}
-      />
-    </div>
+    </PropSection>
   )
 }
 

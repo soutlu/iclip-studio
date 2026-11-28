@@ -329,12 +329,11 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     ])
   })
 
-  it('选中一句时的「属性」：头部是字、「字幕」、起止时间和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
+  it('选中一句时的「属性」：标题行是「字幕」、起止时间和删除，没有隐藏；改字停下才写进去、改时长按「+」，各一步撤销', async () => {
     const user = await open()
     await user.click(bodyOf('第一句'))
     const inspector = screen.getByRole('tabpanel', { name: '属性' })
-    expect(within(inspector).getByRole('heading', { name: '第一句' })).toBeVisible()
-    expect(within(inspector).getByText('字幕')).toBeVisible()
+    expect(within(inspector).getByRole('heading', { name: '字幕' })).toBeVisible()
     expect(within(inspector).getByText('0.00 – 1.00s')).toBeVisible()
     expect(within(inspector).getByRole('button', { name: '删除' })).toBeVisible()
     expect(within(inspector).queryByRole('button', { name: '隐藏' })).toBeNull()
@@ -348,7 +347,6 @@ describe('final-cut 编辑器 · 时间线上的字幕', () => {
     )
     // 名字里的换行合成一个空格；文字框里照旧是换行
     expect(clipOf('改过的 两行')).toBeVisible()
-    expect(within(inspector).getByRole('heading', { name: '改过的 两行' })).toBeVisible()
     expect(field).toHaveValue('改过的\n两行')
     await user.click(undoButton())
     await waitSaved(() =>

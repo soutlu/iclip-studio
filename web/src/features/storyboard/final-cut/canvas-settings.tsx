@@ -221,7 +221,7 @@ function SettingsPanel({
         ))}
       </div>
       <hr className="wf-canvas-settings-sep" />
-      <div className="wf-prop-field">
+      <div className="wf-canvas-row">
         <span className="wf-prop-label">导出分辨率</span>
         <div
           aria-label="导出分辨率"
@@ -251,7 +251,7 @@ function SettingsPanel({
           })}
         </div>
       </div>
-      <div className="wf-prop-field">
+      <div className="wf-canvas-row">
         <span className="wf-prop-label">像素尺寸</span>
         <div aria-label="像素尺寸" className="wf-canvas-control wf-canvas-pixels" role="group">
           {side('width', '宽')}
@@ -270,7 +270,7 @@ function SettingsPanel({
           {SIDE_RANGE_TEXT}
         </p>
       )}
-      <div className="wf-prop-field">
+      <div className="wf-canvas-row">
         <span className="wf-prop-label">画布底色</span>
         <div aria-label="画布底色" className="wf-canvas-swatches" role="group">
           {shownBackground === undefined ? null : (
@@ -292,7 +292,7 @@ function SettingsPanel({
         </div>
       </div>
       <hr className="wf-canvas-settings-sep" />
-      <div className="wf-prop-field">
+      <div className="wf-canvas-row">
         <span className="wf-prop-label">构图网格</span>
         <div aria-label="构图网格" className="wf-seg wf-canvas-control wf-canvas-seg" role="group">
           {GRIDS.map(({ grid, label }) => (
@@ -308,7 +308,7 @@ function SettingsPanel({
           ))}
         </div>
       </div>
-      <div className="wf-prop-field">
+      <div className="wf-canvas-row">
         <label className="wf-prop-label" htmlFor={safeId}>
           短视频安全区
         </label>

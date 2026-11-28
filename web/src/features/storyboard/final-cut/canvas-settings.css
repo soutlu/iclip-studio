@@ -149,14 +149,20 @@
   background: var(--color-hairline);
 }
 
-.wf-canvas-settings .wf-prop-field {
+/* 一项：名字在左、控件在右 */
+.wf-canvas-row {
+  display: flex;
+  min-width: 0;
   min-height: 26px;
-  padding: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .wf-canvas-settings .wf-prop-label {
   color: var(--color-on-surface-muted);
   font-size: var(--text-caption);
+  font-weight: 500;
 }
 
 /* 导出分辨率、像素尺寸与构图网格控件保持等宽并右对齐 */

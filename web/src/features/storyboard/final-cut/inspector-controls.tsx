@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Input } from '@/shared/ui/field'
 import { Slider } from '@/shared/ui/slider'
+import { PropRow } from './ui/prop-layout'
 
 /**
- * 「属性」里的一条滑杆：上面一行名字在左、数值在右，下面是滑杆。滑杆按格走（`position` 是格数），拖的时候数值
+ * 「属性」里的一条滑杆：一行里名字在左，中间是滑杆，数值在右。滑杆按格走（`position` 是格数），拖的时候数值
  * 跟着变，松手（或按一下方向键）才交给 `onCommit`。点数值可以直接输入，见 `Readout`。
  */
 export function SliderControl({
@@ -46,9 +47,27 @@ export function SliderControl({
   const draft = dragged !== null && dragged.from === position ? dragged.to : null
   const shown = draft === null ? text : format(draft)
   return (
-    <div className="wf-prop-slider" data-disabled={disabled || undefined}>
-      <div className="wf-prop-slider-top">
-        <span className="wf-prop-label">{label}</span>
+    <PropRow disabled={disabled} label={label}>
+      <span className="wf-prop-slider">
+        <Slider
+          disabled={disabled}
+          label={label}
+          mark={mark}
+          max={max}
+          min={min}
+          onChange={(to) => {
+            setDragged({ from: position, to })
+            onDrag?.(to)
+          }}
+          onCommit={(to) => {
+            setDragged(null)
+            onCommit(to)
+          }}
+          onDoubleClick={onDoubleClick}
+          step={step}
+          value={draft ?? Math.min(max, Math.max(min, position))}
+          valueText={shown}
+        />
         <Readout
           disabled={disabled}
           label={label}
@@ -56,27 +75,8 @@ export function SliderControl({
           onText={onText}
           text={shown}
         />
-      </div>
-      <Slider
-        disabled={disabled}
-        label={label}
-        mark={mark}
-        max={max}
-        min={min}
-        onChange={(to) => {
-          setDragged({ from: position, to })
-          onDrag?.(to)
-        }}
-        onCommit={(to) => {
-          setDragged(null)
-          onCommit(to)
-        }}
-        onDoubleClick={onDoubleClick}
-        step={step}
-        value={draft ?? Math.min(max, Math.max(min, position))}
-        valueText={shown}
-      />
-    </div>
+      </span>
+    </PropRow>
   )
 }
 
@@ -129,7 +129,7 @@ function Readout({
       aria-invalid={typing.invalid || undefined}
       aria-label={label}
       autoComplete="off"
-      className="wf-field wf-prop-readout-input"
+      className="wf-prop-well wf-prop-readout-input"
       onBlur={() => {
         onEditing(false)
         const typed = typedRef.current
