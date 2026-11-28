@@ -4,118 +4,33 @@ import {
   useLayoutEffect,
   useRef,
   useState,
-  type ChangeEvent,
-  type KeyboardEvent,
   type MouseEvent,
-  type PointerEvent,
   type RefObject,
 } from 'react'
 import { Icon } from '@/shared/icons'
+import { CanvasGuides } from './canvas-guides'
+import type { Shown } from './canvas-gesture'
 import { hoverOf, hoverProbe, type HoverProbe } from './canvas-hover'
 import type { CanvasLayer } from './canvas-layers'
-import {
-  nudgeOf,
-  pickAt,
-  resizedSize,
-  resizeRatio,
-  rotatedAngle,
-  type CanvasPick,
-  type Frame,
-  type Point,
-} from './canvas-geometry'
-import { snapDrag, type SnapGuides, type SnapRects } from './canvas-snap'
+import type { Frame, Point } from './canvas-geometry'
+import { CanvasText } from './canvas-text'
+import { textEditOf } from './canvas-text-edit'
 import { drawnFrame, followFrame } from './canvas-visible'
 import type { CaptionTextChange } from './captions-tab'
 import type { ComponentCatalog } from './composition/catalog'
 import { itemNamed, type Canvas, type FilmClip } from './composition/film'
-import { fieldText, textFields, type LocaleBindings } from './composition/locale-text'
+import { textFields, type LocaleBindings } from './composition/locale-text'
 import type { ItemTextChange } from './component-texts'
-import { useEditorEscape } from './editor-keys'
-import { LayerRefusal, REFUSAL_TEXT, type Gesture as Ability } from './layer-abilities'
-import {
-  authoredTransform,
-  cssStyles,
-  inlineStyleOf,
-  layoutSize,
-  movedTo,
-  movedTranslate,
-  rotationStyles,
-  rotationTarget,
-  scaledStyles,
-  sizeStyles,
-  toLocal,
-  type RotationTarget,
-} from './layer-edits'
-import { SOURCE_NAME, translationOf, type ShownLocale } from './locales'
+import type { ShownLocale } from './locales'
 import type { PickedLayer, PreviewControl, TextTarget } from './preview-player'
 import type { LayerMeasure } from './preview-protocol'
+import { useCanvasGesture, type CanvasNudge } from './use-canvas-gesture'
 import type { LayerEdit } from './use-film-session'
 
-/** 指针按下后超过该屏幕像素阈值才视为拖拽，否则作为点击处理。 */
-const DRAG_SLOP = 3
-
-/** 连续点击循环切换下层图层时，判定为同一点击位置的屏幕像素容差。 */
-const SAME_SPOT = 4
+export type { CanvasNudge } from './use-canvas-gesture'
 
 /** 指针移动时向预览页查询悬停命中图层的最小间隔（毫秒）。 */
 const HOVER_INTERVAL = 80
-
-/** 元素平移变换定义在外部样式表且无法内联解析时的提示文案。 */
-export const ROTATE_UNRESOLVED_TEXT = '该片段的变换定义在外部样式中，无法在画面上旋转'
-
-/** 当前时间点可见并已完成测量的选中图层。 */
-type Shown = { at: number; layer: CanvasLayer; measure: LayerMeasure }
-
-/**
- * 画布指针手势状态机：
- * - `press`：等待预览页返回按下处的命中图层栈（`last` 记录最新指针坐标）；
- * - `move`：拖拽移动选中图层（`blocked` 表示已被可编辑性规则拦截并提示原因）；
- * - `resize` / `rotate`：拖拽单选图层的四角缩放或旋转控制柄；普通图层缩放松手后（`released`）需等待末次中心回位偏移返回后再提交，
- *   元素/模板宿主缩放时 `scale` 保存其当前行内 `scale`（普通图层为 `null`）。
- */
-type Gesture =
-  | {
-      kind: 'press'
-      start: Point
-      last: Point
-      shift: boolean
-      /** 最新指针事件是否按住 Alt（禁用吸附）。 */
-      alt: boolean
-      released: number | null
-    }
-  | {
-      kind: 'move'
-      start: Point
-      targets: readonly Shown[]
-      moved: boolean
-      blocked: boolean
-      hits: readonly string[]
-      picked: string
-      shift: boolean
-      /** 最新指针位置与 Alt 状态，供吸附矩形异步返回后立即重算对齐位置。 */
-      last: Point
-      alt: boolean
-      /** 拖拽吸附矩形（见 canvas-snap.ts）；起拖时向预览页请求，返回前或无法测量时为 `null`。 */
-      snap: SnapRects | null
-    }
-  | {
-      kind: 'resize'
-      start: Point
-      target: Shown
-      size: { width: number; height: number }
-      scale: string | null
-      released: boolean
-    }
-  | { kind: 'rotate'; start: Point; target: Shown; rotation: RotationTarget }
-
-/** 拖拽期间的实时草稿：各图层当前线框、待提交位移与行内样式，以及移动吸附参考线。 */
-type Draft = {
-  kind: 'move' | 'resize' | 'rotate'
-  frames: ReadonlyMap<number, Frame>
-  moves: ReadonlyMap<number, Point>
-  styles: Readonly<Record<string, string>> | null
-  guides: SnapGuides | null
-}
 
 type CanvasOverlayProps = {
   canvas: Canvas
@@ -155,20 +70,6 @@ type CanvasOverlayProps = {
   /** 注册画布方向键微调处理器（已消费按键时返回 `true`）。 */
   nudgeRef: RefObject<CanvasNudge | null>
 }
-
-/** 焦点位于画布叠层时的按键回调；成功微调选中图层时返回 `true`。 */
-export type CanvasNudge = (event: { key: string; shiftKey: boolean; altKey: boolean }) => boolean
-
-/** 检查图层是否允许执行指定手势；不允许时返回面向用户的拒绝提示。 */
-const refusalOf = (measure: LayerMeasure, ability: Ability): string | undefined => {
-  const allowed =
-    ability === 'move' ? measure.move : ability === 'resize' ? measure.resize : measure.turn
-  if (allowed) return undefined
-  const refusal = measure.refusal === LayerRefusal.none ? LayerRefusal.animated : measure.refusal
-  return REFUSAL_TEXT[refusal as Exclude<LayerRefusal, 0>]
-}
-
-const det = ({ a, b, c, d }: LayerMeasure['parent']) => a * d - b * c
 
 /**
  * 覆盖在预览画面上方的交互编辑叠层：
@@ -216,18 +117,10 @@ export function CanvasOverlay({
   // 画布一像素在屏幕上多宽
   const zoom = width > 0 && canvas.width > 0 ? width / canvas.width : 0
 
-  const gestureRef = useRef<Gesture | null>(null)
-  const [draft, setDraft] = useState<Draft | null>(null)
-  // 最后一次拖到的样子：松手时可能还没重画
-  const draftRef = useRef<Draft | null>(null)
-  /** 缩放时最近一次拖动的答复记进 `draftRef` 以后才完。 */
-  const pinRef = useRef<Promise<void>>(Promise.resolve())
-  const lastPickRef = useRef<CanvasPick | null>(null)
   const select = (next: ReadonlySet<string>) => {
     if (next !== selected) onSelect(next)
   }
 
-  const indexOf = new Map(layers.map((layer, at) => [layer.key, at]))
   const clipOf = new Map(clips.map((clip) => [clip.id, clip]))
   const shownAt = (clipId: string) => {
     const clip = clipOf.get(clipId)
@@ -304,7 +197,7 @@ export function CanvasOverlay({
     probeRef.current?.stop()
     setHovering(null)
   }
-  /** 判断是否为单句字幕自身图层（位于最上层时单击直接优先选中，见 `clicked`）。 */
+  /** 判断是否为单句字幕自身图层（位于最上层时单击直接优先选中，见 use-canvas-gesture.ts 的 `clicked`）。 */
   const isCaption = (layer: CanvasLayer) =>
     clipOf.get(layer.clip)?.kind === 'caption' && layer.element.hfId === layer.clip
   /** 判断当前位置是否支持原地改字：单句字幕，或元素/模板内绑定了文字可填项（`field`）的元素。 */
@@ -315,6 +208,32 @@ export function CanvasOverlay({
     const item = itemNamed(catalog, clip.item)
     return item !== undefined && textFields(item).some((each) => each.id === field)
   }
+
+  // 只选中一层时才有把手；不能缩放、不能转的不出那个把手
+  const single = shown.length === 1 ? shown[0] : undefined
+  const { draft, cancel, onPointerDown, onPointerMove, onPointerUp } = useCanvasGesture({
+    canvas,
+    layers,
+    shown,
+    single,
+    selected,
+    select,
+    zoom,
+    layerRef,
+    toCanvas,
+    isCaption,
+    controlRef,
+    contentOf,
+    revision,
+    playing,
+    unhover,
+    probeRef,
+    onEdit,
+    onGesture,
+    onNotice,
+    nudgeRef,
+  })
+
   const hover =
     hovering === null ||
     hovering.stamp !== stamp ||
@@ -326,442 +245,6 @@ export function CanvasOverlay({
           isText,
           winsOnTop: isCaption,
         })
-
-  /** 读取图层所属文件中该元素的行内 CSS 属性值（未声明时返回空串）。 */
-  const inlineOf = (layer: CanvasLayer, property: string) =>
-    inlineStyleOf(contentOf(layer.file) ?? '', layer.element.hfId, property)
-
-  /** 构造图层局部像素位移 `delta` 的写入载荷：宿主写行内 `translate`，普通图层走 SDK `moveElement` 写 `data-x/y`。 */
-  const movedEdit = (
-    layer: CanvasLayer,
-    delta: Point,
-  ): Pick<LayerEdit, 'move'> & { styles?: Record<string, string> } =>
-    layer.host
-      ? { styles: { translate: movedTranslate(inlineOf(layer, 'translate'), delta) } }
-      : { move: movedTo(layer.element.attributes, delta) }
-
-  const showDraft = (next: Draft | null) => {
-    draftRef.current = next
-    setDraft(next)
-  }
-
-  const finish = () => {
-    gestureRef.current = null
-    showDraft(null)
-    onGesture(false)
-  }
-
-  /** 取消在途拖拽并通知预览页还原 DOM 样式。 */
-  const cancel = () => {
-    for (const at of draftRef.current?.frames.keys() ?? []) controlRef.current?.draftEnd(at, false)
-    finish()
-  }
-
-  // 外部撤销或编辑推进工程修订号时，基于旧状态起算的在途拖拽立即作废
-  const cancelStale = useEffectEvent(() => {
-    if (gestureRef.current !== null) cancel()
-  })
-  useEffect(() => {
-    cancelStale()
-  }, [revision])
-
-  useEditorEscape(draft !== null, cancel)
-
-  /** 处理按下位置的异步拾取响应：更新选中片段并构造后续 `move` 手势状态（无需继续时返回 `undefined`）。 */
-  const pressed = (
-    press: Extract<Gesture, { kind: 'press' }>,
-    stack: readonly PickedLayer[],
-  ): Extract<Gesture, { kind: 'move' }> | undefined => {
-    const live = gestureRef.current === press
-    if (!live && press.released === null) return
-    const known = stack.flatMap((item) => {
-      const layer = layers[item.layer]
-      return layer === undefined ? [] : [{ ...item, layer }]
-    })
-    const hits = known.map((item) => item.layer.key)
-    const selectedKeys = new Set(shown.map((each) => each.layer.key))
-    const key = press.shift
-      ? (hits[0] ?? null)
-      : pickAt(hits, selectedKeys, null, press.start, 0, 0)
-    const hit = known.find((item) => item.layer.key === key)
-    if (hit === undefined) {
-      if (live) gestureRef.current = null
-      lastPickRef.current = null
-      if (!press.shift && selected.size > 0) select(new Set())
-      return undefined
-    }
-    const { clip } = hit.layer
-    const next = press.shift
-      ? new Set([...selected, clip])
-      : selected.has(clip)
-        ? selected
-        : new Set([clip])
-    select(next)
-    // 合并多选中的其余可见图层与当前命中的图层，作为共同拖拽目标
-    const others = shown.filter((each) => next.has(each.layer.clip) && each.layer.clip !== clip)
-    const targets = [
-      ...others,
-      { at: indexOf.get(hit.layer.key) ?? -1, layer: hit.layer, measure: hit.measure },
-    ]
-    const move: Extract<Gesture, { kind: 'move' }> = {
-      kind: 'move',
-      start: press.start,
-      targets: targets.filter((target) => target.at >= 0),
-      moved: false,
-      blocked: false,
-      hits,
-      picked: hit.layer.key,
-      shift: press.shift,
-      last: press.last,
-      alt: press.alt,
-      snap: null,
-    }
-    return move
-  }
-  /** 拾取响应异步到达时始终基于最新渲染态处理选中关系。 */
-  const pressedRef = useRef<
-    ((press: Extract<Gesture, { kind: 'press' }>, stack: readonly PickedLayer[]) => void) | null
-  >(null)
-
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const current = gestureRef.current
-    // 前一次快速点击已松开但仍在等待拾取回执时，允许紧接着按下触发连续换层
-    const waiting = current?.kind === 'press' && current.released !== null
-    if (event.button !== 0 || (current !== null && !waiting)) return
-    unhover()
-    // 命中单选控制柄时进入缩放或旋转手势
-    const handle =
-      event.target instanceof Element
-        ? event.target.closest('[data-handle]')?.getAttribute('data-handle')
-        : undefined
-    if (single !== undefined && (handle === 'resize' || handle === 'rotate')) {
-      onHandleDown(event, handle, single)
-      return
-    }
-    layerRef.current?.focus({ preventScroll: true })
-    const point = toCanvas(event)
-    const press: Extract<Gesture, { kind: 'press' }> = {
-      kind: 'press',
-      start: point,
-      last: point,
-      shift: event.shiftKey,
-      alt: event.altKey,
-      released: null,
-    }
-    gestureRef.current = press
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const control = controlRef.current
-    if (control === null) {
-      gestureRef.current = null
-      return
-    }
-    void control.pick(point).then((stack) => pressedRef.current?.(press, stack))
-  }
-
-  /**
-   * 未发生拖拽即松手时结算点击：同位置快速连点按 `pickAt` 切换下层；
-   * 若最顶层为单句字幕且未触发连点换层，单击直接切换选中该字幕（按下阶段保留底层已选片段仅用于支持按住直拖）。
-   */
-  const clicked = (gesture: Extract<Gesture, { kind: 'move' }>, now: number) => {
-    const { hits, picked: chosen, start, shift } = gesture
-    const cycled =
-      pickAt(hits, new Set([chosen]), lastPickRef.current, start, now, SAME_SPOT / (zoom || 1)) ??
-      chosen
-    const [top] = hits
-    const topLayer = top === undefined ? undefined : layers[indexOf.get(top) ?? -1]
-    const captionOnTop = topLayer !== undefined && isCaption(topLayer)
-    const key = captionOnTop && top !== undefined && cycled === chosen ? top : cycled
-    lastPickRef.current = { point: start, at: now, id: key }
-    if (key === chosen || shift) return
-    const layer = layers[indexOf.get(key) ?? -1]
-    if (layer === undefined) return
-    select(new Set([layer.clip]))
-  }
-
-  /** 更新移动拖拽草稿至 `point`（`alt` 为真时禁用对齐吸附）。 */
-  const dragTo = (gesture: Extract<Gesture, { kind: 'move' }>, point: Point, alt: boolean) => {
-    gesture.last = point
-    gesture.alt = alt
-    const pointer = { x: point.x - gesture.start.x, y: point.y - gesture.start.y }
-    if (!gesture.moved) {
-      if (gesture.targets.length === 0 || Math.hypot(pointer.x, pointer.y) * zoom < DRAG_SLOP)
-        return
-      gesture.moved = true
-      onGesture(true)
-      const refusal = gesture.targets
-        .map((target) => refusalOf(target.measure, 'move'))
-        .find((reason) => reason !== undefined)
-      if (refusal !== undefined) {
-        gesture.blocked = true
-        onNotice(refusal)
-      } else {
-        // 在发送首个移动草稿前请求初始位置的吸附矩形，返回后按最新指针坐标重算对齐位置
-        void controlRef.current
-          ?.snapRects(gesture.targets.map((target) => target.at))
-          .then((rects) => {
-            if (gestureRef.current !== gesture || rects === null) return
-            gesture.snap = rects
-            dragTo(gesture, gesture.last, gesture.alt)
-          })
-      }
-    }
-    if (gesture.blocked) return
-    const [single, ...others] = gesture.targets
-    const { delta, guides } = snapDrag({
-      delta: pointer,
-      zoom,
-      rects: gesture.snap,
-      canvas,
-      alt,
-      angle: single !== undefined && others.length === 0 ? single.measure.frame.angle : null,
-    })
-    const frames = new Map<number, Frame>()
-    const moves = new Map<number, Point>()
-    for (const { at, measure } of gesture.targets) {
-      const local = toLocal(measure.parent, delta)
-      moves.set(at, local)
-      frames.set(at, {
-        ...measure.frame,
-        cx: measure.frame.cx + delta.x,
-        cy: measure.frame.cy + delta.y,
-      })
-      void controlRef.current?.draft(at, local, {}, false)
-    }
-    showDraft({ kind: 'move', frames, moves, styles: null, guides })
-  }
-
-  const onHandleDown = (event: PointerEvent<HTMLElement>, kind: 'resize' | 'rotate', at: Shown) => {
-    if (event.button !== 0 || gestureRef.current !== null) return
-    event.stopPropagation()
-    event.preventDefault()
-    layerRef.current?.focus({ preventScroll: true })
-    const refusal = refusalOf(at.measure, kind)
-    if (refusal !== undefined) {
-      onNotice(refusal)
-      return
-    }
-    const start = toCanvas(event)
-    if (kind === 'resize') {
-      gestureRef.current = {
-        kind,
-        start,
-        target: at,
-        size: { width: at.measure.width, height: at.measure.height },
-        scale: at.layer.host ? inlineOf(at.layer, 'scale') : null,
-        released: false,
-      }
-    } else {
-      const { measure, layer } = at
-      const content = measure.translating ? contentOf(layer.file) : undefined
-      const rotation = rotationTarget(
-        measure.translating,
-        content === undefined ? undefined : authoredTransform(content, layer.element.hfId),
-        measure.rotate,
-      )
-      if (rotation === null) {
-        onNotice(ROTATE_UNRESOLVED_TEXT)
-        return
-      }
-      gestureRef.current = { kind, start, target: at, rotation }
-    }
-    // 将指针捕获在画布叠层根节点上，确保移出控制柄后仍可持续接收移动事件
-    layerRef.current?.setPointerCapture(event.pointerId)
-    onGesture(true)
-  }
-
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const gesture = gestureRef.current
-    if (gesture === null) {
-      // 悬停在控制柄上时不触发底层图层拾取
-      const onHandle =
-        event.target instanceof Element && event.target.closest('[data-handle]') !== null
-      if (playing || event.pointerType === 'touch' || onHandle) unhover()
-      else probeRef.current?.move(toCanvas(event))
-      return
-    }
-    const point = toCanvas(event)
-    if (gesture.kind === 'press') {
-      gesture.last = point
-      gesture.alt = event.altKey
-      return
-    }
-    if (gesture.kind === 'move') {
-      dragTo(gesture, point, event.altKey)
-      return
-    }
-    const { at, measure } = gesture.target
-    if (gesture.kind === 'resize' && gesture.scale !== null) {
-      // 元素/模板宿主直接写 `scale` 围绕中心等比缩放，无需额外补偿中心偏移
-      if (gesture.released) return
-      const ratio = resizeRatio(measure.frame, gesture.size, gesture.start, point)
-      const styles = scaledStyles(gesture.scale, ratio)
-      showDraft({
-        kind: 'resize',
-        frames: new Map([
-          [
-            at,
-            {
-              ...measure.frame,
-              width: measure.frame.width * ratio,
-              height: measure.frame.height * ratio,
-            },
-          ],
-        ]),
-        moves: new Map(),
-        styles,
-        guides: null,
-      })
-      void controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), false)
-      return
-    }
-    if (gesture.kind === 'resize') {
-      if (gesture.released) return
-      const size = layoutSize(resizedSize(measure.frame, gesture.size, gesture.start, point))
-      const styles = sizeStyles(size, measure.flex, measure.inline)
-      const frame = {
-        ...measure.frame,
-        width: (measure.frame.width * size.width) / Math.max(gesture.size.width, 1),
-        height: (measure.frame.height * size.height) / Math.max(gesture.size.height, 1),
-      }
-      const next: Draft = {
-        kind: 'resize',
-        frames: new Map([[at, frame]]),
-        moves: new Map([[at, { x: 0, y: 0 }]]),
-        styles,
-        guides: null,
-      }
-      showDraft(next)
-      const reply = controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), true)
-      pinRef.current = (reply ?? Promise.resolve(null)).then((moved) => {
-        if (moved !== null && draftRef.current === next)
-          draftRef.current = { ...next, moves: new Map([[at, moved]]) }
-      })
-      return
-    }
-    const center = { x: measure.frame.cx, y: measure.frame.cy }
-    const angle = rotatedAngle(center, measure.frame.angle, gesture.start, point, event.shiftKey)
-    const sign = det(measure.parent) < 0 ? -1 : 1
-    const turn = gesture.rotation.turn + (angle - measure.frame.angle) * sign
-    const styles = rotationStyles(gesture.rotation, turn, measure.inline)
-    void controlRef.current?.draft(at, { x: 0, y: 0 }, cssStyles(styles), false)
-    showDraft({
-      kind: 'rotate',
-      frames: new Map([[at, { ...measure.frame, angle }]]),
-      moves: new Map(),
-      styles,
-      guides: null,
-    })
-  }
-
-  /** 将最终草稿提交至工程会话（缩放与旋转写行内样式，位移按 `movedEdit` 分发）。 */
-  const commit = (last: Draft, targets: readonly Shown[]) => {
-    const edits = targets.flatMap(({ at, layer }): LayerEdit[] => {
-      const move = last.moves.get(at)
-      const moved =
-        move === undefined || (move.x === 0 && move.y === 0) ? null : movedEdit(layer, move)
-      const styles = { ...last.styles, ...moved?.styles }
-      if (moved?.move === undefined && Object.keys(styles).length === 0) return []
-      return [
-        {
-          file: layer.file,
-          element: layer.element.hfId,
-          ...(moved?.move === undefined ? {} : { move: moved.move }),
-          ...(Object.keys(styles).length === 0 ? {} : { styles }),
-        },
-      ]
-    })
-    for (const { at } of targets) controlRef.current?.draftEnd(at, edits.length > 0)
-    if (edits.length > 0) onEdit(edits)
-  }
-
-  /**
-   * 拾取回执到达后推进手势：若仍处于按下态则补放积压指针位移；
-   * 若回执到达前已松手，则按是否发生过有效拖拽分别提交变更或结算为单击。
-   */
-  const proceed = (
-    press: Extract<Gesture, { kind: 'press' }>,
-    move: Extract<Gesture, { kind: 'move' }>,
-    live: boolean,
-  ) => {
-    if (live) {
-      gestureRef.current = move
-      dragTo(move, press.last, press.alt)
-    }
-    if (press.released === null) return
-    if (live) gestureRef.current = null
-    if (!move.moved) {
-      clicked(move, press.released)
-      return
-    }
-    const last = draftRef.current
-    if (last !== null) commit(last, move.targets)
-    finish()
-  }
-  useEffect(() => {
-    pressedRef.current = (press, stack) => {
-      const live = gestureRef.current === press
-      const move = pressed(press, stack)
-      if (move !== undefined) proceed(press, move, live)
-    }
-  })
-
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    const gesture = gestureRef.current
-    if (gesture === null) return
-    if (gesture.kind === 'press') {
-      // 还在等预览页答复：答复回来时当一次点选
-      gesture.released = event.timeStamp
-      return
-    }
-    if (gesture.kind === 'move' && !gesture.moved) {
-      gestureRef.current = null
-      clicked(gesture, event.timeStamp)
-      return
-    }
-    if (gesture.kind === 'resize') {
-      // 等最后一次拖动的答复（中心挪回原处的位移）回来再提交；这中间取消了（`cancel`）就不提交
-      if (gesture.released) return
-      gesture.released = true
-      void pinRef.current.then(() => {
-        if (gestureRef.current !== gesture) return
-        const last = draftRef.current
-        if (last !== null) commit(last, [gesture.target])
-        finish()
-      })
-      return
-    }
-    const last = draftRef.current
-    const targets = gesture.kind === 'move' ? gesture.targets : [gesture.target]
-    if (last !== null) commit(last, targets)
-    finish()
-  }
-
-  // 焦点在画面上时按的方向键：挪画面上选中的层（编辑器的快捷键处理经 `nudgeRef` 调）
-  useEffect(() => {
-    nudgeRef.current = (event) => {
-      if (gestureRef.current !== null || event.altKey) return false
-      const step = nudgeOf(event.key, event.shiftKey)
-      if (step === null || shown.length === 0) return false
-      const refusal = shown
-        .map((each) => refusalOf(each.measure, 'move'))
-        .find((reason) => reason !== undefined)
-      if (refusal !== undefined) {
-        onNotice(refusal)
-        return true
-      }
-      onEdit(
-        shown.map(({ layer, measure }) => ({
-          file: layer.file,
-          element: layer.element.hfId,
-          ...movedEdit(layer, toLocal(measure.parent, step)),
-        })),
-      )
-      return true
-    }
-    return () => {
-      nudgeRef.current = null
-    }
-  })
 
   const onDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     const point = toCanvas(event)
@@ -793,8 +276,6 @@ export function CanvasOverlay({
     onTextClose()
   }
 
-  // 只选中一层时才有把手；不能缩放、不能转的不出那个把手
-  const single = shown.length === 1 ? shown[0] : undefined
   const textEdit =
     textTarget === null
       ? undefined
@@ -907,188 +388,4 @@ export function CanvasOverlay({
       ) : null}
     </div>
   )
-}
-
-/** 渲染拖拽对齐参考线与等距间距标记（见 canvas-snap.ts，纯视觉层不拦截指针）。 */
-function CanvasGuides({ guides }: { guides: SnapGuides }) {
-  return (
-    <div aria-hidden="true" className="wf-canvas-guides">
-      {guides.lines.map((line) => (
-        <div
-          className="wf-canvas-guide"
-          data-testid="canvas-guide"
-          key={line.key}
-          style={{ left: line.left, top: line.top, width: line.width, height: line.height }}
-        />
-      ))}
-      {guides.spacings.map((spacing) => (
-        <div
-          className="wf-canvas-spacing"
-          data-axis={spacing.axis}
-          data-testid="canvas-spacing"
-          key={spacing.key}
-          style={{
-            left: spacing.left,
-            top: spacing.top,
-            width: spacing.width,
-            height: spacing.height,
-          }}
-        >
-          <span>{spacing.gap}</span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-/** 原地改字编辑配置：字段名称、初始文本、不可改提示（外语模式下未开启「随语言」时）、是否多行及保存回调。 */
-type TextEdit = {
-  label: string
-  initial: string
-  pinned: string | undefined
-  multiline: boolean
-  save: (text: string) => void
-}
-
-/**
- * 构建原地改字编辑模型：元素/模板文字字段与「属性」面板共用同一保存通道，字幕与「字幕」页签共用同一保存通道；
- * 均作用于当前展示语言（未翻译项初始值回退为原文），目标片段或字段不存在时返回 `undefined`。
- */
-function textEditOf(
-  target: TextTarget,
-  clips: readonly FilmClip[],
-  {
-    catalog,
-    locale,
-    bindings,
-    onText,
-    onCaptionText,
-  }: Pick<CanvasOverlayProps, 'catalog' | 'locale' | 'bindings' | 'onText' | 'onCaptionText'>,
-): TextEdit | undefined {
-  const clip = clips.find((each) => each.id === target.id)
-  if (clip?.kind === 'caption') {
-    const shown = translationOf(locale.values, clip.variable) ?? clip.text
-    return {
-      label: '字幕',
-      initial: shown,
-      pinned: undefined,
-      multiline: true,
-      save: (text) => onCaptionText(clip.id, text, locale.code),
-    }
-  }
-  if (clip?.kind !== 'host') return undefined
-  const field = itemNamed(catalog, clip.item)?.variables.find(
-    (variable) => variable.id === target.field,
-  )
-  if (field === undefined) return undefined
-  const source = fieldText(clip.values, field)
-  const variable = bindings.get(clip.id)?.[target.field]
-  return {
-    label: field.label,
-    initial:
-      locale.values === null || variable === undefined
-        ? source
-        : (translationOf(locale.values, variable) ?? source),
-    pinned:
-      locale.values !== null && variable === undefined
-        ? `「${field.label}」固定${SOURCE_NAME}，所有语言共用；请先在「属性」里点击「随语言」`
-        : undefined,
-    multiline: false,
-    save: (text) => onText(clip.id, field.id, text, locale.code),
-  }
-}
-
-type CanvasTextProps = {
-  edit: TextEdit
-  target: TextTarget
-  zoom: number
-  controlRef: RefObject<PreviewControl | null>
-  /** 改完了；`refocus` 时焦点回到画面上（回车、Esc），点到别处时不抢。 */
-  onClose: (refocus: boolean) => void
-  onGesture: (active: boolean) => void
-  onNotice: (message: string) => void
-}
-
-/**
- * 原地改字的输入框：盖在预览里藏起来的那段文字上，回车或点到别处时写进去，Esc 放弃。能换行的（字幕）是多行框，
- * Shift+回车换行。不能改的只说明原因。
- */
-function CanvasText({
-  edit,
-  target,
-  zoom,
-  controlRef,
-  onClose,
-  onGesture,
-  onNotice,
-}: CanvasTextProps) {
-  const { label, initial, pinned, multiline } = edit
-  const [value, setValue] = useState(initial)
-  const doneRef = useRef(false)
-  const inputRef = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
-
-  const close = (text: string | null, refocus: boolean) => {
-    if (doneRef.current) return
-    doneRef.current = true
-    controlRef.current?.endText(text)
-    onGesture(false)
-    onClose(refocus)
-  }
-  const save = (refocus: boolean) => {
-    // Esc 放弃以后输入框被拿掉时也会失去焦点，那一下不写
-    if (doneRef.current) return
-    if (value === initial) {
-      close(null, refocus)
-      return
-    }
-    edit.save(value)
-    close(value, refocus)
-  }
-
-  const open = useEffectEvent(() => {
-    if (pinned !== undefined) {
-      onNotice(pinned)
-      close(null, true)
-      return
-    }
-    onGesture(true)
-    inputRef.current?.focus()
-    inputRef.current?.select()
-  })
-  useEffect(() => {
-    open()
-  }, [])
-
-  useEditorEscape(true, () => close(null, true))
-
-  if (pinned !== undefined) return null
-  const { rect, fontSize } = target
-  const props = {
-    'aria-label': label,
-    autoComplete: 'off',
-    className: multiline ? 'wf-canvas-text is-multiline' : 'wf-canvas-text',
-    onBlur: () => save(false),
-    onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-      setValue(event.target.value),
-    onKeyDown: (event: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      // 输入法还在拼字时的回车是选字
-      if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
-      if (multiline && event.shiftKey) return
-      event.preventDefault()
-      save(true)
-    },
-    onPointerDown: (event: PointerEvent<HTMLElement>) => event.stopPropagation(),
-    ref: inputRef,
-    spellCheck: false,
-    style: {
-      left: rect.x * zoom,
-      top: rect.y * zoom,
-      minWidth: rect.width * zoom,
-      // 字幕的框跟着行数长高
-      ...(multiline ? { minHeight: rect.height * zoom } : { height: rect.height * zoom }),
-      fontSize: fontSize * zoom,
-    },
-    value,
-  }
-  return multiline ? <textarea {...props} rows={1} /> : <input {...props} />
 }
