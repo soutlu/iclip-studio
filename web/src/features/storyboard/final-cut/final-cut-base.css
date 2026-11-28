@@ -3,8 +3,7 @@
 /* 本模块专用变量，仅限 final-cut 的各样式文件引用。声明于 :root 而非编辑器根节点，以便挂载在 body 下的浮层（菜单、「生成音乐」卡片、音频详情）共享。
    优先复用语义色角色，仅在无对应语义角色时直接引用基础色阶，且严格限定于此区块 */
 :root {
-  /* 中性控件：tick 为滑杆零点刻度；control-soft/ring 为中性实心控件（滑杆已选段、按下的胶囊按钮）的浅底与描边；knob 为滑杆拇指与开关圆钮 */
-  --wf-tick: var(--n70);
+  /* 中性控件：control-soft/ring 为中性实心控件（按下的胶囊按钮、选中的菜单项）的浅底与描边；knob 为开关圆钮 */
   --wf-control-soft: color-mix(in srgb, var(--n10) 7%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n10) 18%, transparent);
   --wf-knob: var(--n100);
@@ -48,14 +47,13 @@
   --wf-clip-audio: linear-gradient(180deg, var(--n100) 0%, var(--n98) 100%);
   /* 时间线每一行的底色带子：浅色下比面板深一档，深色下比面板再暗一档（都是往下凹的样子） */
   --wf-lane-bed: var(--color-surface-container-low);
-  /* 滑杆拇指与开关圆钮投影；浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
-  --wf-shadow-knob: 0 1px 3px color-mix(in srgb, var(--n0) 20%, transparent);
+  /* 开关圆钮投影；浮起面板的描边、投影与圆角直接复用全局 Token（--color-panel-line、--shadow-panel、--radius-panel / --radius-control） */
+  --wf-shadow-knob: var(--shadow-knob);
   /* 低于全站最小字号一档：仅用于画布安全区标注 */
   --wf-text-clip-label: 9.5px;
 }
 
 .dark {
-  --wf-tick: var(--n40);
   --wf-control-soft: color-mix(in srgb, var(--n100) 9%, transparent);
   --wf-control-ring: color-mix(in srgb, var(--n100) 20%, transparent);
   --wf-led: var(--p40);
@@ -81,7 +79,6 @@
 }
 
 .wf-editor {
-  --slider-thumb-size: 12px;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -382,36 +379,6 @@
 
 .wf-menu [role^='menuitem'][data-state='checked'] {
   background: var(--wf-control-soft);
-}
-
-/* 滑杆（时间线缩放、属性里的各条滑杆）：细轨、墨色小圆钮，不画走过的那段（共用滑杆默认就不画），零点是短竖线刻度；
-   挂载点见 shared/ui/slider，以双类选择器覆盖默认样式 */
-.wf-editor .slider-track {
-  height: 3px;
-  background: color-mix(in srgb, var(--color-on-surface) 14%, transparent);
-}
-
-.wf-editor .slider-mark {
-  width: 2px;
-  height: 8px;
-  border-radius: var(--radius-full);
-  background: var(--wf-tick);
-}
-
-.wf-editor .slider-thumb {
-  border: none;
-  background: var(--color-on-surface);
-  box-shadow: var(--wf-shadow-knob);
-  transition:
-    scale var(--dur-s) var(--ease),
-    box-shadow var(--dur-s) var(--ease);
-}
-
-.wf-editor .slider-root:not([data-disabled]):hover .slider-thumb {
-  scale: 1.1;
-  box-shadow:
-    var(--wf-shadow-knob),
-    0 0 0 4px var(--wf-control-soft);
 }
 
 /* 开关：关闭态为凹槽配白色圆钮；开启态沿用全站样式，前景色轨道配背景色圆钮（避免深色主题下白圆钮融入浅灰轨道）；
